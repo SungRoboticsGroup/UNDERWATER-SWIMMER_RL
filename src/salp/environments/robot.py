@@ -23,7 +23,7 @@ class Robot():
         self.cycle_time = 0.0
         self.positions = np.zeros(3)  # x, y positions
         self.angle = 0  #yaw
-        self.velocities = np.zeros(2)  # x, y velocities
+        self.velocities = np.zeros(3)  # x, y velocities
         self.angular_velocity = 0.0  # yaw rate
         self.previous_water_volume = 0.0
         self.nozzle_area = nozzle_area  # m^2, cross-sectional area of the nozzle
@@ -43,10 +43,10 @@ class Robot():
 
         self.time = 0.0
         self.cycle_time = 0.0
-        self.positions = np.array([0, 0])  # x, y positions
+        self.positions = np.zeros(3)  # x, y, z positions
         # print(self.positions)
         self.angle = 0  #yaw
-        self.velocities = np.zeros(2)  # x, y velocities
+        self.velocities = np.zeros(3)  # x, y, z velocities
         self.angular_velocity = 0.0  # yaw rate
         self.previous_water_volume = 0.0
         self.cycle = 0
@@ -105,7 +105,7 @@ class Robot():
         # a = F/m
         # v = v + a*dt
         # x = x + v*dt
-
+        # print("contracting")
         jet_force = self._get_jet_force()
         added_mass = self._get_added_mass()
         drag_force = self._get_drag_force()
@@ -120,22 +120,26 @@ class Robot():
         self.time += self.dt
 
     def release(self):
-
+        # print("releasing")
         jet_force = self._get_jet_force()
         added_mass = self._get_added_mass()
         drag_force = self._get_drag_force()
         a = (jet_force - drag_force - added_mass) / self.get_mass()  # acceleration
         # self.velocities[0] += a * self.dt  # update velocities
         self.velocities[0] = 0.01 # m/s
-        self.velocities[1] = 0.0
+        self.velocities[1] = 0.01
         self.positions[0] += self.velocities[0] * self.dt  # update positions
         self.positions[1] += self.velocities[1] * self.dt  # update positions
-
+        # self.positions[0] = 1
+        # print(self.velocities[0]*self.dt)
+        # a = self.velocities[0]*self.dt
+        # # print(a)
+        # print(self.positions[0])
         self.cycle_time += self.dt
         self.time += self.dt 
 
     def coast(self):
-
+        # print("coasting")
         jet_force = self._get_jet_force()
         added_mass = self._get_added_mass()
         drag_force = self._get_drag_force()
