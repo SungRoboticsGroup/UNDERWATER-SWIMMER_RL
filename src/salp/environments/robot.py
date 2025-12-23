@@ -131,7 +131,7 @@ class Robot():
         drag_force = self._get_drag_force()
         a = (jet_force - drag_force - added_mass) / self.get_mass()  # acceleration
         # self.velocities[0] += a * self.dt  # update velocities
-        self.velocities[0] = 0.0 # m/s
+        self.velocities[0] = 0.001 # m/s
         self.velocities[1] = 0.0
         self.positions[0] += self.velocities[0] * self.dt  # update positions
         self.positions[1] += self.velocities[1] * self.dt  # update positions

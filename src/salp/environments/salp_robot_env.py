@@ -385,6 +385,109 @@ class SalpRobotEnv(gym.Env):
             text_rect = text.get_rect(center=(left - 36, py))
             self.screen.blit(text, text_rect)
 
+    def _draw_reference_frame(self, scale: float, axis_len_m: float = 0.25):
+        """Draw a small x/y reference frame at the center of the tank (in meters).
+        X points to the right, Y points downward (screen coordinates).
+        """
+        cx = int(self.pos_init[0])
+        cy = int(self.pos_init[1])
+        axis_px = max(8, int(axis_len_m * scale))
+
+        # Colors for axes
+        x_color = (220, 60, 60)
+        y_color = (60, 200, 80)
+        origin_color = (240, 240, 240)
+
+        # Draw axes lines
+        pygame.draw.line(self.screen, x_color, (cx, cy), (cx + axis_px, cy), 2)
+        pygame.draw.line(self.screen, y_color, (cx, cy), (cx, cy + axis_px), 2)
+
+        # Arrowheads (small triangles)
+        ah = max(6, axis_px // 6)
+        # X arrowhead (pointing right)
+        pygame.draw.polygon(self.screen, x_color, [
+            (cx + axis_px, cy),
+            (cx + axis_px - ah, cy - ah // 2),
+            (cx + axis_px - ah, cy + ah // 2)
+        ])
+        # Y arrowhead (pointing down)
+        pygame.draw.polygon(self.screen, y_color, [
+            (cx, cy + axis_px),
+            (cx - ah // 2, cy + axis_px - ah),
+            (cx + ah // 2, cy + axis_px - ah)
+        ])
+
+        # Origin marker
+        pygame.draw.circle(self.screen, origin_color, (cx, cy), 3)
+
+        # Labels
+        if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+            pygame.font.init()
+        font = pygame.font.Font(None, 18)
+        tx = font.render('x', True, x_color)
+        ty = font.render('y', True, y_color)
+        self.screen.blit(tx, tx.get_rect(center=(cx + axis_px + 12, cy)))
+        self.screen.blit(ty, ty.get_rect(center=(cx, cy + axis_px + 12)))
+
+    def _draw_robot_reference_frame(self, scale: float, robot_x: int, robot_y: int, axis_len_m: float = 0.25):
+        """Draw a small x/y frame attached to the robot and rotated by its yaw (in meters)."""
+        axis_px = max(8, int(axis_len_m * scale))
+
+        try:
+            yaw = float(self.robot.euler_angles[0])
+        except Exception:
+            yaw = 0.0
+
+        # basis vectors for robot frame in screen coordinates (x forward, y to robot's left)
+        ux = math.cos(yaw)
+        uy = math.sin(yaw)
+        vx = math.cos(yaw + math.pi/2)
+        vy = math.sin(yaw + math.pi/2)
+
+        x_end = robot_x + ux * axis_px
+        y_end = robot_y + uy * axis_px
+        x2_end = robot_x + vx * axis_px
+        y2_end = robot_y + vy * axis_px
+
+        x_color = (60, 160, 220)
+        y_color = (220, 160, 60)
+        origin_color = (240, 240, 240)
+
+        # draw axes
+        pygame.draw.line(self.screen, x_color, (int(robot_x), int(robot_y)), (int(x_end), int(y_end)), 2)
+        pygame.draw.line(self.screen, y_color, (int(robot_x), int(robot_y)), (int(x2_end), int(y2_end)), 2)
+
+        # arrowheads
+        ah = max(6, axis_px // 4)
+        perp_x = -uy
+        perp_y = ux
+        tip_x = x_end
+        tip_y = y_end
+        base_x = tip_x - ux * ah
+        base_y = tip_y - uy * ah
+        left = (base_x + perp_x * (ah/2), base_y + perp_y * (ah/2))
+        right = (base_x - perp_x * (ah/2), base_y - perp_y * (ah/2))
+        pygame.draw.polygon(self.screen, x_color, [(int(tip_x), int(tip_y)), (int(left[0]), int(left[1])), (int(right[0]), int(right[1]))])
+
+        perp2_x = -vy
+        perp2_y = vx
+        tip2_x = x2_end
+        tip2_y = y2_end
+        base2_x = tip2_x - vx * ah
+        base2_y = tip2_y - vy * ah
+        left2 = (base2_x + perp2_x * (ah/2), base2_y + perp2_y * (ah/2))
+        right2 = (base2_x - perp2_x * (ah/2), base2_y - perp2_y * (ah/2))
+        pygame.draw.polygon(self.screen, y_color, [(int(tip2_x), int(tip2_y)), (int(left2[0]), int(left2[1])), (int(right2[0]), int(right2[1]))])
+
+        # origin marker and angle label
+        pygame.draw.circle(self.screen, origin_color, (int(robot_x), int(robot_y)), 3)
+        if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+            pygame.font.init()
+        font = pygame.font.Font(None, 16)
+        # show yaw degrees
+        yaw_label = font.render(f"{math.degrees(yaw):.0f}°", True, origin_color)
+        self.screen.blit(yaw_label, yaw_label.get_rect(center=(int(robot_x), int(robot_y - axis_px - 12))))
+
     # def _draw_nozzle_and_jet(self, scale: float, robot_x: int, robot_y: int):
     #     # Draw front indicator
     #     front_distance = max(self.ellipse_a, self.ellipse_b) * 0.8
@@ -470,8 +573,14 @@ class SalpRobotEnv(gym.Env):
         # draw rulers and grid to visualize meters in both x and y
         self._draw_rulers(scale)
 
+        # draw a small reference frame at the tank center (x/y axes)
+        self._draw_reference_frame(scale)
+
         # draw historical path and sized ellipses
         self._draw_history(scale, robot_x, robot_y)
+
+        # draw robot-attached reference frame (rotated with robot yaw)
+        self._draw_robot_reference_frame(scale, robot_x, robot_y)
 
         # draw the current robot body
         # self._draw_body(scale, robot_x, robot_y)
