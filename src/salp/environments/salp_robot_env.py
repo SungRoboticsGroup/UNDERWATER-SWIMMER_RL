@@ -11,272 +11,7 @@ import pygame
 import math
 from typing import Tuple, Optional, Dict, Any
 import matplotlib.pyplot as plt
-
-class Robot():
-    
-    # TODO:
-    # 1. implement nozzle steering behavior
-    # 2. scale the actions from RL inputs to robot control inputs
-    # 3. normalize the observation space numbers
-    #  
-    phase = ["refill", "jet", "coast", "rest"]
-
-    def __init__(self, dry_mass: float, init_length: float, init_width: float, max_contraction: float, nozzle_area: float):
-        self.dry_mass = dry_mass # kg
-        self.init_length = init_length # meters
-        self.init_width = init_width # meters
-        self.max_contraction = max_contraction  # max contraction length
-        self.state = self.phase[3]  # initial state is rest
-        self.contraciton = 0.0  # contraction level
-        self.nozzle_angle = 0.0  # current angle of nozzle
-        self.cycle = 0
-        self.dt = 0.01
-        self.time = 0.0
-        self.cycle_time = 0.0
-        self.positions = np.zeros(2)  # x, y positions
-        self.angle = 0  #yaw
-        self.velocities = np.zeros(2)  # x, y velocities
-        self.angular_velocity = 0.0  # yaw rate
-        self.previous_water_volume = 0.0
-        self.nozzle_area = nozzle_area  # m^2, cross-sectional area of the nozzle
-        self.density = 0  # kg/m^3, density of water
-        self.contract_time = 0.0
-        self.release_time = 0.0
-        self.coast_time = 0.0
-
-        self._contract_rate = 0.0
-        self._release_rateS = 0.0
-    
-    def set_environment(self, density: float):
-
-        self.density = density
-
-    def reset(self):
-
-        self.time = 0.0
-        self.cycle_time = 0.0
-        self.positions = np.array([400, 300])  # x, y positions
-        self.angle = 0  #yaw
-        self.velocities = np.zeros(2)  # x, y velocities
-        self.angular_velocity = 0.0  # yaw rate
-        self.previous_water_volume = 0.0
-        self.cycle = 0
-
-    def set_control(self, contraction: float, coast_time: float, angle: float):
-
-        self.contraciton = contraction
-        self.coast_time = coast_time
-        # print("contraction set to:", self.contraciton)
-        self.nozzle_angle = angle
-        self.cycle += 1
-        self.cycle_time = 0.0
-
-        self.contract_time = self._contract_model()
-        self.release_time = self._release_model() 
-
-    def get_state(self) -> str:
-
-        if self.cycle_time < self.contract_time:
-            self.state = self.phase[0]  # contract
-        elif self.cycle_time < self.contract_time + self.release_time:
-            self.state = self.phase[1]  # release
-        elif self.cycle_time < self.contract_time + self.release_time + self.coast_time:
-            self.state = self.phase[2]  # coast
-        else:
-            self.state = self.phase[3]  # reset to contract
-        return self.state
-
-    def step(self):
-
-        self.get_state()
-        if self.state == self.phase[0]:  # contract
-            self.contract() 
-        elif self.state == self.phase[1]:  # release
-            self.release() 
-        elif self.state == self.phase[2]:  # coast
-            self.coast()
-        else:
-            pass  # rest
-    
-    def step_through_cycle(self):
-        total_cycle_time = self.contract_time + self.release_time + self.coast_time
-        positions_history = []
-        length_history = []
-        width_history = []
-        while self.cycle_time < total_cycle_time:
-            self.step()
-            positions_history.append(self.positions)
-            length_history.append(self.get_current_length())
-            width_history.append(self.get_current_width())
-        
-        return np.array(positions_history), np.array(length_history), np.array(width_history)
-
-    def contract(self):
-        # computes
-        # a = F/m
-        # v = v + a*dt
-        # x = x + v*dt
-
-        jet_force = self._get_jet_force()
-        added_mass = self._get_added_mass()
-        drag_force = self._get_drag_force()
-        a = (jet_force - drag_force - added_mass) / self.get_mass()  # acceleration
-        self.velocities[0] += a * self.dt  # update velocities
-        self.positions[0] += self.velocities[0] * self.dt  # update positions
-
-        self.cycle_time += self.dt
-        self.time += self.dt
-
-    def release(self):
-
-        jet_force = self._get_jet_force()
-        added_mass = self._get_added_mass()
-        drag_force = self._get_drag_force()
-        a = (jet_force - drag_force - added_mass) / self.get_mass()  # acceleration
-        self.velocities[0] += a * self.dt  # update velocities
-        self.positions[0] += self.velocities[0] * self.dt  # update positions
-
-        self.cycle_time += self.dt
-        self.time += self.dt 
-
-    def coast(self):
-
-        jet_force = self._get_jet_force()
-        added_mass = self._get_added_mass()
-        drag_force = self._get_drag_force()
-        a = (- drag_force) / self.get_mass()  # acceleration
-        self.velocities[0] += a * self.dt  # update velocities
-        self.positions[0] += self.velocities[0] * self.dt  # update positions
-
-        self.cycle_time += self.dt
-        self.time += self.dt 
-
-    def get_current_length(self) -> float:
-
-        if self.state == self.phase[0]:  # inhale
-            length = self.init_length - self.cycle_time*self._contract_rate
-        elif self.state == self.phase[1]:  # exhale
-            length = self.init_length - self.max_contraction + (self.cycle_time - self.contract_time)*self._release_rate
-        else:
-            length = self.init_length
-
-        return length
-    
-    def get_current_width(self) -> float:
-
-        if self.state == self.phase[0]:  # inhale
-            width = self.init_width + self.cycle_time*self._contract_rate
-        elif self.state == self.phase[1]:  # exhale
-            width = self.init_width + self.max_contraction - (self.cycle_time - self.contract_time)*self._release_rate
-        else:
-            width = self.init_width
-
-        return width
-
-    def get_mass(self) -> float:
-
-        total_mass = self.dry_mass + self._get_water_mass()
-
-        return total_mass
-
-    def _get_jet_force(self) -> float:
-
-        # water_mass = self._get_water_volume()
-        # mass_rate = (water_mass - self.previous_water_volume) / self.dt
-        # jet_velocity = self._get_jet_velocity()
-        # jet_force = mass_rate * jet_velocity
-        jet_force = 0.0  # placeholder for now 
-
-        return jet_force
-    
-    def _get_jet_velocity(self) -> float:
-        
-        # velocity is with respect to the robot frame
-        water_volume = self._get_water_volume()
-        volume_rate = (water_volume - self.previous_water_volume) / self.dt
-        jet_velocity = volume_rate / self.nozzle_area
-
-        return jet_velocity
-    
-    def _get_drag_force(self) -> float:
-
-        # drag_force = 0.5 * self.density * (self.velocities**2) * self._get_cross_sectional_area() * self.drag_coefficient  # drag coefficient for sphere is 0.47
-        drag_force = 0.0  # placeholder for now
-
-        return drag_force
-    
-    def _get_added_mass(self) -> float:
-
-        # added_mass = 0.5 * self.density * self._get_water_volume()  # added mass for sphere is 0.5 * density * volume
-        added_mass = 0.0  # placeholder for now
-
-        return added_mass
-
-    def _get_water_volume(self) -> float:
-        
-        length = self.get_current_length()
-        width = self.get_current_width()
-        volume = 4/3*np.pi*(length/2)*(width/2)**2
-
-        return volume
-
-    def _get_water_mass(self) -> float:
-
-        density = 997  # kg/m^3
-        mass = density * self._get_water_volume()
-
-        return mass
-
-    def _get_cross_sectional_area(self) -> float:
-        
-        length = self.get_current_length()
-        width = self.get_current_width()
-        area = np.pi * (length/2) * (width/2)
-
-        return area
-
-    def _contract_model(self) -> float:
-        # Simple model for contraction over time
-        self._contract_rate = 0.06/3  # m/s
-        time = self.contraciton / self._contract_rate
-        # print("contraction rate:", self._contract_rate)
-        # print("contraction time:", time)
-        # print("contraction:", self.contraciton)
-        return time
-
-    def _release_model(self) -> float:
-        # Simple model for release over time
-        self._release_rate = 0.06/1.5  # m/s
-        time = self.contraciton / self._release_rate
-        return time 
-
-
-    # def _test_compression_speed(self):
-    #     # function is designed to model a constant force presses on a spring 
-    #     # with a mass on it
-    #     F = 1  # N
-    #     k = 1  # N/m
-    #     m = 70   # kg
-    #     T = 5  # s
-    #     n = 500  # steps
-    #     x = np.zeros(n)  # m # displacement
-    #     v = np.zeros(n)  # m/s # velocity
-    #     a = np.zeros(n)  # m/s^2 # acceleration
-    #     dt = T / n  # s # time step
-    #     for i in range(n-1):
-    #         a[i] = (F - k*x[i]) / m
-    #         v[i+1] = v[i] + a[i]*dt
-    #         x[i+1] = x[i] + v[i]*dt
-
-    #     plt.plot(np.arange(0, T, dt), x*1000, label='Displacement')
-    #     # plt.plot(np.arange(0, T, dt), v, color='orange', label='Velocity')
-    #     # plt.plot(np.arange(0, T, dt), a, color='green', label='Acceleration')
-    #     plt.xlabel('Time (s)')
-    #     plt.ylabel('Displacement (mm)')
-    #     plt.title('Compression Speed Test')
-    #     plt.legend()
-    #     plt.grid()
-    #     plt.show()
+from robot import Robot
 
 class SalpRobotEnv(gym.Env):
     """
@@ -291,12 +26,13 @@ class SalpRobotEnv(gym.Env):
     
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
     
-    def __init__(self, render_mode: Optional[str] = None, width: int = 800, height: int = 600, robot: Optional[Robot] = None):
+    def __init__(self, render_mode: Optional[str] = None, width: int = 900, height: int = 700, robot: Optional[Robot] = None):
         super().__init__()
         
         # Environment parameters
         self.width = width
         self.height = height
+        self.pos_init = np.array([width / 2, height / 2])  # Start in center
         self.tank_margin = 50
         
         # Pygame setup
@@ -339,6 +75,7 @@ class SalpRobotEnv(gym.Env):
         
         # Reset robot to center
         self.robot.reset()
+        self.pos_init = np.array([self.width / 2, self.height / 2])
        
         # self.body_radius = self.base_radius  # Current body radius
         self.ellipse_a = self.robot.get_current_length()    # Semi-major axis for ellipse
@@ -358,6 +95,7 @@ class SalpRobotEnv(gym.Env):
         
         self.robot.set_control(action[0], action[1], action[2])  # contraction, coast_time, nozzle angle
         position_history, length_history, width_history = self.robot.step_through_cycle()
+        # print(position_history)
 
         # store the most recent breathing-cycle histories (meters)
         try:
@@ -439,8 +177,8 @@ class SalpRobotEnv(gym.Env):
             pygame.display.init()
 
             if self.width <= 0 or self.height <= 0:
-                self.width = 800
-                self.height = 600
+                self.width = 900
+                self.height = 700
 
             if self.render_mode == "human":
                 try:
@@ -475,13 +213,13 @@ class SalpRobotEnv(gym.Env):
         n = len(self.cycle_positions)
 
         # --- 1. Data Preparation (Keep this the same) ---
-        max_coord = 0.0
-        for p in self.cycle_positions:
-            try:
-                max_coord = max(max_coord, abs(float(p[0])), abs(float(p[1])))
-            except Exception:
-                continue
-        positions_in_pixels = max_coord > 50.0
+        # max_coord = 0.0
+        # for p in self.cycle_positions:
+        #     try:
+        #         max_coord = max(max_coord, abs(float(p[0])), abs(float(p[1])))
+        #     except Exception:
+        #         continue
+        # positions_in_pixels = max_coord > 50.0
 
         # Sample points (Keep this to reduce jitter)
         sample_step = max(1, n // 80)
@@ -495,12 +233,10 @@ class SalpRobotEnv(gym.Env):
                 p = self.cycle_positions[idx]
             except Exception:
                 continue
-            if positions_in_pixels:
-                px = int(p[0])
-                py = int(p[1])
-            else:
-                px = robot_x + int(float(p[0]) * scale)
-                py = robot_y + int(float(p[1]) * scale)
+
+            px = int(float(p[0]) * scale) + self.pos_init[0]
+            py = int(float(p[1]) * scale) + self.pos_init[1]
+            # print(px, py)
             pts.append((px, py, idx))
 
         if not pts:
@@ -572,6 +308,65 @@ class SalpRobotEnv(gym.Env):
         rotated_surf = pygame.transform.rotate(ellipse_surf, -math.degrees(self.robot.angle))
         rect = rotated_surf.get_rect(center=(robot_x, robot_y))
         self.screen.blit(rotated_surf, rect)
+
+    def _draw_rulers(self, scale: float):
+        """Draw axis rulers and faint grid lines showing meters relative to the screen center."""
+        left = int(self.tank_margin)
+        right = int(self.width - self.tank_margin)
+        top = int(self.tank_margin)
+        bottom = int(self.height - self.tank_margin)
+
+        # Choose a tick spacing that results in roughly 50-80 pixels between ticks
+        target_px = 50
+        step = target_px / scale # 0.25m per tick
+        # nice_steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]
+        # pick the nicest step closest to desired_m
+        # step = min(nice_steps, key=lambda s: abs(s - desired_m))
+
+        meters_left = (left - self.pos_init[0]) / scale
+        meters_right = (right - self.pos_init[0]) / scale
+        meters_top = (top - self.pos_init[1]) / scale
+        meters_bottom = (bottom - self.pos_init[1]) / scale
+
+        # prepare font
+        if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+            pygame.font.init()
+        font = pygame.font.Font(None, 16)
+
+        tick_color = (220, 220, 220)
+        grid_color = (30, 45, 70)
+
+        # X axis ticks (top)
+        first_x = math.ceil(meters_left / step) * step
+        num_x = int(max(0, math.floor((meters_right - first_x) / step))) + 1
+        for i in range(num_x):
+            x_m = first_x + i * step
+            px = int(self.pos_init[0] + x_m * scale)
+            # tick on top edge
+            pygame.draw.line(self.screen, tick_color, (px, top), (px, top + 8), 1)
+            # vertical grid line
+            pygame.draw.line(self.screen, grid_color, (px, top + 9), (px, bottom - 9), 1)
+            # label
+            label = f"{x_m:.1f}m"
+            text = font.render(label, True, tick_color)
+            text_rect = text.get_rect(center=(px, top - 10))
+            self.screen.blit(text, text_rect)
+
+        # Y axis ticks (left)
+        first_y = math.ceil(meters_top / step) * step
+        num_y = int(max(0, math.floor((meters_bottom - first_y) / step))) + 1
+        for i in range(num_y):
+            y_m = first_y + i * step
+            py = int(self.pos_init[1] + y_m * scale)
+            # tick on left edge
+            pygame.draw.line(self.screen, tick_color, (left, py), (left + 8, py), 1)
+            # horizontal grid line
+            pygame.draw.line(self.screen, grid_color, (left + 9, py), (right - 9, py), 1)
+            # label (positive downward)
+            label = f"{y_m:.1f}m"
+            text = font.render(label, True, tick_color)
+            text_rect = text.get_rect(center=(left - 36, py))
+            self.screen.blit(text, text_rect)
 
     # def _draw_nozzle_and_jet(self, scale: float, robot_x: int, robot_y: int):
     #     # Draw front indicator
@@ -648,12 +443,15 @@ class SalpRobotEnv(gym.Env):
         # background and tank
         self._draw_background_and_tank()
 
-        # scaling between meters and pixels
+        # scaling between meters and pixels (pixels per meter)
         scale = 200
 
-        # robot screen center from robot state
-        robot_x = int(self.robot.positions[0])
-        robot_y = int(self.robot.positions[1])
+        # robot screen center in pixels (convert robot meter positions to screen coordinates)
+        robot_x = int(self.pos_init[0] + self.robot.positions[0] * scale)
+        robot_y = int(self.pos_init[1] + self.robot.positions[1] * scale)
+
+        # draw rulers and grid to visualize meters in both x and y
+        self._draw_rulers(scale)
 
         # draw historical path and sized ellipses
         self._draw_history(scale, robot_x, robot_y)
