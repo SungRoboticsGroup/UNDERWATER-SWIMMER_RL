@@ -488,6 +488,54 @@ class SalpRobotEnv(gym.Env):
         yaw_label = font.render(f"{math.degrees(yaw):.0f}°", True, origin_color)
         self.screen.blit(yaw_label, yaw_label.get_rect(center=(int(robot_x), int(robot_y - axis_px - 12))))
 
+    def _draw_nozzle(self, scale: float, robot_x: int, robot_y: int):
+        """Draw the nozzle at the rear of the robot: straight connector + revolute joint + steerable nozzle."""
+        try:
+            yaw = float(self.robot.euler_angles[0])
+            nozzle_angle = float(self.robot.nozzle_angle)
+        except Exception:
+            yaw = 0.0
+            nozzle_angle = 0.0
+
+        # Get robot body dimensions
+        try:
+            body_len = float(self.robot.get_current_length())
+        except Exception:
+            body_len = float(self.robot.init_length)
+
+        # Rear of robot in meters (half body length behind center)
+        rear_offset_m = body_len / 2
+        rear_angle = yaw + math.pi  # opposite direction
+        rear_x = robot_x + math.cos(rear_angle) * rear_offset_m * scale
+        rear_y = robot_y + math.sin(rear_angle) * rear_offset_m * scale
+
+        # 1. Straight connector from rear of robot
+        connector_len_m = 0.05  # 5cm straight connector
+        connector_len_px = connector_len_m * scale
+        joint_x = rear_x + math.cos(rear_angle) * connector_len_px
+        joint_y = rear_y + math.sin(rear_angle) * connector_len_px
+        pygame.draw.line(self.screen, (180, 180, 180), 
+                        (int(rear_x), int(rear_y)), (int(joint_x), int(joint_y)), 3)
+
+        # 2. Revolute joint (small circle)
+        joint_radius = max(4, int(0.015 * scale))  # 1.5cm radius joint
+        pygame.draw.circle(self.screen, (200, 200, 100), (int(joint_x), int(joint_y)), joint_radius)
+        pygame.draw.circle(self.screen, (120, 120, 60), (int(joint_x), int(joint_y)), joint_radius, 2)
+
+        # 3. Nozzle part (rotates around joint by nozzle_angle)
+        nozzle_len_m = 0.08  # 8cm nozzle
+        nozzle_len_px = nozzle_len_m * scale
+        # Nozzle angle is relative to the robot body (rear_angle)
+        nozzle_world_angle = rear_angle + nozzle_angle
+        nozzle_end_x = joint_x + math.cos(nozzle_world_angle) * nozzle_len_px
+        nozzle_end_y = joint_y + math.sin(nozzle_world_angle) * nozzle_len_px
+        
+        # Draw nozzle as a tapered line (thicker at joint, thinner at tip)
+        pygame.draw.line(self.screen, (200, 200, 100),
+                        (int(joint_x), int(joint_y)), (int(nozzle_end_x), int(nozzle_end_y)), 5)
+        # Draw tip
+        pygame.draw.circle(self.screen, (180, 180, 80), (int(nozzle_end_x), int(nozzle_end_y)), 3)
+
     # def _draw_nozzle_and_jet(self, scale: float, robot_x: int, robot_y: int):
     #     # Draw front indicator
     #     front_distance = max(self.ellipse_a, self.ellipse_b) * 0.8
@@ -581,6 +629,9 @@ class SalpRobotEnv(gym.Env):
 
         # draw robot-attached reference frame (rotated with robot yaw)
         self._draw_robot_reference_frame(scale, robot_x, robot_y)
+
+        # draw nozzle (straight connector + revolute joint + steerable nozzle)
+        self._draw_nozzle(scale, robot_x, robot_y)
 
         # draw the current robot body
         # self._draw_body(scale, robot_x, robot_y)
