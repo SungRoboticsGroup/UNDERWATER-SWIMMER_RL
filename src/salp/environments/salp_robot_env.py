@@ -61,6 +61,7 @@ class SalpRobotEnv(gym.Env):
         self.cycle_positions = []
         self.cycle_lengths = []
         self.cycle_widths = []
+        self.cycle_euler_angles = []
         self._history_color = (255, 200, 0)
         # index of the history sample to draw (one ellipse at a time)
         self._history_draw_index = 0
@@ -85,6 +86,7 @@ class SalpRobotEnv(gym.Env):
         self.cycle_positions = []
         self.cycle_lengths = []
         self.cycle_widths = []
+        self.cycle_euler_angles = []
         self._history_draw_index = 0
         self._history_loop = True
         self._history_step = 1
@@ -94,19 +96,21 @@ class SalpRobotEnv(gym.Env):
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         
         self.robot.set_control(action[0], action[1], action[2])  # contraction, coast_time, nozzle angle
-        position_history, length_history, width_history = self.robot.step_through_cycle()
+        position_history, euler_angles_history, length_history, width_history = self.robot.step_through_cycle()
         # print(position_history)
 
         # store the most recent breathing-cycle histories (meters)
         try:
             # convert to Python lists for easier use in render
             self.cycle_positions = [np.array(p) for p in position_history]
+            self.cycle_euler_angles = [np.array(ea) for ea in euler_angles_history]
             self.cycle_lengths = [float(l) for l in length_history]
             self.cycle_widths = [float(w) for w in width_history]
             # start drawing from the first recorded sample
             self._history_draw_index = 0
         except Exception:
             self.cycle_positions = []
+            self.cycle_euler_angles = []
             self.cycle_lengths = []
             self.cycle_widths = []
 
@@ -164,10 +168,17 @@ class SalpRobotEnv(gym.Env):
     
     def _get_info(self) -> Dict:
         """Get additional information."""
+        # Try to extract yaw (first Euler angle) into a simple list for convenience
+        try:
+            yaw_hist = [float(ea[0]) for ea in self.cycle_euler_angles]
+        except Exception:
+            yaw_hist = []
         return {
             "position_history": self.cycle_positions,
             "length_history": self.cycle_lengths,
-            "width_history": self.cycle_widths
+            "width_history": self.cycle_widths,
+            "euler_angle_history": self.cycle_euler_angles,
+            "yaw_history": yaw_hist
         }
 
     # -- Render helper methods -------------------------------------------------
@@ -257,13 +268,16 @@ class SalpRobotEnv(gym.Env):
         # --- 3. Draw the Single Ellipse (Logic moved out of loop) ---
         li = min(idx, len(self.cycle_lengths) - 1) if len(self.cycle_lengths) > 0 else 0
         wi = min(idx, len(self.cycle_widths) - 1) if len(self.cycle_widths) > 0 else 0
+        ei = min(idx, len(self.cycle_euler_angles) - 1) if len(self.cycle_euler_angles) > 0 else 0
         
         try:
             body_len = float(self.cycle_lengths[li])
             body_wid = float(self.cycle_widths[wi])
+            body_angle = float(self.cycle_euler_angles[ei][0])
         except Exception:
             body_len = float(self.robot.init_length)
             body_wid = float(self.robot.init_width)
+            body_angle = float(self.robot.euler_angles[0])
 
         if body_len > 10.0:
             ew = max(4, int(body_len))
@@ -280,10 +294,13 @@ class SalpRobotEnv(gym.Env):
             # Use a solid color or semi-transparent for the single ghost
             # 150 alpha makes it look like a "ghost" but clearly visible
             ell_surf = pygame.Surface((ew, eh), pygame.SRCALPHA)
-            color = (*self._history_color, 150) 
+            color = (*self._history_color, 150)
             pygame.draw.ellipse(ell_surf, color, (0, 0, ew, eh))
-            rect = ell_surf.get_rect(center=(px, py))
-            self.screen.blit(ell_surf, rect)
+            # rotate according to recorded yaw (first Euler angle) for this sample (fallback to current robot yaw)
+            # sample_angle = (float(self.cycle_euler_angles[li][0]) if len(self.cycle_euler_angles) > li else float(self.robot.euler_angles[0]))
+            rotated_surf = pygame.transform.rotate(ell_surf, -math.degrees(body_angle))
+            rect = rotated_surf.get_rect(center=(px, py))
+            self.screen.blit(rotated_surf, rect)
         except Exception:
             pygame.draw.circle(self.screen, self._history_color, (px, py), 3)
 

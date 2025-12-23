@@ -22,9 +22,9 @@ class Robot():
         self.time = 0.0
         self.cycle_time = 0.0
         self.positions = np.zeros(3)  # x, y positions
-        self.angle = 0  #yaw
+        self.euler_angles = np.zeros(3)  #yaw
         self.velocities = np.zeros(3)  # x, y velocities
-        self.angular_velocity = 0.0  # yaw rate
+        self.angular_velocity = np.zeros(3)  # yaw rate
         self.previous_water_volume = 0.0
         self.nozzle_area = nozzle_area  # m^2, cross-sectional area of the nozzle
         self.density = 0  # kg/m^3, density of water
@@ -45,9 +45,9 @@ class Robot():
         self.cycle_time = 0.0
         self.positions = np.zeros(3)  # x, y, z positions
         # print(self.positions)
-        self.angle = 0  #yaw
+        self.euler_angles = np.zeros(3)  # yaw
         self.velocities = np.zeros(3)  # x, y, z velocities
-        self.angular_velocity = 0.0  # yaw rate
+        self.angular_velocity = np.zeros(3)  # yaw rate
         self.previous_water_volume = 0.0
         self.cycle = 0
 
@@ -90,15 +90,17 @@ class Robot():
     def step_through_cycle(self):
         total_cycle_time = self.contract_time + self.release_time + self.coast_time
         positions_history = []
+        euler_angles_history = []
         length_history = []
         width_history = []
         while self.cycle_time < total_cycle_time:
             self.step()
             positions_history.append(self.positions)
+            euler_angles_history.append(self.euler_angles)
             length_history.append(self.get_current_length())
             width_history.append(self.get_current_width())
         
-        return np.array(positions_history), np.array(length_history), np.array(width_history)
+        return np.array(positions_history), np.array(euler_angles_history), np.array(length_history), np.array(width_history)
 
     def contract(self):
         # computes
@@ -116,6 +118,9 @@ class Robot():
         self.positions[0] += self.velocities[0] * self.dt  # update positions
         self.positions[1] += self.velocities[1] * self.dt  # update positions
 
+        self.angular_velocity[0] = 0.001 
+        self.euler_angles[0] += self.angular_velocity[0] * self.dt  # update yaw angle
+    
         self.cycle_time += self.dt
         self.time += self.dt
 
@@ -126,8 +131,8 @@ class Robot():
         drag_force = self._get_drag_force()
         a = (jet_force - drag_force - added_mass) / self.get_mass()  # acceleration
         # self.velocities[0] += a * self.dt  # update velocities
-        self.velocities[0] = 0.01 # m/s
-        self.velocities[1] = 0.01
+        self.velocities[0] = 0.0 # m/s
+        self.velocities[1] = 0.0
         self.positions[0] += self.velocities[0] * self.dt  # update positions
         self.positions[1] += self.velocities[1] * self.dt  # update positions
         # self.positions[0] = 1
