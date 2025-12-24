@@ -68,6 +68,10 @@ class SalpRobotEnv(gym.Env):
         # whether to loop the history animation and how many samples to advance each frame
         self._history_loop = True
         self._history_step = 1
+        # Animation control
+        self._animation_start_time = None
+        self._animation_complete = True
+        self._animation_speed = 20  # milliseconds per frame
 
         self.reset()
     
@@ -108,11 +112,15 @@ class SalpRobotEnv(gym.Env):
             self.cycle_widths = [float(w) for w in width_history]
             # start drawing from the first recorded sample
             self._history_draw_index = 0
+            # Reset animation for new cycle
+            self._animation_start_time = None
+            self._animation_complete = False
         except Exception:
             self.cycle_positions = []
             self.cycle_euler_angles = []
             self.cycle_lengths = []
             self.cycle_widths = []
+            self._animation_complete = True
 
         # Calculate reward
         reward = self._calculate_reward()
@@ -216,24 +224,16 @@ class SalpRobotEnv(gym.Env):
                         (self.tank_margin, self.tank_margin,
                          self.width - 2*self.tank_margin, self.height - 2*self.tank_margin), 3)
 
-    def _draw_history(self, scale: float, robot_x: int, robot_y: int):
-
+    def _draw_history(self, scale: float):
+        """Draw real-time animated simulation of the robot moving through the cycle."""
         if len(self.cycle_positions) == 0:
+            self._animation_complete = True
             return
 
         n = len(self.cycle_positions)
 
-        # --- 1. Data Preparation (Keep this the same) ---
-        # max_coord = 0.0
-        # for p in self.cycle_positions:
-        #     try:
-        #         max_coord = max(max_coord, abs(float(p[0])), abs(float(p[1])))
-        #     except Exception:
-        #         continue
-        # positions_in_pixels = max_coord > 50.0
-
-        # Sample points (Keep this to reduce jitter)
-        sample_step = max(1, n // 80)
+        # Sample points to reduce rendering load
+        sample_step = max(1, n // 50)
         sampled = list(range(0, n, sample_step))
         if sampled[-1] != n - 1:
             sampled.append(n - 1)
@@ -247,25 +247,28 @@ class SalpRobotEnv(gym.Env):
 
             px = int(float(p[0]) * scale) + self.pos_init[0]
             py = int(float(p[1]) * scale) + self.pos_init[1]
-            # print(px, py)
             pts.append((px, py, idx))
 
         if not pts:
+            self._animation_complete = True
             return
 
-        # --- 2. THE NEW ANIMATION LOGIC ---
-        
-        # Calculate which frame to show based on system time.
-        # pygame.time.get_ticks() gives milliseconds. 
-        # Dividing by 50 means "change frame every 50ms" (approx 20 FPS).
-        # The % len(pts) makes it loop back to the start automatically.
-        animation_speed = 50 
-        current_frame_idx = int(pygame.time.get_ticks() / animation_speed) % len(pts)
+        # Initialize animation start time
+        if self._animation_start_time is None:
+            self._animation_start_time = pygame.time.get_ticks()
 
-        # Pick ONLY the one point for this frame
+        # Calculate current frame based on elapsed time since animation start
+        elapsed_time = pygame.time.get_ticks() - self._animation_start_time
+        current_frame_idx = int(elapsed_time / self._animation_speed)
+
+        # Check if animation is complete
+        if current_frame_idx >= len(pts):
+            self._animation_complete = True
+            current_frame_idx = len(pts) - 1  # Show last frame
+
+        # Draw only the current frame
         px, py, idx = pts[current_frame_idx]
-
-        # --- 3. Draw the Single Ellipse (Logic moved out of loop) ---
+        
         li = min(idx, len(self.cycle_lengths) - 1) if len(self.cycle_lengths) > 0 else 0
         wi = min(idx, len(self.cycle_widths) - 1) if len(self.cycle_widths) > 0 else 0
         ei = min(idx, len(self.cycle_euler_angles) - 1) if len(self.cycle_euler_angles) > 0 else 0
@@ -279,50 +282,59 @@ class SalpRobotEnv(gym.Env):
             body_wid = float(self.robot.init_width)
             body_angle = float(self.robot.euler_angles[0])
 
-        if body_len > 10.0:
-            ew = max(4, int(body_len))
-        else:
-            ew = max(4, int(scale * body_len))
+        ew = max(4, int(scale * body_len)) if body_len <= 10.0 else max(4, int(body_len))
+        eh = max(4, int(scale * body_wid)) if body_wid <= 10.0 else max(4, int(body_wid))
 
-        if body_wid > 10.0:
-            eh = max(4, int(body_wid))
-        else:
-            eh = max(4, int(scale * body_wid))
-
-        # Draw it! (I removed the alpha fade since it's just one solid ghost now)
+        # Draw the current position
+        alpha = 180
+        
         try:
-            # Use a solid color or semi-transparent for the single ghost
-            # 150 alpha makes it look like a "ghost" but clearly visible
             ell_surf = pygame.Surface((ew, eh), pygame.SRCALPHA)
-            color = (*self._history_color, 150)
+            color = (*self._history_color, alpha)
             pygame.draw.ellipse(ell_surf, color, (0, 0, ew, eh))
-            # rotate according to recorded yaw (first Euler angle) for this sample (fallback to current robot yaw)
-            # sample_angle = (float(self.cycle_euler_angles[li][0]) if len(self.cycle_euler_angles) > li else float(self.robot.euler_angles[0]))
             rotated_surf = pygame.transform.rotate(ell_surf, -math.degrees(body_angle))
             rect = rotated_surf.get_rect(center=(px, py))
             self.screen.blit(rotated_surf, rect)
         except Exception:
-            pygame.draw.circle(self.screen, self._history_color, (px, py), 3)
+            pygame.draw.circle(self.screen, (*self._history_color, alpha), (px, py), 2)
+
+    def is_animation_complete(self) -> bool:
+        """Check if the current cycle animation has completed."""
+        return self._animation_complete
+
+    def wait_for_animation(self):
+        """Block until the current cycle animation completes."""
+        while not self._animation_complete:
+            self.render()
+            pygame.event.pump()  # Process pygame events to prevent freezing
 
     def _draw_body(self, scale: float, robot_x: int, robot_y: int):
-        # Body color based on robot internal state
-        phase_colors = {
-            "refill": (100, 140, 180),
-            "jet": (70, 100, 150),
-            "coast": (150, 100, 70),
-            "rest": (100, 140, 180)
-        }
-        body_color = phase_colors.get(self.robot.get_state(), (100, 140, 180))
+        """Draw the current robot body at the end-of-cycle position with current dimensions."""
+        # Body color - yellow
+        body_color = (255, 200, 0)  # Yellow
+        outline_color = (255, 255, 255)  # White outline
 
-        # Draw morphing body
-        ellipse_width = max(2, int(scale * float(self.robot.get_current_length())))
-        ellipse_height = max(2, int(scale * float(self.robot.get_current_width())))
+        # Get current robot dimensions at end of cycle
+        try:
+            body_length = float(self.robot.get_current_length())
+            body_width = float(self.robot.get_current_width())
+            body_angle = float(self.robot.euler_angles[0])
+        except Exception:
+            body_length = float(self.robot.init_length)
+            body_width = float(self.robot.init_width)
+            body_angle = 0.0
 
+        # Convert to pixels
+        ellipse_width = max(4, int(scale * body_length))
+        ellipse_height = max(4, int(scale * body_width))
+
+        # Create and draw the ellipse
         ellipse_surf = pygame.Surface((ellipse_width, ellipse_height), pygame.SRCALPHA)
         pygame.draw.ellipse(ellipse_surf, body_color, (0, 0, ellipse_width, ellipse_height))
+        pygame.draw.ellipse(ellipse_surf, outline_color, (0, 0, ellipse_width, ellipse_height), 2)
 
-        # Robot body rotation uses robot.angle
-        rotated_surf = pygame.transform.rotate(ellipse_surf, -math.degrees(self.robot.angle))
+        # Rotate according to robot's current yaw angle
+        rotated_surf = pygame.transform.rotate(ellipse_surf, -math.degrees(body_angle))
         rect = rotated_surf.get_rect(center=(robot_x, robot_y))
         self.screen.blit(rotated_surf, rect)
 
@@ -536,70 +548,35 @@ class SalpRobotEnv(gym.Env):
         # Draw tip
         pygame.draw.circle(self.screen, (180, 180, 80), (int(nozzle_end_x), int(nozzle_end_y)), 3)
 
-    # def _draw_nozzle_and_jet(self, scale: float, robot_x: int, robot_y: int):
-    #     # Draw front indicator
-    #     front_distance = max(self.ellipse_a, self.ellipse_b) * 0.8
-    #     front_x = robot_x + math.cos(self.robot.angle) * front_distance
-    #     front_y = robot_y + math.sin(self.robot.angle) * front_distance
-    #     pygame.draw.circle(self.screen, (255, 255, 255), (int(front_x), int(front_y)), 4)
+    def _draw_cycle_info(self):
+        """Draw cycle count and robot state information overlay."""
+        if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+            pygame.font.init()
+        
+        font = pygame.font.Font(None, 28)
+        small_font = pygame.font.Font(None, 20)
+        
+        # Cycle count
+        cycle_text = font.render(f"Cycle: {self.robot.cycle}", True, (255, 255, 255))
+        self.screen.blit(cycle_text, (10, 10))
+        
+        # Current state
+        state_text = small_font.render(f"State: {self.robot.get_state()}", True, (200, 200, 200))
+        self.screen.blit(state_text, (10, 40))
+        
+        # Position
+        pos_text = small_font.render(f"Position: ({self.robot.positions[0]:.3f}, {self.robot.positions[1]:.3f}) m", True, (200, 200, 200))
+        self.screen.blit(pos_text, (10, 65))
+        
+        # Angle
+        angle_deg = math.degrees(self.robot.euler_angles[0])
+        angle_text = small_font.render(f"Yaw: {angle_deg:.1f}°", True, (200, 200, 200))
+        self.screen.blit(angle_text, (10, 90))
 
-    #     # Draw steerable nozzle
-    #     back_distance = max(self.ellipse_a, self.ellipse_b) * 0.9
-    #     back_x = robot_x + math.cos(self.robot.angle + math.pi) * back_distance
-    #     back_y = robot_y + math.sin(self.robot.angle + math.pi) * back_distance
+    def get_cycle_count(self) -> int:
+        """Get the current cycle count from the robot."""
+        return self.robot.cycle
 
-    #     nozzle_world_angle = self.robot.angle + math.pi + self.robot.nozzle_angle
-    #     nozzle_length = 15
-    #     nozzle_end_x = back_x + math.cos(nozzle_world_angle) * nozzle_length
-    #     nozzle_end_y = back_y + math.sin(nozzle_world_angle) * nozzle_length
-
-    #     pygame.draw.line(self.screen, (200, 200, 100),
-    #                     (int(back_x), int(back_y)), (int(nozzle_end_x), int(nozzle_end_y)), 4)
-
-    #     # Draw water jet during 'jet' phase
-    #     if self.robot.get_state() == "jet":
-    #         num_particles = 8
-    #         for i in range(num_particles):
-    #             base_distance = nozzle_length + 5 + i * 4
-    #             curve_factor = abs(self.robot.nozzle_angle) * 0.5
-    #             curve_offset = curve_factor * (i * 0.3)
-
-    #             perpendicular_angle = nozzle_world_angle + math.pi/2
-    #             if self.robot.nozzle_angle > 0:
-    #                 curve_offset = -curve_offset
-
-    #             straight_x = back_x + math.cos(nozzle_world_angle) * base_distance
-    #             straight_y = back_y + math.sin(nozzle_world_angle) * base_distance
-
-    #             curved_x = straight_x + math.cos(perpendicular_angle) * curve_offset
-    #             curved_y = straight_y + math.sin(perpendicular_angle) * curve_offset
-
-    #             spread_variation = (i - num_particles/2) * 0.08
-    #             spread_x = curved_x + math.cos(perpendicular_angle) * spread_variation * 3
-    #             spread_y = curved_y + math.sin(perpendicular_angle) * spread_variation * 3
-
-    #             particle_size = max(1, 5 - i)
-    #             blue_intensity = max(100, 200 - i * 15)
-    #             particle_color = (80, 120, blue_intensity)
-
-    #             pygame.draw.circle(self.screen, particle_color,
-    #                              (int(spread_x), int(spread_y)), particle_size)
-
-    # def _draw_ui(self):
-    #     if hasattr(pygame, 'font') and pygame.font.get_init():
-    #         font = pygame.font.Font(None, 24)
-    #         info_lines = [
-    #             "SALP Robot - Steerable Nozzle",
-    #             f"Phase: {self.robot.get_state().title()}",
-    #             f"Body Size: {max(self.ellipse_a, self.ellipse_b):.2f}",
-    #             f"Speed: {self.robot.velocities[0]:.2f}",
-    #             f"Nozzle: {math.degrees(self.robot.nozzle_angle):.0f}°",
-    #         ]
-
-    #         for i, line in enumerate(info_lines):
-    #             text = font.render(line, True, (255, 255, 255))
-    #             self.screen.blit(text, (10, 10 + i * 25))
-    
     def render(self):
         """Render the environment."""
         if self.render_mode is None:
@@ -617,6 +594,7 @@ class SalpRobotEnv(gym.Env):
         # robot screen center in pixels (convert robot meter positions to screen coordinates)
         robot_x = int(self.pos_init[0] + self.robot.positions[0] * scale)
         robot_y = int(self.pos_init[1] + self.robot.positions[1] * scale)
+        # print(f"Robot screen pos: ({robot_x}, {robot_y})")
 
         # draw rulers and grid to visualize meters in both x and y
         self._draw_rulers(scale)
@@ -625,7 +603,11 @@ class SalpRobotEnv(gym.Env):
         self._draw_reference_frame(scale)
 
         # draw historical path and sized ellipses
-        self._draw_history(scale, robot_x, robot_y)
+        # draw real-time animated history of the current cycle
+        # self._draw_history(scale)
+
+        # draw current robot body at end-of-cycle position
+        self._draw_body(scale, robot_x, robot_y)
 
         # draw robot-attached reference frame (rotated with robot yaw)
         self._draw_robot_reference_frame(scale, robot_x, robot_y)
@@ -633,14 +615,8 @@ class SalpRobotEnv(gym.Env):
         # draw nozzle (straight connector + revolute joint + steerable nozzle)
         self._draw_nozzle(scale, robot_x, robot_y)
 
-        # draw the current robot body
-        # self._draw_body(scale, robot_x, robot_y)
-
-        # draw nozzle and any jet particles
-        # self._draw_nozzle_and_jet(scale, robot_x, robot_y)
-
-        # draw UI overlay
-        # self._draw_ui()
+        # draw cycle info overlay
+        self._draw_cycle_info()
 
         if self.render_mode == "human":
             pygame.display.flip()
@@ -663,10 +639,14 @@ if __name__ == "__main__":
     obs, info = env.reset()
     
     done = False
+    cnt = 0
     while not done:
         action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         obs, reward, done, truncated, info = env.step(action)
-        env.render()    
+        cnt += 1
+        # Wait for the animation to complete before next step
+        # env.wait_for_animation()
+        env.render()
     env.close()
     

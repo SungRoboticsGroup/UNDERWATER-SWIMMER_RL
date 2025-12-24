@@ -118,7 +118,7 @@ class Robot():
         self.positions[0] += self.velocities[0] * self.dt  # update positions
         self.positions[1] += self.velocities[1] * self.dt  # update positions
 
-        self.angular_velocity[0] = 0.00 
+        self.angular_velocity[0] = 0.001 
         self.euler_angles[0] += self.angular_velocity[0] * self.dt  # update yaw angle
     
         self.cycle_time += self.dt
