@@ -34,6 +34,11 @@ class Robot():
 
         self._contract_rate = 0.0
         self._release_rateS = 0.0
+
+        self._drag_coefficents = [0.2, 0.5] # min and max drag coefficients for different shapes
+
+        self.length = 0.0
+        self.width = 0.0
     
     def set_environment(self, density: float):
 
@@ -188,11 +193,11 @@ class Robot():
 
     def _get_jet_force(self) -> float:
 
-        # water_mass = self._get_water_volume()
-        # mass_rate = (water_mass - self.previous_water_volume) / self.dt
-        # jet_velocity = self._get_jet_velocity()
-        # jet_force = mass_rate * jet_velocity
-        jet_force = 0.0  # placeholder for now 
+        water_mass = self._get_water_volume()
+        mass_rate = (water_mass - self.previous_water_volume) / self.dt
+        jet_velocity = self._get_jet_velocity()
+        jet_force = mass_rate * jet_velocity
+        # jet_force = 0.0  # placeholder for now 
 
         return jet_force
     
@@ -205,12 +210,42 @@ class Robot():
 
         return jet_velocity
     
+    def _length_width_relation(self, length) -> float:
+        
+        # simple linear relation for now
+        width = self.init_length - length + self.init_width
+
+        return width
+
+    def _get_drag_coefficient(self) -> float:
+        # Map drag coefficient based on aspect ratio (length/width)
+        # More elongated (contracted) = lower drag, more spherical = higher drag
+        aspect_ratio = self.length / self.width
+        
+        # Calculate aspect ratio range
+        init_aspect_ratio = self.init_length / self.init_width  # most elongated
+        contracted_length = self.init_length - self.max_contraction
+        contracted_width = self._length_width_relation(contracted_length)
+        min_aspect_ratio = contracted_length / contracted_width  # most spherical
+        
+        # Normalize current aspect ratio to [0, 1]
+        # 0 = most spherical (max drag), 1 = most elongated (min drag)
+        normalized_ratio = (aspect_ratio - min_aspect_ratio) / (init_aspect_ratio - min_aspect_ratio)
+        normalized_ratio = np.clip(normalized_ratio, 0, 1)
+        
+        # Interpolate: elongated -> low drag, spherical -> high drag
+        C_d = self._drag_coefficents[1] - normalized_ratio * (self._drag_coefficents[1] - self._drag_coefficents[0])
+        
+        return C_d 
+
     def _get_drag_force(self) -> float:
 
-        # drag_force = 0.5 * self.density * (self.velocities**2) * self._get_cross_sectional_area() * self.drag_coefficient  # drag coefficient for sphere is 0.47
-        drag_force = 0.0  # placeholder for now
+        C_d = self._get_drag_coefficient()
+        A = self._get_cross_sectional_area()
+        F_drag = 0.5 * self.density * A * C_d * abs(self.velocities) * self.velocities 
+        # drag_force = 0.0  # placeholder for now
 
-        return drag_force
+        return F_drag
     
     def _get_added_mass(self) -> float:
 
@@ -218,6 +253,41 @@ class Robot():
         added_mass = 0.0  # placeholder for now
 
         return added_mass
+
+    def _newton_equations(self):
+        
+        # Forces presented here
+        # 1. coriolis force 
+        # 2. drag force
+        # 3. jet force
+        
+        F_coriolis = self._get_coriolis_force()
+        F_drag = self._get_drag_force()
+        F_jet = self._get_jet_force()
+
+        mass = np.diag(self.get_mass() * np.ones(3))
+
+        a = np.linalg.inv(mass) @ (F_jet + F_drag + F_coriolis)
+
+        return a
+    
+    def _euler_equations(self) -> float:
+        
+        # Torques presented here
+        # 1. coriolis torque
+        # 2. drag torque
+        # 3. jet torque
+
+        T_coriolis = self._get_coriolis_torque()
+        T_drag = self._get_drag_torque()
+        T_jet = self._get_jet_torque()
+
+        I = self._get_inertia_matrix()
+
+        alpha = np.linalg.inv(I) @ (T_jet + T_drag + T_coriolis)
+
+        return alpha
+
 
     def _get_water_volume(self) -> float:
         
