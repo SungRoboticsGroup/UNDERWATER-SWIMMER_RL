@@ -14,18 +14,39 @@ class Nozzle():
     def get_position(self) -> np.ndarray:
         # compute the nozzle direction vector based on angles
         # placeholder for now
-        direction = np.array([self.length1 + self.length2, 0.0, 0.0])  # pointing along x axis
 
-        R1 = np.array([[np.cos(self.angle1), 0, np.sin(self.angle1)],
-                       [0, 1, 0],
-                       [-np.sin(self.angle1), 0, np.cos(self.angle1)]])
-        
-        R2 = np.array([[np.cos(self.angle2), -np.sin(self.angle2), 0],   
-                       [np.sin(self.angle2), np.cos(self.angle2), 0],
-                       [0, 0, 1]])
-        
+        # nozzle tilted at 45 degrees downwards
+        theta = -np.pi / 4
+        pos_x = 0
+        pos_y = self.length2 * np.sin(theta)
+        pos_z = self.length2 * np.cos(theta)
+        nozzle_position = np.array([pos_x, pos_y, pos_z])  # base position of the nozzle
+        # print("nozzle position before rotation:", nozzle_position)
 
-        return direction
+        pos_x1 = 0
+        pos_y1 = 0
+        pos_z1 = self.length1
+        base_position = np.array([pos_x1, pos_y1, pos_z1])  # base position of the nozzle
+
+        R_theta_fixed = np.array([[1, 0, 0],
+                                  [0, np.cos(theta), -np.sin(theta)],
+                                  [0, np.sin(theta), np.cos(theta)]])
+        # print(R_theta_fixed)
+        
+        R_alpha = np.array([[np.cos(self.angle2), -np.sin(self.angle2), 0], 
+                            [np.sin(self.angle2), np.cos(self.angle2), 0], 
+                            [0, 0, 1]])  
+        
+        R_beta = np.array([[np.cos(self.angle1), -np.sin(self.angle1), 0],   
+                           [np.sin(self.angle1), np.cos(self.angle1), 0],
+                           [0, 0, 1]])
+
+        # print(nozzle_position)
+        # print(R_alpha @ nozzle_position)
+        # print(R_theta_fixed @ R_alpha @ nozzle_position)
+        position = R_beta @ (base_position + R_theta_fixed @ R_alpha @ nozzle_position)
+
+        return position
 
 class Robot():
     
