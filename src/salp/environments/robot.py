@@ -1,5 +1,32 @@
 import numpy as np
 
+class Nozzle():
+    def __init__(self, length1: float = 0.0, length2: float = 0.0):
+        self.length1 = length1  
+        self.length2 = length2
+        self.angle1 = 0.0  # angle around y axis
+        self.angle2 = 0.0  # angle around z axis 
+    
+    def set_angles(self, angle1: float, angle2: float):
+        self.angle1 = angle1
+        self.angle2 = angle2
+    
+    def get_position(self) -> np.ndarray:
+        # compute the nozzle direction vector based on angles
+        # placeholder for now
+        direction = np.array([self.length1 + self.length2, 0.0, 0.0])  # pointing along x axis
+
+        R1 = np.array([[np.cos(self.angle1), 0, np.sin(self.angle1)],
+                       [0, 1, 0],
+                       [-np.sin(self.angle1), 0, np.cos(self.angle1)]])
+        
+        R2 = np.array([[np.cos(self.angle2), -np.sin(self.angle2), 0],   
+                       [np.sin(self.angle2), np.cos(self.angle2), 0],
+                       [0, 0, 1]])
+        
+
+        return direction
+
 class Robot():
     
     # TODO:
@@ -16,7 +43,7 @@ class Robot():
         self.max_contraction = max_contraction  # max contraction length
         self.state = self.phase[3]  # initial state is rest
         self.contraciton = 0.0  # contraction level
-        self.nozzle_angle = 0.0  # current angle of nozzle
+        self.nozzle_angles = np.zeros(2)  # current angle of nozzle
         self.cycle = 0
         self.dt = 0.01
         self.time = 0.0
@@ -193,7 +220,7 @@ class Robot():
 
     def _get_jet_force(self) -> float:
 
-        water_mass = self._get_water_volume()
+        water_mass = self._get_water_mass()
         mass_rate = (water_mass - self.previous_water_volume) / self.dt
         jet_velocity = self._get_jet_velocity()
         jet_force = mass_rate * jet_velocity
@@ -201,12 +228,32 @@ class Robot():
 
         return jet_force
     
+    def _nozzle_angles_to_rotation_matrix(self) -> np.ndarray:
+        # placeholder for now
+        R = np.eye(3)
+
+        return R
+
     def _get_jet_velocity(self) -> float:
         
         # velocity is with respect to the robot frame
         water_volume = self._get_water_volume()
         volume_rate = (water_volume - self.previous_water_volume) / self.dt
-        jet_velocity = volume_rate / self.nozzle_area
+        jet_speed = volume_rate / self.nozzle_area
+        
+        R = self._nozzle_angles_to_rotation_matrix(self.nozzle_angles)
+        # body frame 
+        # alpha = 0 # around y axis
+        # beta = 0 # around z axis
+        # R_y = np.array([[np.cos(alpha), 0, np.sin(alpha)],
+        #                 [0, 1, 0],
+        #                 [-np.sin(alpha), 0, np.cos(alpha)]])
+        
+        # R_z = np.array([[np.cos(beta), -np.sin(beta), 0],   
+        #                 [np.sin(beta), np.cos(beta), 0],
+        #                 [0, 0, 1]])
+        jet_velocity = np.array([-jet_speed, 0, 0])  # jet velocity in body frame
+        jet_velocity = R @ jet_velocity  # rotate to world frame
 
         return jet_velocity
     
@@ -291,16 +338,13 @@ class Robot():
 
     def _get_water_volume(self) -> float:
         
-        length = self.get_current_length()
-        width = self.get_current_width()
-        volume = 4/3*np.pi*(length/2)*(width/2)**2
+        volume = 4/3 * np.pi * (self.length/2) * (self.width/2) ** 2
 
         return volume
 
     def _get_water_mass(self) -> float:
 
-        density = 997  # kg/m^3
-        mass = density * self._get_water_volume()
+        mass = self.density * self._get_water_volume()
 
         return mass
 
