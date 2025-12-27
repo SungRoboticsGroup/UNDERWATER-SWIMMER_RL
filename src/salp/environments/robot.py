@@ -1,9 +1,10 @@
 import numpy as np
 
 class Nozzle():
-    def __init__(self, length1: float = 0.0, length2: float = 0.0):
+    def __init__(self, length1: float = 0.0, length2: float = 0.0, area: float = 0.0):
         self.length1 = length1  
         self.length2 = length2
+        self.area = area    
         self.angle1 = 0.0  # angle around y axis
         self.angle2 = 0.0  # angle around z axis 
     
@@ -84,7 +85,7 @@ class Robot():
     phase = ["refill", "jet", "coast", "rest"]
 
     def __init__(self, dry_mass: float, init_length: float, init_width: float, 
-                 max_contraction: float, nozzle_area: float, nozzle: Nozzle):
+                 max_contraction: float, nozzle: Nozzle):
         
         self.dry_mass = dry_mass # kg
         self.init_length = init_length # meters
@@ -102,7 +103,6 @@ class Robot():
         self.velocities = np.zeros(3)  # x, y velocities
         self.angular_velocity = np.zeros(3)  # yaw rate
         self.previous_water_volume = 0.0
-        self.nozzle_area = nozzle_area  # m^2, cross-sectional area of the nozzle
         self.density = 0  # kg/m^3, density of water
         self.contract_time = 0.0
         self.release_time = 0.0
@@ -264,9 +264,10 @@ class Robot():
 
     def get_mass(self) -> float:
 
-        total_mass = self.dry_mass + self._get_water_mass()
+        mass = self.dry_mass + self._get_water_mass()
+        mass *= np.diag(np.ones(3))
 
-        return total_mass
+        return mass
 
     def _get_jet_force(self) -> float:
 
@@ -283,7 +284,7 @@ class Robot():
         # velocity is with respect to the robot frame
         water_volume = self._get_water_volume()
         volume_rate = (water_volume - self.previous_water_volume) / self.dt
-        jet_speed = volume_rate / self.nozzle_area
+        jet_speed = volume_rate / self.robot.nozzle.area  # m/s
         
         direction = self.robot.nozzle.get_nozzle_direction()
         jet_velocity = -direction * jet_speed  # jet velocity in robot frame
@@ -333,6 +334,13 @@ class Robot():
         added_mass = 0.0  # placeholder for now
 
         return added_mass
+    
+    def _get_coriolis_force(self) -> float:
+        
+        # placeholder for now
+        F_coriolis = self.get_mass() @ self.angular_velocity * self.velocities
+
+        return F_coriolis
 
     def _newton_equations(self):
         
