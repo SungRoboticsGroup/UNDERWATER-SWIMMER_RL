@@ -128,6 +128,8 @@ class Robot():
         self.jet_force = np.zeros(3)  # jet force vector
         self.jet_velocity = np.zeros(3)  # jet velocity vector
         self.volume = 0.0  # water volume inside the robot
+        self.drag_force = np.zeros(3)  # drag force vector
+        self.drag_coefficient = 0.0
 
         self._contract_rate = 0.0
         self._release_rateS = 0.0
@@ -216,6 +218,8 @@ class Robot():
         jet_force_data = [self.jet_force]
         jet_velocity_data = [self.jet_velocity]
         volume_data = [self.volume]
+        drag_data = [self.drag_force]
+        drag_coefficient_data = [self.drag_coefficient]
         while self.cycle_time < total_cycle_time:
             self.step()
             positions_history.append(self.positions)
@@ -228,12 +232,15 @@ class Robot():
             jet_force_data.append(self.jet_force)
             jet_velocity_data.append(self.jet_velocity)
             volume_data.append(self.volume)
+            drag_data.append(self.drag_force)
+            drag_coefficient_data.append(self.drag_coefficient) 
         
         return np.array(positions_history), np.array(euler_angles_history), \
                 np.array(length_history), np.array(width_history), \
                 np.array(mass_history), np.array(area_data), \
                 np.array(state_data), np.array(jet_force_data), \
-                np.array(jet_velocity_data), np.array(volume_data)
+                np.array(jet_velocity_data), np.array(volume_data), \
+                np.array(drag_data), np.array(drag_coefficient_data)
     
     def _update_states(self):
 
@@ -305,7 +312,7 @@ class Robot():
         # jet_force = 0.0  # placeholder for now 
         # print("jet force:", jet_force)
 
-        C_discharge = 0.8  # discharge coefficient
+        C_discharge = 0.1  # discharge coefficient
         self.jet_force = jet_force * C_discharge
 
         return self.jet_force
@@ -353,15 +360,17 @@ class Robot():
         # Interpolate: elongated -> low drag, spherical -> high drag
         C_d = self._drag_coefficents[1] - normalized_ratio * (self._drag_coefficents[1] - self._drag_coefficents[0])
         
+        self.drag_coefficient = C_d
         return C_d 
 
     def _get_drag_force(self) -> float:
 
         C_d = self._get_drag_coefficient()
         self.area = self._get_cross_sectional_area()
-        F_drag = 0.5 * self.density * self.area * C_d * abs(self.velocities) * self.velocities 
+        F_drag = - 0.5 * self.density * self.area * C_d * abs(self.velocities) * self.velocities 
+        print(self.velocities)
         # drag_force = 0.0  # placeholder for now
-
+        self.drag_force = F_drag  # drag force opposes motion
         return F_drag
     
     def _get_added_mass(self) -> float:
@@ -388,6 +397,8 @@ class Robot():
         F_coriolis = self._get_coriolis_force()
         F_drag = self._get_drag_force()
         F_jet = self._get_jet_force()
+        print("F_jet:", F_jet)
+        print("F_drag:", F_drag)
 
         mass = self.get_mass()
 
@@ -793,44 +804,73 @@ def plot_jet_velocity(time_data, jet_velocity_data,
     return fig
 
 
-def plot_drag_properties(time_data, drag_coefficient_data, drag_force_data, 
+def plot_drag_properties(time_data, drag_force_data, 
                         state_data=None, title="Drag Properties Over Time"):
     """
-    Plot drag coefficient and drag force.
+    Plot drag forces in X, Y, and Z dimensions.
     
     Args:
         time_data: Array of time values
-        drag_coefficient_data: Array of drag coefficient values
         drag_force_data: Array of drag force values (3D vectors)
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
     import matplotlib.pyplot as plt
     
-    drag_force_mag = np.linalg.norm(drag_force_data, axis=1)
+    # Create subplots for X, Y, Z components
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
     
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+    # Labels and colors for each dimension
+    dimensions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, dim, color) in enumerate(zip(axes, dimensions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        ax.plot(time_data, drag_force_data[:, i], color=color, linewidth=2, zorder=3, label=f'Drag {dim}')
+        ax.set_ylabel(f'Drag Force {dim} (N)')
+        ax.set_title(f'Drag Force - {dim} Dimension')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+    
+    axes[-1].set_xlabel('Time (s)')
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_drag_coefficient(time_data, drag_coefficient_data, 
+                         state_data=None, title="Drag Coefficient Over Time"):
+    """
+    Plot drag coefficient over time.
+    
+    Args:
+        time_data: Array of time values
+        drag_coefficient_data: Array of drag coefficient values
+        state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
+        title: Plot title
+    
+    Returns:
+        Matplotlib figure object
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
-        _add_phase_backgrounds(ax1, time_data, state_data)
-        _add_phase_backgrounds(ax2, time_data, state_data)
+        _add_phase_backgrounds(ax, time_data, state_data)
     
-    # Drag coefficient
-    ax1.plot(time_data, drag_coefficient_data, 'g-', linewidth=2)
-    ax1.set_xlabel('Time (s)')
-    ax1.set_ylabel('Drag Coefficient')
-    ax1.set_title('Drag Coefficient')
-    ax1.grid(True, alpha=0.3)
+    ax.plot(time_data, drag_coefficient_data, 'g-', linewidth=2, zorder=3)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Drag Coefficient')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
     
-    # Drag force magnitude
-    ax2.plot(time_data, drag_force_mag, 'orange', linewidth=2)
-    ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel('Drag Force (N)')
-    ax2.set_title('Drag Force Magnitude')
-    ax2.grid(True, alpha=0.3)
-    
-    plt.suptitle(title)
     plt.tight_layout()
     plt.show()
     
@@ -988,17 +1028,20 @@ if __name__ == "__main__":
     # Step through a cycle and collect state data
     positions_history, euler_angles_history, length_history, \
     width_history, mass_history, area_data, state_data, \
-    jet_force_data, jet_velocity_data, volume_data = robot.step_through_cycle()
+    jet_force_data, jet_velocity_data, volume_data, drag_data, \
+    drag_coefficient_data = robot.step_through_cycle()
     
     # Create time array
     time_array = np.arange(0, robot.time + robot.dt, robot.dt)[:len(length_history)]
     
     # Plot with phase backgrounds
     # plot_robot_geometry(time_array, length_history, width_history, state_data) 
-    plot_robot_mass(time_array, mass_history, state_data) 
-    plot_mass_rate(time_array, mass_history, state_data)
-    plot_volume_rate(time_array, volume_data, state_data)   
+    # plot_robot_mass(time_array, mass_history, state_data) 
+    # plot_mass_rate(time_array, mass_history, state_data)
+    # plot_volume_rate(time_array, volume_data, state_data)   
 
     # plot_cross_sectional_area(time_array, area_data, state_data)  
-    plot_jet_velocity(time_array, jet_velocity_data, state_data)  # approximate jet velocity
+    # plot_jet_velocity(time_array, jet_velocity_data, state_data)  # approximate jet velocity
     plot_jet_properties(time_array, jet_force_data, state_data)
+    plot_drag_coefficient(time_array, drag_coefficient_data, state_data)
+    plot_drag_properties(time_array, drag_data, state_data)
