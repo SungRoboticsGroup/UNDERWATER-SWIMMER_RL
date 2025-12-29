@@ -293,19 +293,19 @@ class Robot():
     def contract(self):
 
         self.accelerations = self._newton_equations()
-        self.accelerations = np.zeros(3)  # test orientation
+        # self.accelerations = np.zeros(3)  # test orientation
         self.angular_acceleration = self._euler_equations()
         self._update_states()
         
     def release(self):
         self.accelerations = self._newton_equations()
-        self.accelerations = np.zeros(3)  # test orientation
+        # self.accelerations = np.zeros(3)  # test orientation
         self.angular_acceleration = self._euler_equations()
         self._update_states()
 
     def coast(self):
         self.accelerations = self._newton_equations()
-        self.accelerations = np.zeros(3)  # test orientation
+        # self.accelerations = np.zeros(3)  # test orientation
         self.angular_acceleration = self._euler_equations()
         self._update_states()
 
@@ -363,7 +363,7 @@ class Robot():
     def _get_jet_torque(self) -> float:
 
         # placeholder for now
-        T_jet = np.cross(self._get_jet_moment_arm(), self._get_jet_force())
+        T_jet = np.cross(self._get_jet_moment_arm(), self.jet_force)
         self.jet_torque = T_jet
         return T_jet
     
@@ -395,6 +395,7 @@ class Robot():
         water_volume = self._get_water_volume()
         # print(water_volume)
         volume_rate = (water_volume - self.previous_water_volume) / self.dt
+        # print("volume rate:", volume_rate)
         self.previous_water_volume = water_volume
         jet_speed = volume_rate / self.nozzle.area  # m/s
         
@@ -506,6 +507,7 @@ class Robot():
         T_coriolis = self._get_coriolis_torque()
         T_drag = self._get_drag_torque()
         T_jet = self._get_jet_torque()
+        # T_jet = np.array([0.0, 0.0, 0.0])  # test orientation
 
         I = self.get_inertia_matrix()
         # print(T_coriolis)
@@ -614,16 +616,16 @@ if __name__ == "__main__":
     # plot_volume_rate(time_array, volume_data, state_data)   
 
     # plot_cross_sectional_area(time_array, area_data, state_data)  
-    plot_jet_velocity(time_array, jet_velocity_data, state_data)  # approximate jet velocity
-    plot_jet_properties(time_array, jet_force_data, state_data)
+    # plot_jet_velocity(time_array, jet_velocity_data, state_data)  # approximate jet velocity
+    # plot_jet_properties(time_array, jet_force_data, state_data)
     # plot_drag_coefficient(time_array, drag_coefficient_data, state_data)
     # plot_drag_properties(time_array, drag_data, state_data)
-    # plot_robot_position(time_array, positions_history, state_data)
+    plot_robot_position(time_array, positions_history, state_data)
     # print("Velocity data shape:", velocity_data)
-    # plot_robot_velocity(time_array, velocity_data, state_data)  
+    plot_robot_velocity(time_array, velocity_data, state_data)  
 
     plot_angular_velocity(time_array, angular_velocity_data, state_data)
-    plot_jet_torque(time_array, jet_torque_data, state_data)
+    # plot_jet_torque(time_array, jet_torque_data, state_data)
     # plot_drag_torque(time_array, drag_torque_data, state_data)
     # plot_angular_acceleration(time_array, angular_acceleration_data, state_data)
-    # plot_euler_angles(time_array, euler_angles_history, state_data)
+    plot_euler_angles(time_array, euler_angles_history, state_data)

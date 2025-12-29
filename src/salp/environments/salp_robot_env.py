@@ -11,7 +11,7 @@ import pygame
 import math
 from typing import Tuple, Optional, Dict, Any
 import matplotlib.pyplot as plt
-from robot import Robot
+from robot import Robot, Nozzle
 
 class SalpRobotEnv(gym.Env):
     """
@@ -100,7 +100,7 @@ class SalpRobotEnv(gym.Env):
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         
         self.robot.set_control(action[0], action[1], action[2])  # contraction, coast_time, nozzle angle
-        position_history, euler_angles_history, length_history, width_history = self.robot.step_through_cycle()
+        position_history, euler_angles_history, length_history, width_history, *rest = self.robot.step_through_cycle()
         # print(position_history)
 
         # store the most recent breathing-cycle histories (meters)
@@ -634,7 +634,10 @@ class SalpRobotEnv(gym.Env):
 if __name__ == "__main__":
     
     # TODO: need to fix the scale issues with the robot size and movement speed
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, max_contraction=0.06, nozzle_area=0.001)
+    nozzle = Nozzle(length1=0.01, length2=0.01, area=0.00009)
+    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
+                  max_contraction=0.06, nozzle=nozzle)
+    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)
     env = SalpRobotEnv(render_mode="human", robot=robot)
     obs, info = env.reset()
     
