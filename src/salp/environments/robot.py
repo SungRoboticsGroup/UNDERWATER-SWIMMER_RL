@@ -208,8 +208,8 @@ class Robot():
     
     def step_through_cycle(self):
         total_cycle_time = self.contract_time + self.release_time + self.coast_time
-        positions_history = [self.positions]
-        euler_angles_history = [self.euler_angles]
+        positions_history = [self.positions.copy()]
+        euler_angles_history = [self.euler_angles.copy()]
         length_history = [self.length]
         width_history = [self.width]
         mass_history = [self.get_mass()[0,0]]  # store only scalar mass value
@@ -220,10 +220,11 @@ class Robot():
         volume_data = [self.volume]
         drag_data = [self.drag_force]
         drag_coefficient_data = [self.drag_coefficient]
+        velocity_data = [self.velocities.copy()]
         while self.cycle_time < total_cycle_time:
             self.step()
-            positions_history.append(self.positions)
-            euler_angles_history.append(self.euler_angles)
+            positions_history.append(self.positions.copy())
+            euler_angles_history.append(self.euler_angles.copy())
             length_history.append(self.length)
             width_history.append(self.width)
             mass_history.append(self.mass)
@@ -234,16 +235,18 @@ class Robot():
             volume_data.append(self.volume)
             drag_data.append(self.drag_force)
             drag_coefficient_data.append(self.drag_coefficient) 
+            velocity_data.append(self.velocities.copy())
         
         return np.array(positions_history), np.array(euler_angles_history), \
                 np.array(length_history), np.array(width_history), \
                 np.array(mass_history), np.array(area_data), \
                 np.array(state_data), np.array(jet_force_data), \
                 np.array(jet_velocity_data), np.array(volume_data), \
-                np.array(drag_data), np.array(drag_coefficient_data)
+                np.array(drag_data), np.array(drag_coefficient_data), \
+                np.array(velocity_data)
     
     def _update_states(self):
-
+        print(self.velocities)
         self.velocities += self.accelerations * self.dt  # update velocities
         self.positions += self.velocities * self.dt  # update positions
         
@@ -252,11 +255,8 @@ class Robot():
     def contract(self):
 
         self.accelerations = self._newton_equations()
-
         self._update_states()
         
-            
-
     def release(self):
         self.accelerations = self._newton_equations()
         self._update_states()
@@ -368,7 +368,7 @@ class Robot():
         C_d = self._get_drag_coefficient()
         self.area = self._get_cross_sectional_area()
         F_drag = - 0.5 * self.density * self.area * C_d * abs(self.velocities) * self.velocities 
-        print(self.velocities)
+        # print(self.velocities)
         # drag_force = 0.0  # placeholder for now
         self.drag_force = F_drag  # drag force opposes motion
         return F_drag
@@ -397,8 +397,8 @@ class Robot():
         F_coriolis = self._get_coriolis_force()
         F_drag = self._get_drag_force()
         F_jet = self._get_jet_force()
-        print("F_jet:", F_jet)
-        print("F_drag:", F_drag)
+        # print("F_jet:", F_jet)
+        # print("F_drag:", F_drag)
 
         mass = self.get_mass()
 
@@ -877,18 +877,19 @@ def plot_drag_coefficient(time_data, drag_coefficient_data,
     return fig
 
 
-def plot_robot_kinematics(time_data, position_data, velocity_data, acceleration_data,
-                         state_data=None, title="Robot Kinematics Over Time"):
+def plot_robot_position(time_data, position_data, 
+                       state_data=None, title="Robot Position Over Time"):
     """
-    Plot robot position, velocity, and acceleration.
+    Plot robot position in X, Y, Z dimensions.
     
     Args:
         time_data: Array of time values
         position_data: Array of position values (3D vectors)
-        velocity_data: Array of velocity values (3D vectors)
-        acceleration_data: Array of acceleration values (3D vectors)
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
+    
+    Returns:
+        Matplotlib figure object
     """
     import matplotlib.pyplot as plt
     
@@ -897,41 +898,101 @@ def plot_robot_kinematics(time_data, position_data, velocity_data, acceleration_
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
     
-    # Add phase backgrounds if state_data provided
-    if state_data is not None:
-        for ax in axes:
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
             _add_phase_backgrounds(ax, time_data, state_data)
+        
+        ax.plot(time_data, position_data[:, i], color=color, linewidth=2, 
+                label=f'Position {direction}', zorder=3)
+        ax.set_ylabel(f'Position {direction} (m)')
+        ax.set_title(f'Position - {direction} Dimension')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
     
-    # Position
-    for i, (direction, color) in enumerate(zip(directions, colors)):
-        axes[0].plot(time_data, position_data[:, i], color=color, linewidth=2, 
-                    label=f'Position {direction}')
-    axes[0].set_xlabel('Time (s)')
-    axes[0].set_ylabel('Position (m)')
-    axes[0].set_title('Position')
-    axes[0].grid(True, alpha=0.3)
-    axes[0].legend()
+    axes[-1].set_xlabel('Time (s)')
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
     
-    # Velocity
-    for i, (direction, color) in enumerate(zip(directions, colors)):
-        axes[1].plot(time_data, velocity_data[:, i], color=color, linewidth=2, 
-                    label=f'Velocity {direction}')
-    axes[1].set_xlabel('Time (s)')
-    axes[1].set_ylabel('Velocity (m/s)')
-    axes[1].set_title('Velocity')
-    axes[1].grid(True, alpha=0.3)
-    axes[1].legend()
+    return fig
+
+
+def plot_robot_velocity(time_data, velocity_data, 
+                       state_data=None, title="Robot Velocity Over Time"):
+    """
+    Plot robot velocity in X, Y, Z dimensions.
     
-    # Acceleration
-    for i, (direction, color) in enumerate(zip(directions, colors)):
-        axes[2].plot(time_data, acceleration_data[:, i], color=color, linewidth=2, 
-                    label=f'Acceleration {direction}')
-    axes[2].set_xlabel('Time (s)')
-    axes[2].set_ylabel('Acceleration (m/s²)')
-    axes[2].set_title('Acceleration')
-    axes[2].grid(True, alpha=0.3)
-    axes[2].legend()
+    Args:
+        time_data: Array of time values
+        velocity_data: Array of velocity values (3D vectors)
+        state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
+        title: Plot title
     
+    Returns:
+        Matplotlib figure object
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        ax.plot(time_data, velocity_data[:, i], color=color, linewidth=2, 
+                label=f'Velocity {direction}', zorder=3)
+        ax.set_ylabel(f'Velocity {direction} (m/s)')
+        ax.set_title(f'Velocity - {direction} Dimension')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+    
+    axes[-1].set_xlabel('Time (s)')
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_robot_acceleration(time_data, acceleration_data, 
+                           state_data=None, title="Robot Acceleration Over Time"):
+    """
+    Plot robot acceleration in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        acceleration_data: Array of acceleration values (3D vectors)
+        state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
+        title: Plot title
+    
+    Returns:
+        Matplotlib figure object
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        ax.plot(time_data, acceleration_data[:, i], color=color, linewidth=2, 
+                label=f'Acceleration {direction}', zorder=3)
+        ax.set_ylabel(f'Acceleration {direction} (m/s²)')
+        ax.set_title(f'Acceleration - {direction} Dimension')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+    
+    axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
     plt.show()
@@ -1029,7 +1090,7 @@ if __name__ == "__main__":
     positions_history, euler_angles_history, length_history, \
     width_history, mass_history, area_data, state_data, \
     jet_force_data, jet_velocity_data, volume_data, drag_data, \
-    drag_coefficient_data = robot.step_through_cycle()
+    drag_coefficient_data, velocity_data = robot.step_through_cycle()
     
     # Create time array
     time_array = np.arange(0, robot.time + robot.dt, robot.dt)[:len(length_history)]
@@ -1042,6 +1103,9 @@ if __name__ == "__main__":
 
     # plot_cross_sectional_area(time_array, area_data, state_data)  
     # plot_jet_velocity(time_array, jet_velocity_data, state_data)  # approximate jet velocity
-    plot_jet_properties(time_array, jet_force_data, state_data)
-    plot_drag_coefficient(time_array, drag_coefficient_data, state_data)
-    plot_drag_properties(time_array, drag_data, state_data)
+    # plot_jet_properties(time_array, jet_force_data, state_data)
+    # plot_drag_coefficient(time_array, drag_coefficient_data, state_data)
+    # plot_drag_properties(time_array, drag_data, state_data)
+    plot_robot_position(time_array, positions_history, state_data)
+    # print("Velocity data shape:", velocity_data)
+    plot_robot_velocity(time_array, velocity_data, state_data)  
