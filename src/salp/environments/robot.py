@@ -294,7 +294,24 @@ class Robot():
         self.mass = mass[0,0]
 
         return mass
+    
+    def get_inertia_matrix(self) -> float:
 
+        I_xx = 0.2 * self.mass * (self.width ** 2 + self.length ** 2)  # placeholder for now
+        I_yy = 0.2 * self.mass * (self.length ** 2 + self.width ** 2)
+        I_zz = 0.2 * self.mass * (self.width ** 2 + self.width ** 2)
+
+        I = np.diag([I_xx, I_yy, I_zz])
+
+        return I
+
+    def _get_jet_torque(self) -> float:
+
+        # placeholder for now
+        T_jet = np.cross(self.nozzle.get_position(), self._get_jet_force())
+
+        return T_jet
+    
     def _get_jet_force(self) -> float:
 
         if self.state != self.phase[1]:  # only produce jet force during release phase
@@ -363,6 +380,12 @@ class Robot():
         self.drag_coefficient = C_d
         return C_d 
 
+    def _get_drag_torque(self) -> float:
+
+        # placeholder for now
+        T_drag = 0.0 
+        return T_drag
+    
     def _get_drag_force(self) -> float:
 
         C_d = self._get_drag_coefficient()
@@ -1106,6 +1129,6 @@ if __name__ == "__main__":
     # plot_jet_properties(time_array, jet_force_data, state_data)
     # plot_drag_coefficient(time_array, drag_coefficient_data, state_data)
     # plot_drag_properties(time_array, drag_data, state_data)
-    plot_robot_position(time_array, positions_history, state_data)
+    # plot_robot_position(time_array, positions_history, state_data)
     # print("Velocity data shape:", velocity_data)
-    plot_robot_velocity(time_array, velocity_data, state_data)  
+    # plot_robot_velocity(time_array, velocity_data, state_data)  
