@@ -138,6 +138,7 @@ class Robot():
         self.cycle_time = 0.0
         self.positions = np.zeros(3)  # x, y positions
         self.euler_angles = np.zeros(3)  #yaw
+        self.euler_angle_rates = np.zeros(3)  # yaw rates
         self.velocities = np.zeros(3)  # x, y, z velocities
         self.accelerations = np.zeros(3)  # x, y, z accelerations
         self.angular_velocity = np.zeros(3)  # yaw rate
@@ -281,14 +282,48 @@ class Robot():
                 np.array(velocity_data), np.array(angular_velocity_data), \
                 np.array(angular_acceleration_data), np.array(drag_torque_data), \
                 np.array(jet_torque_data)
-    
+
+    def _to_euler_angle_rates(self) -> np.ndarray:
+        # Convert angular velocity to Euler angle rates
+        phi, theta, psi = self.euler_angles
+
+        T = np.array([[1, np.sin(phi)*np.tan(theta), np.cos(phi)*np.tan(theta)],
+                      [0, np.cos(phi), -np.sin(phi)],
+                      [0, np.sin(phi)/np.cos(theta), np.cos(phi)/np.cos(theta)]])
+
+        self.euler_angle_rates = T @ self.angular_velocity
+
+    def _to_world_frame(self, vector: np.ndarray) -> np.ndarray:
+        # Convert a vector from body frame to world frame using current Euler angles
+        phi, theta, psi = self.euler_angles
+
+        R_x = np.array([[1, 0, 0],
+                        [0, np.cos(phi), -np.sin(phi)],
+                        [0, np.sin(phi), np.cos(phi)]])
+        
+        R_y = np.array([[np.cos(theta), 0, np.sin(theta)],
+                        [0, 1, 0],
+                        [-np.sin(theta), 0, np.cos(theta)]])
+        
+        R_z = np.array([[np.cos(psi), -np.sin(psi), 0],
+                        [np.sin(psi), np.cos(psi), 0],
+                        [0, 0, 1]])
+        
+        R = R_z @ R_y @ R_x
+
+        world_vector = R @ vector
+
+        return world_vector
+
     def _update_states(self):
         # print(self.velocities)
         self.velocities += self.accelerations * self.dt  # update velocities
-        self.positions += self.velocities * self.dt  # update positions
-        
         self.angular_velocity += self.angular_acceleration * self.dt
-        self.euler_angles += self.angular_velocity * self.dt
+
+        self._to_euler_angle_rates()
+        self.euler_angles += self.euler_angle_rates * self.dt
+        self.positions += self._to_world_frame(self.velocities) * self.dt  # update positions
+        # self.euler_angles += self.angular_velocity * self.dt
 
     def contract(self):
 
@@ -503,7 +538,7 @@ class Robot():
         # 1. coriolis torque
         # 2. drag torque
         # 3. jet torque
-        T_asymmetry = np.array([0.0, 0.0, 0.01])  # placeholder for now
+        T_asymmetry = np.array([0.0, 0.0, 0.0])  # placeholder for now
         T_coriolis = self._get_coriolis_torque()
         T_drag = self._get_drag_torque()
         T_jet = self._get_jet_torque()
@@ -591,7 +626,7 @@ if __name__ == "__main__":
     nozzle = Nozzle(length1=0.01, length2=0.01, area=0.00009)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)
+    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)  # set nozzle angles
     
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.reset()
