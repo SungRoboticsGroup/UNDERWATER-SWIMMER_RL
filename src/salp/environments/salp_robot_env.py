@@ -99,17 +99,18 @@ class SalpRobotEnv(gym.Env):
     
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         
-        self.robot.set_control(action[0], action[1], action[2])  # contraction, coast_time, nozzle angle
-        position_history, euler_angles_history, length_history, width_history, *rest = self.robot.step_through_cycle()
+        self.robot.set_control(action[0], action[1], np.array([np.pi/2, np.pi]))  # contraction, coast_time, nozzle angle
+        # self.robot.set_control(action[0], action[1], np.array([0.0, 0.0]))  # contraction, coast_time, nozzle angle
+        self.robot.step_through_cycle()
         # print(position_history)
 
         # store the most recent breathing-cycle histories (meters)
         try:
             # convert to Python lists for easier use in render
-            self.cycle_positions = [np.array(p) for p in position_history]
-            self.cycle_euler_angles = [np.array(ea) for ea in euler_angles_history]
-            self.cycle_lengths = [float(l) for l in length_history]
-            self.cycle_widths = [float(w) for w in width_history]
+            self.cycle_positions = [np.array(p) for p in self.robot.position_history]
+            self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
+            self.cycle_lengths = [float(l) for l in self.robot.length_history]
+            self.cycle_widths = [float(w) for w in self.robot.width_history]
             # start drawing from the first recorded sample
             self._history_draw_index = 0
             # Reset animation for new cycle
@@ -132,9 +133,9 @@ class SalpRobotEnv(gym.Env):
         observation = self._get_observation()
         # info = self._get_info()
         info = {
-            'position_history': position_history,
-            'length_history': length_history,
-            'width_history': width_history
+            'position_history': self.robot.position_history,
+            'length_history': self.robot.length_history,
+            'width_history': self.robot.width_history
         }
         
         return observation, reward, done, truncated, info
@@ -276,12 +277,12 @@ class SalpRobotEnv(gym.Env):
         try:
             body_len = float(self.cycle_lengths[li])
             body_wid = float(self.cycle_widths[wi])
-            body_angle = float(self.cycle_euler_angles[ei][0])
+            body_angle = float(self.cycle_euler_angles[ei][2])
         except Exception:
             body_len = float(self.robot.init_length)
             body_wid = float(self.robot.init_width)
-            body_angle = float(self.robot.euler_angles[0])
-
+            body_angle = float(self.robot.euler_angle[2])
+            
         ew = max(4, int(scale * body_len)) if body_len <= 10.0 else max(4, int(body_len))
         eh = max(4, int(scale * body_wid)) if body_wid <= 10.0 else max(4, int(body_wid))
 
@@ -295,6 +296,12 @@ class SalpRobotEnv(gym.Env):
             rotated_surf = pygame.transform.rotate(ell_surf, -math.degrees(body_angle))
             rect = rotated_surf.get_rect(center=(px, py))
             self.screen.blit(rotated_surf, rect)
+            
+            # Draw body frame at this historical position
+            self._draw_robot_reference_frame_at_position(scale, px, py, body_angle)
+            
+            # Draw nozzle at this historical position
+            self._draw_nozzle_at_position(scale, px, py, body_angle, body_len)
         except Exception:
             pygame.draw.circle(self.screen, (*self._history_color, alpha), (px, py), 2)
 
@@ -318,7 +325,7 @@ class SalpRobotEnv(gym.Env):
         try:
             body_length = float(self.robot.get_current_length())
             body_width = float(self.robot.get_current_width())
-            body_angle = float(self.robot.euler_angles[0])
+            body_angle = float(self.robot.euler_angle[2])
         except Exception:
             body_length = float(self.robot.init_length)
             body_width = float(self.robot.init_width)
@@ -500,6 +507,108 @@ class SalpRobotEnv(gym.Env):
         yaw_label = font.render(f"{math.degrees(yaw):.0f}°", True, origin_color)
         self.screen.blit(yaw_label, yaw_label.get_rect(center=(int(robot_x), int(robot_y - axis_px - 12))))
 
+    def _draw_robot_reference_frame_at_position(self, scale: float, x: int, y: int, angle: float, axis_len_m: float = 0.25):
+        """Draw a small x/y frame at a specific position with a specific angle.
+        
+        Args:
+            scale: pixels per meter
+            x: x position in pixels
+            y: y position in pixels
+            angle: yaw angle in radians
+            axis_len_m: length of axis in meters
+        """
+        axis_px = max(8, int(axis_len_m * scale))
+
+        # basis vectors for robot frame in screen coordinates (x forward, y to robot's left)
+        ux = math.cos(angle)
+        uy = math.sin(angle)
+        vx = math.cos(angle + math.pi/2)
+        vy = math.sin(angle + math.pi/2)
+
+        x_end = x + ux * axis_px
+        y_end = y + uy * axis_px
+        x2_end = x + vx * axis_px
+        y2_end = y + vy * axis_px
+
+        # Use semi-transparent colors for historical frames
+        x_color = (60, 160, 220, 150)
+        y_color = (220, 160, 60, 150)
+        origin_color = (240, 240, 240, 150)
+
+        # draw axes
+        pygame.draw.line(self.screen, x_color[:3], (int(x), int(y)), (int(x_end), int(y_end)), 2)
+        pygame.draw.line(self.screen, y_color[:3], (int(x), int(y)), (int(x2_end), int(y2_end)), 2)
+
+        # arrowheads for x-axis
+        ah = max(6, axis_px // 4)
+        perp_x = -uy
+        perp_y = ux
+        tip_x = x_end
+        tip_y = y_end
+        base_x = tip_x - ux * ah
+        base_y = tip_y - uy * ah
+        left = (base_x + perp_x * (ah/2), base_y + perp_y * (ah/2))
+        right = (base_x - perp_x * (ah/2), base_y - perp_y * (ah/2))
+        pygame.draw.polygon(self.screen, x_color[:3], [(int(tip_x), int(tip_y)), (int(left[0]), int(left[1])), (int(right[0]), int(right[1]))])
+
+        # arrowheads for y-axis
+        perp2_x = -vy
+        perp2_y = vx
+        tip2_x = x2_end
+        tip2_y = y2_end
+        base2_x = tip2_x - vx * ah
+        base2_y = tip2_y - vy * ah
+        left2 = (base2_x + perp2_x * (ah/2), base2_y + perp2_y * (ah/2))
+        right2 = (base2_x - perp2_x * (ah/2), base2_y - perp2_y * (ah/2))
+        pygame.draw.polygon(self.screen, y_color[:3], [(int(tip2_x), int(tip2_y)), (int(left2[0]), int(left2[1])), (int(right2[0]), int(right2[1]))])
+
+        # origin marker
+        pygame.draw.circle(self.screen, origin_color[:3], (int(x), int(y)), 3)
+
+    def _draw_nozzle_at_position(self, scale: float, x: int, y: int, yaw: float, body_len: float, nozzle_angle: float = 0.0):
+        """Draw the nozzle at a specific position with specific angle.
+        
+        Args:
+            scale: pixels per meter
+            x: x position in pixels
+            y: y position in pixels
+            yaw: robot yaw angle in radians
+            body_len: robot body length in meters
+            nozzle_angle: nozzle steering angle in radians (relative to robot)
+        """
+        # Rear of robot in meters (half body length behind center)
+        rear_offset_m = body_len / 2
+        rear_angle = yaw + math.pi  # opposite direction
+        rear_x = x + math.cos(rear_angle) * rear_offset_m * scale
+        rear_y = y + math.sin(rear_angle) * rear_offset_m * scale
+
+        # 1. Straight connector from rear of robot
+        connector_len_m = 0.05  # 5cm straight connector
+        connector_len_px = connector_len_m * scale
+        joint_x = rear_x + math.cos(rear_angle) * connector_len_px
+        joint_y = rear_y + math.sin(rear_angle) * connector_len_px
+        pygame.draw.line(self.screen, (150, 150, 150), 
+                        (int(rear_x), int(rear_y)), (int(joint_x), int(joint_y)), 2)
+
+        # 2. Revolute joint (small circle) - semi-transparent
+        joint_radius = max(3, int(0.015 * scale))  # 1.5cm radius joint
+        pygame.draw.circle(self.screen, (180, 180, 80), (int(joint_x), int(joint_y)), joint_radius)
+        pygame.draw.circle(self.screen, (100, 100, 50), (int(joint_x), int(joint_y)), joint_radius, 1)
+
+        # 3. Nozzle part (rotates around joint by nozzle_angle)
+        nozzle_len_m = 0.08  # 8cm nozzle
+        nozzle_len_px = nozzle_len_m * scale
+        # Nozzle angle is relative to the robot body (rear_angle)
+        nozzle_world_angle = rear_angle + nozzle_angle
+        nozzle_end_x = joint_x + math.cos(nozzle_world_angle) * nozzle_len_px
+        nozzle_end_y = joint_y + math.sin(nozzle_world_angle) * nozzle_len_px
+        
+        # Draw nozzle as a tapered line (semi-transparent for history)
+        pygame.draw.line(self.screen, (180, 180, 80),
+                        (int(joint_x), int(joint_y)), (int(nozzle_end_x), int(nozzle_end_y)), 3)
+        # Draw tip
+        pygame.draw.circle(self.screen, (160, 160, 70), (int(nozzle_end_x), int(nozzle_end_y)), 2)
+
     def _draw_nozzle(self, scale: float, robot_x: int, robot_y: int):
         """Draw the nozzle at the rear of the robot: straight connector + revolute joint + steerable nozzle."""
         try:
@@ -561,15 +670,15 @@ class SalpRobotEnv(gym.Env):
         self.screen.blit(cycle_text, (10, 10))
         
         # Current state
-        state_text = small_font.render(f"State: {self.robot.get_state()}", True, (200, 200, 200))
+        state_text = small_font.render(f"State: {self.robot.update_state()}", True, (200, 200, 200))
         self.screen.blit(state_text, (10, 40))
         
         # Position
-        pos_text = small_font.render(f"Position: ({self.robot.positions[0]:.3f}, {self.robot.positions[1]:.3f}) m", True, (200, 200, 200))
+        pos_text = small_font.render(f"Position: ({self.robot.position[0]:.3f}, {self.robot.position[1]:.3f}) m", True, (200, 200, 200))
         self.screen.blit(pos_text, (10, 65))
         
         # Angle
-        angle_deg = math.degrees(self.robot.euler_angles[0])
+        angle_deg = math.degrees(self.robot.euler_angle[2])
         angle_text = small_font.render(f"Yaw: {angle_deg:.1f}°", True, (200, 200, 200))
         self.screen.blit(angle_text, (10, 90))
 
@@ -592,8 +701,8 @@ class SalpRobotEnv(gym.Env):
         scale = 200
 
         # robot screen center in pixels (convert robot meter positions to screen coordinates)
-        robot_x = int(self.pos_init[0] + self.robot.positions[0] * scale)
-        robot_y = int(self.pos_init[1] + self.robot.positions[1] * scale)
+        robot_x = int(self.pos_init[0] + self.robot.position[0] * scale)
+        robot_y = int(self.pos_init[1] + self.robot.position[1] * scale)
         # print(f"Robot screen pos: ({robot_x}, {robot_y})")
 
         # draw rulers and grid to visualize meters in both x and y
@@ -604,16 +713,16 @@ class SalpRobotEnv(gym.Env):
 
         # draw historical path and sized ellipses
         # draw real-time animated history of the current cycle
-        # self._draw_history(scale)
+        self._draw_history(scale)
 
         # draw current robot body at end-of-cycle position
-        self._draw_body(scale, robot_x, robot_y)
+        # self._draw_body(scale, robot_x, robot_y)
 
         # draw robot-attached reference frame (rotated with robot yaw)
-        self._draw_robot_reference_frame(scale, robot_x, robot_y)
+        # self._draw_robot_reference_frame(scale, robot_x, robot_y)
 
         # draw nozzle (straight connector + revolute joint + steerable nozzle)
-        self._draw_nozzle(scale, robot_x, robot_y)
+        # self._draw_nozzle(scale, robot_x, robot_y)
 
         # draw cycle info overlay
         self._draw_cycle_info()
@@ -637,7 +746,7 @@ if __name__ == "__main__":
     nozzle = Nozzle(length1=0.01, length2=0.01, area=0.00009)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)
+    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     env = SalpRobotEnv(render_mode="human", robot=robot)
     obs, info = env.reset()
     
@@ -649,7 +758,7 @@ if __name__ == "__main__":
         obs, reward, done, truncated, info = env.step(action)
         cnt += 1
         # Wait for the animation to complete before next step
-        # env.wait_for_animation()
-        env.render()
+        env.wait_for_animation()
+        # env.render()
     env.close()
     
