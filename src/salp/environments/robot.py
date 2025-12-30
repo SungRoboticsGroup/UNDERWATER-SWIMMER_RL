@@ -23,8 +23,9 @@ class Nozzle:
         self.length3 = length3
         self.mass = mass    
         self.area = area
-        self.angle1 = 0.0  # angle around y axis
-        self.angle2 = 0.0  # angle around z axis 
+        self.angle1 = 0.0 
+        self.angle2 = 0.0  
+        self.yaw = 0.0  # yaw angle around z axis for control 
         self.gamma = np.pi / 4  # fixed tilt angle of nozzle downwards
 
         # Rotation matrices
@@ -43,6 +44,39 @@ class Nozzle:
         self.angle2 = angle2
         self._get_rotation_matrices()
     
+    def set_yaw_angle(self, yaw_angle: float):
+        """Set the nozzle yaw angle (around z axis).
+        
+        Args:
+            yaw_angle: Rotation angle around z axis
+        """
+        self.yaw = yaw_angle
+
+    def solve_angles(self):
+        """Inverse kinematics to find nozzle angles for a target direction.
+        
+        Args:
+            target_direction: Desired 3D direction vector
+        """ 
+        target_direction = - np.array([np.cos(self.yaw), np.sin(self.yaw), 0])
+        target_direction = self.R_br.transpose() @ target_direction
+
+        self.angle2 = np.arccos(2*target_direction[2] - 1)
+        if self.angle2 <= -np.pi:
+            self.angle2 += np.pi
+        elif self.angle2 > np.pi:
+            self.angle2 -= np.pi
+
+        if self.angle2 == 0:
+            self.angle1 = 0.0
+        else:
+            self.angle1 = np.arctan2(np.cos(self.angle2) - 2, np.sqrt(2) * (np.sin(self.angle2)))
+
+        if self.angle1 <= -np.pi:
+            self.angle1 += np.pi
+        elif self.angle1 > np.pi:
+            self.angle1 -= np.pi
+
     def get_nozzle_position(self) -> np.ndarray:
         """Calculate the nozzle position in world frame.
         
@@ -102,6 +136,8 @@ class Nozzle:
         position = self.R_br @ self.R_mb @ base_position
 
         return position
+
+
 
     def _get_rotation_matrices(self) -> np.ndarray:
         """Calculate the overall rotation matrix of the nozzle.
@@ -714,6 +750,8 @@ if __name__ == "__main__":
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)  # set nozzle angles
+    robot.nozzle.set_yaw_angle(yaw_angle=np.pi/2)  # set nozzle yaw angle
+    robot.nozzle.solve_angles()  # solve for nozzle angles based on yaw
     
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.reset()
@@ -815,5 +853,5 @@ if __name__ == "__main__":
     # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
     
     # Plot trajectory in x-y plane with yaw orientation
-    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
     
