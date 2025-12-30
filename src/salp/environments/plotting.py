@@ -747,3 +747,139 @@ def plot_jet_torque(time_data, jet_torque_data,
     plt.show()
     
     return fig
+
+def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None, euler_angle_data: np.ndarray = None):
+    """Plot the robot's trajectory in the x-y plane.
+    
+    Args:
+        position_data: Nx3 array of position data [x, y, z]
+        state_data: Optional array of phase states for color coding
+        euler_angle_data: Optional Nx3 array of euler angles [roll, pitch, yaw] for orientation visualization
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    x_positions = position_data[:, 0]
+    y_positions = position_data[:, 1]
+    
+    if state_data is not None:
+        # Color code by phase
+        from matplotlib.collections import LineCollection
+        
+        # Create segments for line collection
+        points = np.array([x_positions, y_positions]).T.reshape(-1, 1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        
+        # Map phases to colors
+        phase_colors = {
+            0: 'blue',    # REFILL
+            1: 'red',     # JET
+            2: 'green',   # COAST
+            3: 'gray'     # REST
+        }
+        
+        # Get phase values as integers
+        phase_values = np.array([s.value if hasattr(s, 'value') else s for s in state_data])
+        colors = [phase_colors.get(phase_values[i], 'black') for i in range(len(segments))]
+        
+        lc = LineCollection(segments, colors=colors, linewidths=2)
+        ax.add_collection(lc)
+        
+        # Add legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='blue', label='Refill'),
+            Patch(facecolor='red', label='Jet'),
+            Patch(facecolor='green', label='Coast'),
+            Patch(facecolor='gray', label='Rest')
+        ]
+        ax.legend(handles=legend_elements, loc='upper right')
+    else:
+        # Simple line plot without color coding
+        ax.plot(x_positions, y_positions, 'b-', linewidth=2)
+    
+    # Mark start and end points
+    ax.plot(x_positions[0], y_positions[0], 'go', markersize=10, label='Start', zorder=5)
+    ax.plot(x_positions[-1], y_positions[-1], 'ro', markersize=10, label='End', zorder=5)
+    
+    # Add orientation arrows along trajectory
+    arrow_interval = max(1, len(x_positions) // 20)
+    
+    # Calculate triangle size based on position data range
+    x_range = np.max(x_positions) - np.min(x_positions)
+    y_range = np.max(y_positions) - np.min(y_positions)
+    data_range = max(x_range, y_range)
+    
+    # Scale triangle size to be approximately 2% of the data range
+    triangle_size = data_range * 0.02 if data_range > 0 else 0.015
+    
+    if euler_angle_data is not None:
+        # Use yaw angle to determine arrow direction
+        yaw_angles = euler_angle_data[:, 2]  # Extract yaw (psi) angles
+        
+        from matplotlib.patches import Polygon
+        
+        for i in range(0, len(x_positions), arrow_interval):
+            # Calculate triangle vertices based on yaw angle
+            yaw = yaw_angles[i]
+            
+            # Triangle pointing in the direction of yaw
+            # Tip of triangle
+            tip_x = x_positions[i] + triangle_size * np.cos(yaw)
+            tip_y = y_positions[i] + triangle_size * np.sin(yaw)
+            
+            # Base corners (perpendicular to yaw direction)
+            base_offset = triangle_size * 0.4
+            left_x = x_positions[i] + base_offset * np.cos(yaw + np.pi/2)
+            left_y = y_positions[i] + base_offset * np.sin(yaw + np.pi/2)
+            right_x = x_positions[i] + base_offset * np.cos(yaw - np.pi/2)
+            right_y = y_positions[i] + base_offset * np.sin(yaw - np.pi/2)
+            
+            # Create triangle vertices
+            triangle = np.array([[tip_x, tip_y], [left_x, left_y], [right_x, right_y]])
+            
+            # Draw hollow triangle with black outline
+            poly = Polygon(triangle, facecolor='none', edgecolor='black', 
+                          linewidth=1.5, alpha=0.9, zorder=4)
+            ax.add_patch(poly)
+    else:
+        # Fallback: use movement direction if no yaw data
+        from matplotlib.patches import Polygon
+        
+        for i in range(0, len(x_positions) - 1, arrow_interval):
+            dx = x_positions[i+1] - x_positions[i]
+            dy = y_positions[i+1] - y_positions[i]
+            
+            # Calculate angle from movement direction
+            angle = np.arctan2(dy, dx)
+            
+            # Triangle pointing in movement direction
+            tip_x = x_positions[i] + triangle_size * np.cos(angle)
+            tip_y = y_positions[i] + triangle_size * np.sin(angle)
+            
+            base_offset = triangle_size * 0.4
+            left_x = x_positions[i] + base_offset * np.cos(angle + np.pi/2)
+            left_y = y_positions[i] + base_offset * np.sin(angle + np.pi/2)
+            right_x = x_positions[i] + base_offset * np.cos(angle - np.pi/2)
+            right_y = y_positions[i] + base_offset * np.sin(angle - np.pi/2)
+            
+            triangle = np.array([[tip_x, tip_y], [left_x, left_y], [right_x, right_y]])
+            poly = Polygon(triangle, facecolor='none', edgecolor='black', 
+                          linewidth=1.5, alpha=0.9, zorder=4)
+            ax.add_patch(poly)
+    
+    ax.set_xlabel('X Position (m)', fontsize=12)
+    ax.set_ylabel('Y Position (m)', fontsize=12)
+    title = 'Robot Trajectory in X-Y Plane'
+    if euler_angle_data is not None:
+        title += ' (Arrows show yaw orientation)'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.axis('equal')
+    
+    if state_data is None:
+        ax.legend()
+    
+    plt.tight_layout()
+    plt.show()

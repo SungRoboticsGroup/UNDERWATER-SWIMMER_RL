@@ -706,7 +706,7 @@ if __name__ == "__main__":
         plot_euler_angles, plot_robot_geometry, plot_robot_mass, plot_mass_rate,
         plot_volume_rate, plot_cross_sectional_area, plot_jet_velocity,
         plot_jet_properties, plot_drag_coefficient, plot_drag_properties,
-        plot_robot_position, plot_robot_velocity, plot_jet_torque,
+        plot_robot_position, plot_robot_velocity, plot_jet_torque, plot_trajectory_xy
     )
 
     # Test the Robot and Nozzle classes
@@ -718,35 +718,102 @@ if __name__ == "__main__":
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.reset()
     
-    # Set control inputs
-    robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([np.pi/2, np.pi]))
+    # Step through multiple cycles and collect state data
+    n_cycles = 10
     
-    # Step through a cycle and collect state data
-    n = 2
-    for i in range(n):
+    # Initialize accumulators for all cycle data
+    all_time_data = []
+    all_state_data = []
+    all_position_data = []
+    all_velocity_data = []
+    all_acceleration_data = []
+    all_euler_angle_data = []
+    all_euler_angle_rate_data = []
+    all_angular_velocity_data = []
+    all_angular_acceleration_data = []
+    all_length_data = []
+    all_width_data = []
+    all_area_data = []
+    all_volume_data = []
+    all_mass_data = []
+    all_jet_velocity_data = []
+    all_jet_force_data = []
+    all_jet_torque_data = []
+    all_drag_coefficient_data = []
+    all_drag_force_data = []
+    all_drag_torque_data = []
+    
+    for i in range(n_cycles):
+        robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([np.pi/2, np.pi]))
+        # robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([0.0, 0.0]))
         robot.step_through_cycle()
     
-    # Create time array
-    time_array = np.arange(0, robot.time + robot.dt, robot.dt)[:len(robot.length_history)]
+        # Create time array for this cycle
+        cycle_start_time = robot.time - robot.cycle_time
+        time_array = np.arange(cycle_start_time, robot.time + robot.dt, robot.dt)[:len(robot.length_history)]
+        
+        # Accumulate data from each cycle
+        all_time_data.extend(time_array)
+        all_state_data.extend(robot.state_history)
+        all_position_data.extend(robot.position_history)
+        all_velocity_data.extend(robot.velocity_history)
+        all_acceleration_data.extend(robot.acceleration_history)
+        all_euler_angle_data.extend(robot.euler_angle_history)
+        all_euler_angle_rate_data.extend(robot.euler_angle_rate_history)
+        all_angular_velocity_data.extend(robot.angular_velocity_history)
+        all_angular_acceleration_data.extend(robot.angular_acceleration_history)
+        all_length_data.extend(robot.length_history)
+        all_width_data.extend(robot.width_history)
+        all_area_data.extend(robot.area_history)
+        all_volume_data.extend(robot.volume_history)
+        all_mass_data.extend(robot.mass_history)
+        all_jet_velocity_data.extend(robot.jet_velocity_history)
+        all_jet_force_data.extend(robot.jet_force_history)
+        all_jet_torque_data.extend(robot.jet_torque_history)
+        all_drag_coefficient_data.extend(robot.drag_coefficient_history)
+        all_drag_force_data.extend(robot.drag_force_history)
+        all_drag_torque_data.extend(robot.drag_torque_history)
     
-    # Plot with phase backgrounds
-    # plot_robot_geometry(time_array, robot.length_history, robot.width_history, robot.state_history)
-    # print(robot.state_history)
-    # plot_cross_sectional_area(time_array, robot.area_history, robot.state_history)  
-    # plot_robot_mass(time_array, robot.mass_history, robot.state_history) 
-    # plot_volume_rate(time_array, robot.volume_history, robot.state_history)   
-    # plot_mass_rate(time_array, robot.mass_history, robot.state_history)
-
-    # plot_jet_velocity(time_array, robot.jet_velocity_history, robot.state_history)  # approximate jet velocity
-    # plot_jet_properties(time_array, robot.jet_force_history, robot.state_history)
-    # plot_drag_coefficient(time_array, robot.drag_coefficient_history, robot.state_history)
-    # plot_drag_properties(time_array, robot.drag_force_history, robot.state_history)
-    # plot_robot_velocity(time_array, robot.velocity_history, robot.state_history)  
-    # plot_robot_position(time_array, robot.position_history, robot.state_history)
-    # plot_angular_velocity(time_array, robot.angular_velocity_history, robot.state_history)
-    # plot_jet_torque(time_array, robot.jet_torque_history, robot.state_history)
-    # plot_drag_torque(time_array, robot.drag_torque_history, robot.state_history)
-    # plot_angular_acceleration(time_array, robot.angular_acceleration_history, robot.state_history)
-    plot_euler_angles(time_array, robot.euler_angle_history, robot.state_history)
-    # Plot trajectory with orientation
+    # Convert accumulated data to numpy arrays
+    all_time_data = np.array(all_time_data)
+    all_state_data = np.array(all_state_data)
+    all_position_data = np.array(all_position_data)
+    all_velocity_data = np.array(all_velocity_data)
+    all_acceleration_data = np.array(all_acceleration_data)
+    all_euler_angle_data = np.array(all_euler_angle_data)
+    all_euler_angle_rate_data = np.array(all_euler_angle_rate_data)
+    all_angular_velocity_data = np.array(all_angular_velocity_data)
+    all_angular_acceleration_data = np.array(all_angular_acceleration_data)
+    all_length_data = np.array(all_length_data)
+    all_width_data = np.array(all_width_data)
+    all_area_data = np.array(all_area_data)
+    all_volume_data = np.array(all_volume_data)
+    all_mass_data = np.array(all_mass_data)
+    all_jet_velocity_data = np.array(all_jet_velocity_data)
+    all_jet_force_data = np.array(all_jet_force_data)
+    all_jet_torque_data = np.array(all_jet_torque_data)
+    all_drag_coefficient_data = np.array(all_drag_coefficient_data)
+    all_drag_force_data = np.array(all_drag_force_data)
+    all_drag_torque_data = np.array(all_drag_torque_data)
+    
+    # Plot all cycles together
+    # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
+    # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
+    # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
+    # plot_volume_rate(all_time_data, all_volume_data, all_state_data)   
+    # plot_mass_rate(all_time_data, all_mass_data, all_state_data)
+    # plot_jet_velocity(all_time_data, all_jet_velocity_data, all_state_data)
+    # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
+    # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
+    # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
+    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    # plot_robot_position(all_time_data, all_position_data, all_state_data)
+    # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
+    # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
+    # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
+    # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
+    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    
+    # Plot trajectory in x-y plane with yaw orientation
+    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
     
