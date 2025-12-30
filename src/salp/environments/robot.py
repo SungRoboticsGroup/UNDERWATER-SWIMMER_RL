@@ -341,6 +341,30 @@ class Robot:
         self.update_properties()
         self.update_dynamics()
 
+    # Define getter functions for current values
+    def get_current_values(self):
+        return {
+            'state_history': self.state,
+            'position_history': self.position.copy(),
+            'velocity_history': self.velocity.copy(),
+            'acceleration_history': self.acceleration.copy(),
+            'euler_angle_history': self.euler_angle.copy(),
+            'euler_angle_rate_history': self.euler_angle_rate.copy(),
+            'angular_velocity_history': self.angular_velocity.copy(),
+            'angular_acceleration_history': self.angular_acceleration.copy(),
+            'length_history': self.length,
+            'width_history': self.width,
+            'area_history': self.area,
+            'volume_history': self.volume,
+            'mass_history': self.mass[0,0],  # store only scalar mass value
+            'jet_velocity_history': self.jet_velocity,
+            'jet_force_history': self.jet_force,
+            'jet_torque_history': self.jet_torque.copy(),
+            'drag_coefficient_history': self.drag_coefficient,
+            'drag_force_history': self.drag_force,
+            'drag_torque_history': self.drag_torque.copy(),
+        }
+
     def step_through_cycle(self):
         """Step through an entire breathing cycle and collect state history.
         
@@ -350,68 +374,21 @@ class Robot:
 
         total_cycle_time = self.refill_time + self.jet_time + self.coast_time
 
-        self.state_history = [self.state]
-        self.position_history = [self.position.copy()]
-        self.velocity_history = [self.velocity.copy()]
-        self.acceleration_history = [self.acceleration.copy()]
-        self.euler_angle_history = [self.euler_angle.copy()]
-        self.euler_angle_rate_history = [self.euler_angle_rate.copy()]
-        self.angular_velocity_history = [self.angular_velocity.copy()]
-        self.angular_acceleration_history = [self.angular_acceleration.copy()]
-        self.length_history = [self.length]
-        self.width_history = [self.width]
-        self.area_history = [self.area]
-        self.volume_history = [self.volume]
-        self.mass_history = [self.mass[0,0]]  # store only scalar mass value
-        self.jet_velocity_history = [self.jet_velocity]
-        self.jet_force_history = [self.jet_force]
-        self.jet_torque_history = [self.jet_torque.copy()]
-        self.drag_coefficient_history = [self.drag_coefficient]
-        self.drag_force_history = [self.drag_force]
-        self.drag_torque_history = [self.drag_torque.copy()]
+        # Initialize history lists with current values
+        for attr_name, initial_value in self.get_current_values().items():
+            setattr(self, attr_name, [initial_value])
 
         while self.cycle_time < total_cycle_time:
             self.step()
-            self.state_history.append(self.state)
-            self.position_history.append(self.position.copy())
-            self.velocity_history.append(self.velocity.copy())
-            self.acceleration_history.append(self.acceleration.copy())
-            self.euler_angle_history.append(self.euler_angle.copy())
-            self.euler_angle_rate_history.append(self.euler_angle_rate.copy())
-            self.angular_velocity_history.append(self.angular_velocity.copy())
-            self.angular_acceleration_history.append(self.angular_acceleration.copy())
-            self.length_history.append(self.length)
-            self.width_history.append(self.width)
-            self.area_history.append(self.area)
-            self.volume_history.append(self.volume)
-            self.mass_history.append(self.mass[0,0])  # store only scalar mass value
-            self.jet_velocity_history.append(self.jet_velocity)
-            self.jet_force_history.append(self.jet_force)
-            self.jet_torque_history.append(self.jet_torque.copy())
-            self.drag_coefficient_history.append(self.drag_coefficient)
-            self.drag_force_history.append(self.drag_force)
-            self.drag_torque_history.append(self.drag_torque.copy())
+            
+            # Append current values to history lists
+            for attr_name, current_value in self.get_current_values().items():
+                getattr(self, attr_name).append(current_value)
 
         # Convert histories to numpy arrays for easier handling
-        self.state_history = np.array(self.state_history)
-        self.position_history = np.array(self.position_history)
-        self.velocity_history = np.array(self.velocity_history)
-        self.acceleration_history = np.array(self.acceleration_history)
-        self.euler_angle_history = np.array(self.euler_angle_history)
-        self.euler_angle_rate_history = np.array(self.euler_angle_rate_history)
-        self.angular_velocity_history = np.array(self.angular_velocity_history)
-        self.angular_acceleration_history = np.array(self.angular_acceleration_history)
-        self.length_history = np.array(self.length_history)
-        self.width_history = np.array(self.width_history)
-        self.area_history = np.array(self.area_history) 
-        self.volume_history = np.array(self.volume_history)
-        self.mass_history = np.array(self.mass_history)
-        self.jet_velocity_history = np.array(self.jet_velocity_history)
-        self.jet_force_history = np.array(self.jet_force_history)
-        self.jet_torque_history = np.array(self.jet_torque_history)
-        self.drag_coefficient_history = np.array(self.drag_coefficient_history)
-        self.drag_force_history = np.array(self.drag_force_history)
-        self.drag_torque_history = np.array(self.drag_torque_history) 
+        history_names = self.get_current_values().keys()
+        for attr_name in history_names:
+            setattr(self, attr_name, np.array(getattr(self, attr_name))) 
 
     def _to_euler_angle_rate(self) -> np.ndarray:
         """Convert angular velocity to Euler angle rates.
@@ -729,7 +706,7 @@ if __name__ == "__main__":
         plot_euler_angles, plot_robot_geometry, plot_robot_mass, plot_mass_rate,
         plot_volume_rate, plot_cross_sectional_area, plot_jet_velocity,
         plot_jet_properties, plot_drag_coefficient, plot_drag_properties,
-        plot_robot_position, plot_robot_velocity, plot_jet_torque
+        plot_robot_position, plot_robot_velocity, plot_jet_torque,
     )
 
     # Test the Robot and Nozzle classes
@@ -745,7 +722,9 @@ if __name__ == "__main__":
     robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([np.pi/2, np.pi]))
     
     # Step through a cycle and collect state data
-    robot.step_through_cycle()
+    n = 2
+    for i in range(n):
+        robot.step_through_cycle()
     
     # Create time array
     time_array = np.arange(0, robot.time + robot.dt, robot.dt)[:len(robot.length_history)]
@@ -769,3 +748,5 @@ if __name__ == "__main__":
     # plot_drag_torque(time_array, robot.drag_torque_history, robot.state_history)
     # plot_angular_acceleration(time_array, robot.angular_acceleration_history, robot.state_history)
     plot_euler_angles(time_array, robot.euler_angle_history, robot.state_history)
+    # Plot trajectory with orientation
+    
