@@ -34,7 +34,7 @@ def _add_phase_backgrounds(ax, time_data, state_data):
     for i in range(1, len(state_values)):
         if state_values[i] != current_phase:
             # Draw the region for the previous phase
-            ax.axvspan(time_data[start_idx], time_data[i-1], 
+            ax.axvspan(time_data[start_idx-1], time_data[i-1], 
                       color=colors[current_phase], alpha=alphas[current_phase],
                       label=phase_names[current_phase] if start_idx == 0 or current_phase not in state_values[:start_idx] else "")
             start_idx = i

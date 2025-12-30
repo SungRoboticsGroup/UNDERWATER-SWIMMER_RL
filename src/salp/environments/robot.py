@@ -122,9 +122,9 @@ class Nozzle:
                              [0, 0, 1]])
 
         # Convert from nozzle frame to body frame
-        R_base = np.array([[0, 0, 1],
-                           [0, -1, 0],
-                           [-1, 0, 0]])
+        R_base = np.array([[0, 0, -1],
+                           [0, 1, 0],
+                           [1, 0, 0]])
 
         self.R_nm = R_theta_fixed @ R_nozzle
         self.R_mb = R_middle
@@ -157,50 +157,77 @@ class Robot:
             max_contraction: Maximum contraction distance (m)
             nozzle: Nozzle object for jet propulsion
         """
+
+        # constant properties during cycle
         self.dry_mass = dry_mass  # kg
-        self.mass = 0.0
         self.init_length = init_length  # meters
         self.init_width = init_width  # meters
         self.max_contraction = max_contraction  # max contraction length
-
-        self.state = self.phase[3]  # initial state is rest
-        self.contraction = 0.0  # contraction level
-        self.nozzle_angles = np.zeros(2)  # current angle of nozzle
-        self.cycle = 0
-        self.dt = 0.01
-        self.time = 0.0
-        self.cycle_time = 0.0
-        self.positions = np.zeros(3)  # x, y positions
-        self.euler_angles = np.zeros(3)  #yaw
-        self.euler_angle_rates = np.zeros(3)  # yaw rates
-        self.velocities = np.zeros(3)  # x, y, z velocities
-        self.accelerations = np.zeros(3)  # x, y, z accelerations
-        self.angular_velocity = np.zeros(3)  # yaw rate
-        self.angular_acceleration = np.zeros(3)  # yaw acceleration
-        self.previous_water_volume = 0.0
-        self.previous_water_mass = 0.0
-        self.density = 0  # kg/m^3, density of water
-        self.contract_time = 0.0
-        self.release_time = 0.0
+        self.density = 1000  # kg/m^3, density of water
+        self.dt = 0.01  # time step
+        self.nozzle = nozzle
+        self.refill_time = 0.0
+        self.jet_time = 0.0
         self.coast_time = 0.0
-        self.area = 0.0 # cross-sectional area
-        self.jet_force = np.zeros(3)  # jet force vector
-        self.jet_velocity = np.zeros(3)  # jet velocity vector
-        self.volume = 0.0  # water volume inside the robot
-        self.drag_force = np.zeros(3)  # drag force vector
-        self.drag_coefficient = 0.0
-        self.drag_torque = np.zeros(3)  # drag torque vector
-        self.jet_torque = np.zeros(3)  # jet torque vector
-
+        self.contraction = 0.0  # contraction level
         self._contract_rate = 0.0
         self._release_rateS = 0.0
-
         self._drag_coefficents = [0.2, 0.5] # min and max drag coefficients for different shapes
 
+        # cycle tracking 
+        self.state = self.phase[3]  # initial state is rest
+        self.cycle = 0
+        self.time = 0.0
+        self.cycle_time = 0.0
+
+        # properties updated each step
         self.length = 0.0
         self.width = 0.0
-        self.nozzle = nozzle
-    
+        self.area = 0.0
+        self.volume = 0.0  # water volume inside the robot
+        self.mass = np.diag(np.zeros(3))  # total mass including water
+        self.water_mass = 0.0
+        self.prev_water_volume = 0.0
+        self.prev_water_mass = 0.0
+        self.jet_velocity = np.zeros(3)  # jet velocity vector
+        self.jet_force = np.zeros(3)  # jet force vector
+        self.jet_torque = np.zeros(3)  # jet torque vector
+        self.drag_coefficient = 0.0
+        self.drag_force = np.zeros(3)  # drag force vector
+        self.drag_torque = np.zeros(3)  # drag torque vector
+
+        # State variables
+        self.position = np.zeros(3)  # x, y, z positions
+        self.velocity = np.zeros(3)  # x, y, z velocities
+        self.acceleration = np.zeros(3)  # x, y, z accelerations
+
+        self.euler_angle = np.zeros(3)  # roll, pitch, yaw
+        self.euler_angle_rate = np.zeros(3)  # roll, pitch, yaw rates
+        self.angular_velocity = np.zeros(3) # body frame angular velocity 
+        self.angular_acceleration = np.zeros(3)  # body frame angular acceleration
+
+        # record cycle history
+        self.state_history = []
+        self.position_history = []
+        self.velocity_history = []
+        self.acceleration_history = []
+        self.euler_angle_history = []
+        self.euler_angle_rate_history = []
+        self.angular_velocity_history = []
+        self.angular_acceleration_history = []
+        self.length_history = []
+        self.width_history = []
+        self.area_history = []
+        self.volume_history = []
+        self.mass_history = []
+        self.jet_velocity_history = []
+        self.jet_force_history = []
+        self.jet_torque_history = []
+        self.drag_coefficient_history = []
+        self.drag_force_history = []
+        self.drag_torque_history = []
+
+
     def set_environment(self, density: float):
         """Set the environment properties.
         
@@ -213,24 +240,50 @@ class Robot:
         """Reset the robot to initial state."""
         self.time = 0.0
         self.cycle_time = 0.0
+        self.cycle = 0
+        self.state = self.phase[3]  # rest state 
 
-        self.positions = np.zeros(3)  # x, y, z positions
-        self.velocities = np.zeros(3)  # x, y, z velocities
-        self.accelerations = np.zeros(3)  # x, y, z accelerations
-        self.euler_angles = np.zeros(3)  # roll, pitch, yaw
+        self.position = np.zeros(3)  # x, y, z positions
+        self.velocity = np.zeros(3)  # x, y, z velocities
+        self.acceleration = np.zeros(3)  # x, y, z accelerations
+        self.euler_angle = np.zeros(3)  # roll, pitch, yaw
+        self.euler_angle_rate = np.zeros(3)  # roll, pitch, yaw rates
         self.angular_velocity = np.zeros(3)  # yaw rate
+        self.angular_acceleration = np.zeros(3)  # body frame angular acceleration      
 
         self.length = self.init_length
         self.width = self.init_width
-        self.previous_water_volume = 0.0
-        self.cycle = 0
-
+        self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
-        self.mass = self.get_mass()[0,0]
-        self.previous_water_mass = self._get_water_mass()
-        self.previous_water_volume = self._get_water_volume()
+        self.water_mass = self._get_water_mass()
+        self.mass = self.get_mass()
+        self.prev_water_mass = self.mass
+        self.prev_water_volume = self.volume
+        self.drag_coefficient = self._get_drag_coefficient()
 
-    def set_control(self, contraction: float, coast_time: float, angle: float):
+        # empty cycle history
+        self.state_history = []
+        self.position_history = []
+        self.velocity_history = []
+        self.acceleration_history = []
+        self.euler_angle_history = []
+        self.euler_angle_rate_history = []
+        self.angular_velocity_history = []
+        self.angular_acceleration_history = []
+        self.length_history = []
+        self.width_history = []
+        self.area_history = []
+        self.volume_history = []
+        self.mass_history = []
+        self.jet_velocity_history = []
+        self.jet_force_history = []
+        self.jet_torque_history = []
+        self.drag_coefficient_history = []
+        self.drag_force_history = []
+        self.drag_torque_history = []
+
+
+    def set_control(self, contraction: float, coast_time: float, nozzle_angles: np.ndarray):
         """Set control inputs for the robot.
         
         Args:
@@ -238,49 +291,56 @@ class Robot:
             coast_time: Duration of coast phase (s)
             angle: Nozzle steering angle
         """
+
+        # set control inputs    
         self.contraction = contraction
         self.coast_time = coast_time
+        self.nozzle.set_angles(angle1=nozzle_angles[0], angle2=nozzle_angles[1])
 
-        self.nozzle_angle = angle
+        # proceed to next cycle
         self.cycle += 1
         self.cycle_time = 0.0
 
-        self.contract_time = self._contract_model()
-        self.release_time = self._release_model()
+        self.refill_time = self._contract_model()
+        self.jet_time = self._release_model()
 
-    def get_state(self) -> str:
+    def update_state(self):
         """Determine current phase based on cycle time.
         
         Returns:
             Current phase state
         """
-        if self.cycle_time < self.contract_time:
+        if self.cycle_time <= self.refill_time:
             self.state = self.phase[0]  # contract
-        elif self.cycle_time < self.contract_time + self.release_time:
+        elif self.cycle_time <= self.refill_time + self.jet_time:
             self.state = self.phase[1]  # release
-        elif self.cycle_time < self.contract_time + self.release_time + self.coast_time:
+        elif self.cycle_time <= self.refill_time + self.jet_time + self.coast_time:
             self.state = self.phase[2]  # coast
         else:
-            self.state = self.phase[3]  # reset to contract
-        return self.state
-
-    def step(self):
-        """Advance simulation by one time step."""
-        self.cycle_time += self.dt
-        self.time += self.dt
-        self.get_state()
+            self.state = self.phase[3]  # reset to rest
+    
+    def update_properties(self):
+        """Update robot properties based on current state."""
+        self.prev_water_volume = self.volume
+        self.prev_water_mass = self.prev_water_volume * self.density
 
         self.length = self.get_current_length()
         self.width = self.get_current_width()
-        if self.state == self.phase[0]:  # contract
-            self.contract()
-        elif self.state == self.phase[1]:  # release
-            self.release()
-        elif self.state == self.phase[2]:  # coast
-            self.coast()
-        else:
-            pass  # rest
-    
+        self.area = self._get_cross_sectional_area()
+        self.volume = self._get_water_volume()
+        self.mass = self.get_mass()[0,0]
+        self.drag_coefficient = self._get_drag_coefficient()
+
+    def step(self):
+        """Advance simulation by one time step."""
+        
+        # proceed to next time step
+        self.cycle_time += self.dt
+        self.time += self.dt
+        self.update_state()
+        self.update_properties()
+        self.update_dynamics()
+
     def step_through_cycle(self):
         """Step through an entire breathing cycle and collect state history.
         
@@ -288,68 +348,84 @@ class Robot:
             Tuple of arrays containing time history of various state variables
         """
 
-        total_cycle_time = self.contract_time + self.release_time + self.coast_time
-        positions_history = [self.positions.copy()]
-        euler_angles_history = [self.euler_angles.copy()]
-        length_history = [self.length]
-        width_history = [self.width]
-        mass_history = [self.get_mass()[0,0]]  # store only scalar mass value
-        area_data = [self._get_cross_sectional_area()]
-        state_data = [self.state]
-        jet_force_data = [self.jet_force]
-        jet_velocity_data = [self.jet_velocity]
-        volume_data = [self.volume]
-        drag_data = [self.drag_force]
-        drag_coefficient_data = [self.drag_coefficient]
-        velocity_data = [self.velocities.copy()]
-        angular_velocity_data = [self.angular_velocity.copy()]
-        angular_acceleration_data = [self.angular_acceleration.copy()]
-        drag_torque_data = [self.drag_torque.copy()]
-        jet_torque_data = [self.jet_torque.copy()]
+        total_cycle_time = self.refill_time + self.jet_time + self.coast_time
+
+        self.state_history = [self.state]
+        self.position_history = [self.position.copy()]
+        self.velocity_history = [self.velocity.copy()]
+        self.acceleration_history = [self.acceleration.copy()]
+        self.euler_angle_history = [self.euler_angle.copy()]
+        self.euler_angle_rate_history = [self.euler_angle_rate.copy()]
+        self.angular_velocity_history = [self.angular_velocity.copy()]
+        self.angular_acceleration_history = [self.angular_acceleration.copy()]
+        self.length_history = [self.length]
+        self.width_history = [self.width]
+        self.area_history = [self.area]
+        self.volume_history = [self.volume]
+        self.mass_history = [self.mass[0,0]]  # store only scalar mass value
+        self.jet_velocity_history = [self.jet_velocity]
+        self.jet_force_history = [self.jet_force]
+        self.jet_torque_history = [self.jet_torque.copy()]
+        self.drag_coefficient_history = [self.drag_coefficient]
+        self.drag_force_history = [self.drag_force]
+        self.drag_torque_history = [self.drag_torque.copy()]
 
         while self.cycle_time < total_cycle_time:
             self.step()
-            positions_history.append(self.positions.copy())
-            euler_angles_history.append(self.euler_angles.copy())
-            length_history.append(self.length)
-            width_history.append(self.width)
-            mass_history.append(self.mass)
-            area_data.append(self.area)
-            state_data.append(self.state)
-            jet_force_data.append(self.jet_force)
-            jet_velocity_data.append(self.jet_velocity)
-            volume_data.append(self.volume)
-            drag_data.append(self.drag_force)
-            drag_coefficient_data.append(self.drag_coefficient)
-            velocity_data.append(self.velocities.copy())
-            angular_velocity_data.append(self.angular_velocity.copy())
-            angular_acceleration_data.append(self.angular_acceleration.copy())
-            drag_torque_data.append(self.drag_torque.copy())
-            jet_torque_data.append(self.jet_torque.copy())
+            self.state_history.append(self.state)
+            self.position_history.append(self.position.copy())
+            self.velocity_history.append(self.velocity.copy())
+            self.acceleration_history.append(self.acceleration.copy())
+            self.euler_angle_history.append(self.euler_angle.copy())
+            self.euler_angle_rate_history.append(self.euler_angle_rate.copy())
+            self.angular_velocity_history.append(self.angular_velocity.copy())
+            self.angular_acceleration_history.append(self.angular_acceleration.copy())
+            self.length_history.append(self.length)
+            self.width_history.append(self.width)
+            self.area_history.append(self.area)
+            self.volume_history.append(self.volume)
+            self.mass_history.append(self.mass[0,0])  # store only scalar mass value
+            self.jet_velocity_history.append(self.jet_velocity)
+            self.jet_force_history.append(self.jet_force)
+            self.jet_torque_history.append(self.jet_torque.copy())
+            self.drag_coefficient_history.append(self.drag_coefficient)
+            self.drag_force_history.append(self.drag_force)
+            self.drag_torque_history.append(self.drag_torque.copy())
 
-        return np.array(positions_history), np.array(euler_angles_history), \
-                np.array(length_history), np.array(width_history), \
-                np.array(mass_history), np.array(area_data), \
-                np.array(state_data), np.array(jet_force_data), \
-                np.array(jet_velocity_data), np.array(volume_data), \
-                np.array(drag_data), np.array(drag_coefficient_data), \
-                np.array(velocity_data), np.array(angular_velocity_data), \
-                np.array(angular_acceleration_data), np.array(drag_torque_data), \
-                np.array(jet_torque_data)
+        # Convert histories to numpy arrays for easier handling
+        self.state_history = np.array(self.state_history)
+        self.position_history = np.array(self.position_history)
+        self.velocity_history = np.array(self.velocity_history)
+        self.acceleration_history = np.array(self.acceleration_history)
+        self.euler_angle_history = np.array(self.euler_angle_history)
+        self.euler_angle_rate_history = np.array(self.euler_angle_rate_history)
+        self.angular_velocity_history = np.array(self.angular_velocity_history)
+        self.angular_acceleration_history = np.array(self.angular_acceleration_history)
+        self.length_history = np.array(self.length_history)
+        self.width_history = np.array(self.width_history)
+        self.area_history = np.array(self.area_history) 
+        self.volume_history = np.array(self.volume_history)
+        self.mass_history = np.array(self.mass_history)
+        self.jet_velocity_history = np.array(self.jet_velocity_history)
+        self.jet_force_history = np.array(self.jet_force_history)
+        self.jet_torque_history = np.array(self.jet_torque_history)
+        self.drag_coefficient_history = np.array(self.drag_coefficient_history)
+        self.drag_force_history = np.array(self.drag_force_history)
+        self.drag_torque_history = np.array(self.drag_torque_history) 
 
-    def _to_euler_angle_rates(self) -> np.ndarray:
+    def _to_euler_angle_rate(self) -> np.ndarray:
         """Convert angular velocity to Euler angle rates.
         
         Returns:
             Euler angle rate vector
         """
-        phi, theta, psi = self.euler_angles
+        phi, theta, psi = self.euler_angle
 
         T = np.array([[1, np.sin(phi)*np.tan(theta), np.cos(phi)*np.tan(theta)],
                       [0, np.cos(phi), -np.sin(phi)],
                       [0, np.sin(phi)/np.cos(theta), np.cos(phi)/np.cos(theta)]])
 
-        self.euler_angle_rates = T @ self.angular_velocity
+        return T @ self.angular_velocity
 
     def _to_world_frame(self, vector: np.ndarray) -> np.ndarray:
         """Convert a vector from body frame to world frame.
@@ -360,7 +436,7 @@ class Robot:
         Returns:
             3D vector in world frame
         """
-        phi, theta, psi = self.euler_angles
+        phi, theta, psi = self.euler_angle
 
         R_x = np.array([[1, 0, 0],
                         [0, np.cos(phi), -np.sin(phi)],
@@ -378,75 +454,50 @@ class Robot:
 
         return R @ vector
 
-    def _update_states(self):
+    def update_dynamics(self):
+
+        self.acceleration = self._newton_equations()
+        self.angular_acceleration = self._euler_equations()
+        self._update_motion_states()
+
+    def _newton_equations(self) -> np.ndarray:
+        """Compute translational accelerations using Newton's equations.
+        
+        Returns:
+            3D acceleration vector
+        """
+        F_coriolis = self._get_coriolis_force()
+        self.drag_force = self._get_drag_force()
+        self.jet_force = self._get_jet_force()
+        self.mass = self.get_mass()
+
+        return np.linalg.inv(self.mass) @ (self.jet_force + self.drag_force + F_coriolis)
+
+    def _euler_equations(self) -> np.ndarray:
+        """Compute angular accelerations using Euler's equations.
+        
+        Returns:
+            3D angular acceleration vector
+        """
+        T_asymmetry = np.zeros(3)  # TODO: Implement asymmetry torque
+        T_coriolis = self._get_coriolis_torque()
+        self.drag_torque = self._get_drag_torque()
+        self.jet_torque = self._get_jet_torque()
+        # T_jet = np.array([0.0, 0.0, 0.0])  # test orientation
+
+        I = self.get_inertia_matrix()
+
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry)
+
+    def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
-        self.velocities += self.accelerations * self.dt
+        self.velocity += self.acceleration * self.dt
         self.angular_velocity += self.angular_acceleration * self.dt
 
-        self._to_euler_angle_rates()
-        self.euler_angles += self.euler_angle_rates * self.dt
-        self.positions += self._to_world_frame(self.velocities) * self.dt
+        self.euler_angle_rate = self._to_euler_angle_rate()
+        self.euler_angle += self.euler_angle_rate * self.dt
+        self.position += self._to_world_frame(self.velocity) * self.dt
 
-    def contract(self):
-        """Execute contraction phase dynamics."""
-        self.accelerations = self._newton_equations()
-        self.angular_acceleration = self._euler_equations()
-        self._update_states()
-
-    def release(self):
-        """Execute release (jet) phase dynamics."""
-        self.accelerations = self._newton_equations()
-        self.angular_acceleration = self._euler_equations()
-        self._update_states()
-
-    def coast(self):
-        """Execute coast phase dynamics."""
-        self.accelerations = self._newton_equations()
-        self.angular_acceleration = self._euler_equations()
-        self._update_states()
-
-    def get_current_length(self) -> float:
-        """Calculate current body length based on phase.
-        
-        Returns:
-            Current length in meters
-        """
-        if self.state == self.phase[0]:  # inhale
-            length = self.init_length - self.cycle_time*self._contract_rate
-        elif self.state == self.phase[1]:  # exhale
-            length = self.init_length - self.max_contraction + (self.cycle_time - self.contract_time)*self._release_rate
-        else:
-            length = self.init_length
-
-        return length
-    
-    def get_current_width(self) -> float:
-        """Calculate current body width based on phase.
-        
-        Returns:
-            Current width in meters
-        """
-        if self.state == self.phase[0]:  # inhale
-            width = self.init_width + self.cycle_time*self._contract_rate
-        elif self.state == self.phase[1]:  # exhale
-            width = self.init_width + self.max_contraction - (self.cycle_time - self.contract_time)*self._release_rate
-        else:
-            width = self.init_width
-
-        return width
-
-    def get_mass(self) -> float:
-        """Calculate total mass including water.
-        
-        Returns:
-            Mass matrix (diagonal)
-        """
-        mass = self.dry_mass + self._get_water_mass()
-        mass *= np.diag(np.ones(3))
-        self.mass = mass[0,0]
-
-        return mass
-    
     def get_inertia_matrix(self) -> np.ndarray:
         """Calculate moment of inertia matrix.
         
@@ -455,9 +506,9 @@ class Robot:
         Returns:
             3x3 inertia matrix
         """
-        I_xx = 0.2 * self.mass * ((self.width/2) ** 2 + (self.width ** 2))
-        I_yy = 0.2 * self.mass * ((self.length/2) ** 2 + (self.width/2) ** 2)
-        I_zz = 0.2 * self.mass * ((self.width/2) ** 2 + (self.length/2) ** 2)
+        I_xx = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.width ** 2))
+        I_yy = 0.2 * self.mass[0][0] * ((self.length/2) ** 2 + (self.width/2) ** 2)
+        I_zz = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.length/2) ** 2)
 
         return np.diag([I_xx, I_yy, I_zz])
 
@@ -467,7 +518,7 @@ class Robot:
         Returns:
             3D moment arm vector
         """
-        r_nozzle = self.nozzle.get_2nd_position()
+        r_nozzle = self.nozzle.get_middle_position()
         r_robot = np.array([-self.length/2, 0.0, 0.0])  # center of mass at origin
         return r_nozzle + r_robot
     
@@ -478,9 +529,7 @@ class Robot:
             3D torque vector
         """
 
-        T_jet = np.cross(self._get_jet_moment_arm(), self.jet_force)
-        self.jet_torque = T_jet
-        return T_jet
+        return np.cross(self._get_jet_moment_arm(), self.jet_force)
     
     def _get_jet_force(self) -> np.ndarray:
         """Calculate jet propulsion force.
@@ -488,22 +537,14 @@ class Robot:
         Returns:
             3D force vector
         """
+        self.jet_velocity = self._get_jet_velocity()
         if self.state != self.phase[1]:  # only produce jet force during release phase
-            self._get_jet_velocity()
-            water_mass = self._get_water_mass()
-            self.previous_water_mass = water_mass
             return np.zeros(3)
 
-        water_mass = self._get_water_mass()
-        mass_rate = (water_mass - self.previous_water_mass) / self.dt
-        self.previous_water_mass = water_mass
-        jet_velocity = self._get_jet_velocity()
-        jet_force = mass_rate * jet_velocity
+        mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
+        C_discharge = 0.001  # discharge coefficient
 
-        C_discharge = 0.1  # discharge coefficient
-        self.jet_force = jet_force * C_discharge
-
-        return self.jet_force
+        return C_discharge * mass_rate * self.jet_velocity
     
     def _get_jet_velocity(self) -> np.ndarray:
         """Calculate jet velocity vector.
@@ -511,16 +552,14 @@ class Robot:
         Returns:
             3D velocity vector in robot frame
         """
-        water_volume = self._get_water_volume()
-        volume_rate = (water_volume - self.previous_water_volume) / self.dt
-        self.previous_water_volume = water_volume
+        if self.state != self.phase[1]:  # only produce jet velocity during release phase
+            return np.zeros(3)      
+
+        volume_rate = -(self.volume - self.prev_water_volume) / self.dt
         jet_speed = volume_rate / self.nozzle.area
-        
         direction = self.nozzle.get_nozzle_direction()
-        jet_velocity = -direction * jet_speed
-        self.jet_velocity = jet_velocity
-        self.volume = water_volume
-        return jet_velocity
+
+        return direction * jet_speed
     
     def _length_width_relation(self, length: float) -> float:
         """Calculate width based on length (volume conservation).
@@ -554,7 +593,7 @@ class Robot:
         normalized_ratio = np.clip(normalized_ratio, 0, 1)
         
         C_d = self._drag_coefficents[1] - normalized_ratio * (self._drag_coefficents[1] - self._drag_coefficents[0])
-        self.drag_coefficient = C_d
+
         return C_d
 
     def _get_drag_torque(self) -> np.ndarray:
@@ -574,10 +613,10 @@ class Robot:
         Returns:
             3D force vector
         """
-        C_d = self._get_drag_coefficient()
-        self.area = self._get_cross_sectional_area()
-        F_drag = -0.5 * self.density * self.area * C_d * abs(self.velocities) * self.velocities
-        self.drag_force = F_drag
+        #TODO: drag has a slight discountinuity!
+        self.drag_coefficient = self._get_drag_coefficient()
+        F_drag = -0.5 * self.density * self.area * self.drag_coefficient * abs(self.velocity) * self.velocity
+
         return F_drag
     
     def _get_added_mass(self) -> float:
@@ -596,20 +635,7 @@ class Robot:
         Returns:
             3D force vector
         """
-        return self.get_mass() @ self.angular_velocity * self.velocities
-
-    def _newton_equations(self) -> np.ndarray:
-        """Compute translational accelerations using Newton's equations.
-        
-        Returns:
-            3D acceleration vector
-        """
-
-        F_coriolis = self._get_coriolis_force()
-        F_drag = self._get_drag_force()
-        F_jet = self._get_jet_force()
-        mass = self.get_mass()
-        return np.linalg.inv(mass) @ (F_jet + F_drag + F_coriolis)
+        return self.get_mass() @ self.angular_velocity * self.velocity
 
     def _get_coriolis_torque(self) -> np.ndarray:
         """Calculate Coriolis torque.
@@ -619,24 +645,40 @@ class Robot:
         """
         return -np.cross(self.angular_velocity, self.get_inertia_matrix() @ self.angular_velocity)
 
-    def _euler_equations(self) -> np.ndarray:
-        """Compute angular accelerations using Euler's equations.
+    def get_current_length(self) -> float:
+        """Calculate current body length based on phase.
         
         Returns:
-            3D angular acceleration vector
+            Current length in meters
         """
-        T_asymmetry = np.zeros(3)  # TODO: Implement asymmetry torque
-        T_coriolis = self._get_coriolis_torque()
-        T_drag = self._get_drag_torque()
-        T_jet = self._get_jet_torque()
-        # T_jet = np.array([0.0, 0.0, 0.0])  # test orientation
+        if self.state == self.phase[0]:  # inhale
+            length = self.init_length - self.cycle_time*self._contract_rate
+        elif self.state == self.phase[1]:  # exhale
+            length = self.init_length - self.max_contraction + (self.cycle_time - self.refill_time)*self._release_rate
+        else:
+            length = self.init_length
 
-        I = self.get_inertia_matrix()
-        # print(T_coriolis)
-        alpha = np.linalg.inv(I) @ (T_jet + T_drag + T_coriolis + T_asymmetry)
+        return length
+    
+    def get_current_width(self) -> float:
+        """Calculate current body width based on phase.
+        
+        Returns:
+            Current width in meters
+        """
+        if self.state == self.phase[0]:  # inhale
+            width = self.init_width + self.cycle_time*self._contract_rate
+        elif self.state == self.phase[1]:  # exhale
+            width = self.init_width + self.max_contraction - (self.cycle_time - self.refill_time)*self._release_rate
+        else:
+            width = self.init_width
 
-        return alpha
+        return width
 
+    def _get_cross_sectional_area(self) -> float:
+
+        area = np.pi * (self.length/2) * (self.width/2)
+        return area
 
     def _get_water_volume(self) -> float:
         
@@ -645,16 +687,22 @@ class Robot:
         return volume
 
     def _get_water_mass(self) -> float:
+        
+        water_mass = self.density * self._get_water_volume()   
 
-        mass = self.density * self._get_water_volume()
+        return water_mass
+
+    def get_mass(self) -> float:
+        """Calculate total mass including water.
+        
+        Returns:
+            Mass matrix (diagonal)
+        """
+        self.water_mass = self._get_water_mass()
+        mass = self.dry_mass + self.water_mass
+        mass = mass * np.diag(np.ones(3))
 
         return mass
-
-    def _get_cross_sectional_area(self) -> float:
-
-        area = np.pi * (self.length/2) * (self.width/2)
-
-        return area
 
     def _contract_model(self) -> float:
         """Calculate contraction time based on contraction distance.
@@ -694,35 +742,30 @@ if __name__ == "__main__":
     robot.reset()
     
     # Set control inputs
-    robot.set_control(contraction=0.06, coast_time=1, angle= 0.0)
+    robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([np.pi/2, np.pi]))
     
     # Step through a cycle and collect state data
-    positions_history, euler_angles_history, length_history, \
-    width_history, mass_history, area_data, state_data, \
-    jet_force_data, jet_velocity_data, volume_data, drag_data, \
-    drag_coefficient_data, velocity_data, angular_velocity_data, \
-    angular_acceleration_data, drag_torque_data, jet_torque_data = robot.step_through_cycle()
+    robot.step_through_cycle()
     
     # Create time array
-    time_array = np.arange(0, robot.time + robot.dt, robot.dt)[:len(length_history)]
+    time_array = np.arange(0, robot.time + robot.dt, robot.dt)[:len(robot.length_history)]
     
     # Plot with phase backgrounds
-    # plot_robot_geometry(time_array, length_history, width_history, state_data) 
-    # plot_robot_mass(time_array, mass_history, state_data) 
-    # plot_mass_rate(time_array, mass_history, state_data)
-    # plot_volume_rate(time_array, volume_data, state_data)   
+    # plot_robot_geometry(time_array, robot.length_history, robot.width_history, robot.state_history)
+    # print(robot.state_history)
+    # plot_cross_sectional_area(time_array, robot.area_history, robot.state_history)  
+    # plot_robot_mass(time_array, robot.mass_history, robot.state_history) 
+    # plot_volume_rate(time_array, robot.volume_history, robot.state_history)   
+    # plot_mass_rate(time_array, robot.mass_history, robot.state_history)
 
-    # plot_cross_sectional_area(time_array, area_data, state_data)  
-    # plot_jet_velocity(time_array, jet_velocity_data, state_data)  # approximate jet velocity
-    # plot_jet_properties(time_array, jet_force_data, state_data)
-    # plot_drag_coefficient(time_array, drag_coefficient_data, state_data)
-    # plot_drag_properties(time_array, drag_data, state_data)
-    plot_robot_position(time_array, positions_history, state_data)
-    # print("Velocity data shape:", velocity_data)
-    plot_robot_velocity(time_array, velocity_data, state_data)  
-
-    plot_angular_velocity(time_array, angular_velocity_data, state_data)
-    # plot_jet_torque(time_array, jet_torque_data, state_data)
-    # plot_drag_torque(time_array, drag_torque_data, state_data)
-    # plot_angular_acceleration(time_array, angular_acceleration_data, state_data)
-    plot_euler_angles(time_array, euler_angles_history, state_data)
+    # plot_jet_velocity(time_array, robot.jet_velocity_history, robot.state_history)  # approximate jet velocity
+    # plot_jet_properties(time_array, robot.jet_force_history, robot.state_history)
+    # plot_drag_coefficient(time_array, robot.drag_coefficient_history, robot.state_history)
+    # plot_drag_properties(time_array, robot.drag_force_history, robot.state_history)
+    # plot_robot_velocity(time_array, robot.velocity_history, robot.state_history)  
+    # plot_robot_position(time_array, robot.position_history, robot.state_history)
+    # plot_angular_velocity(time_array, robot.angular_velocity_history, robot.state_history)
+    # plot_jet_torque(time_array, robot.jet_torque_history, robot.state_history)
+    # plot_drag_torque(time_array, robot.drag_torque_history, robot.state_history)
+    # plot_angular_acceleration(time_array, robot.angular_acceleration_history, robot.state_history)
+    plot_euler_angles(time_array, robot.euler_angle_history, robot.state_history)
