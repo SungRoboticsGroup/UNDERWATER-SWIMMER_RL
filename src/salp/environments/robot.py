@@ -402,6 +402,7 @@ class Robot:
             'drag_coefficient_history': self.drag_coefficient,
             'drag_force_history': self.drag_force,
             'drag_torque_history': self.drag_torque.copy(),
+            'nozzle_yaw_history': self.nozzle.yaw,
         }
 
     def step_through_cycle(self):

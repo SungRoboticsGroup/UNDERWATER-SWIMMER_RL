@@ -62,6 +62,7 @@ class SalpRobotEnv(gym.Env):
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
+        self.cycle_nozzle_yaws = []
         self._history_color = (255, 200, 0)
         # index of the history sample to draw (one ellipse at a time)
         self._history_draw_index = 0
@@ -91,6 +92,7 @@ class SalpRobotEnv(gym.Env):
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
+        self.cycle_nozzle_yaws = []
         self._history_draw_index = 0
         self._history_loop = True
         self._history_step = 1
@@ -98,8 +100,9 @@ class SalpRobotEnv(gym.Env):
         return self._get_observation(), {}
     
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
-        
-        self.robot.set_control(action[0], action[1], np.array([np.pi/2, np.pi]))  # contraction, coast_time, nozzle angle
+        self.robot.nozzle.set_yaw_angle(yaw_angle=-np.pi / 2)  # Map -1 to 1 to -pi/2 to pi/2
+        self.robot.nozzle.solve_angles()
+        self.robot.set_control(action[0], action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
         # self.robot.set_control(action[0], action[1], np.array([0.0, 0.0]))  # contraction, coast_time, nozzle angle
         self.robot.step_through_cycle()
         # print(position_history)
@@ -111,6 +114,7 @@ class SalpRobotEnv(gym.Env):
             self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
             self.cycle_lengths = [float(l) for l in self.robot.length_history]
             self.cycle_widths = [float(w) for w in self.robot.width_history]
+            self.cycle_nozzle_yaws = [float(ny) for ny in self.robot.nozzle_yaw_history]
             # start drawing from the first recorded sample
             self._history_draw_index = 0
             # Reset animation for new cycle
@@ -121,6 +125,7 @@ class SalpRobotEnv(gym.Env):
             self.cycle_euler_angles = []
             self.cycle_lengths = []
             self.cycle_widths = []
+            self.cycle_nozzle_yaws = []
             self._animation_complete = True
 
         # Calculate reward
@@ -273,15 +278,18 @@ class SalpRobotEnv(gym.Env):
         li = min(idx, len(self.cycle_lengths) - 1) if len(self.cycle_lengths) > 0 else 0
         wi = min(idx, len(self.cycle_widths) - 1) if len(self.cycle_widths) > 0 else 0
         ei = min(idx, len(self.cycle_euler_angles) - 1) if len(self.cycle_euler_angles) > 0 else 0
+        ni = min(idx, len(self.cycle_nozzle_yaws) - 1) if len(self.cycle_nozzle_yaws) > 0 else 0
         
         try:
             body_len = float(self.cycle_lengths[li])
             body_wid = float(self.cycle_widths[wi])
             body_angle = float(self.cycle_euler_angles[ei][2])
+            nozzle_yaw = float(self.cycle_nozzle_yaws[ni])
         except Exception:
             body_len = float(self.robot.init_length)
             body_wid = float(self.robot.init_width)
             body_angle = float(self.robot.euler_angle[2])
+            nozzle_yaw = float(self.robot.nozzle.yaw)
             
         ew = max(4, int(scale * body_len)) if body_len <= 10.0 else max(4, int(body_len))
         eh = max(4, int(scale * body_wid)) if body_wid <= 10.0 else max(4, int(body_wid))
@@ -301,7 +309,7 @@ class SalpRobotEnv(gym.Env):
             self._draw_robot_reference_frame_at_position(scale, px, py, body_angle)
             
             # Draw nozzle at this historical position
-            self._draw_nozzle_at_position(scale, px, py, body_angle, body_len)
+            self._draw_nozzle_at_position(scale, px, py, body_angle, body_len, nozzle_yaw)
         except Exception:
             pygame.draw.circle(self.screen, (*self._history_color, alpha), (px, py), 2)
 
