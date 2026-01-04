@@ -100,7 +100,7 @@ class SalpRobotEnv(gym.Env):
         return self._get_observation(), {}
     
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
-        self.robot.nozzle.set_yaw_angle(yaw_angle=-np.pi / 2)  # Map -1 to 1 to -pi/2 to pi/2
+        self.robot.nozzle.set_yaw_angle(yaw_angle=-np.pi / 12)  # Map -1 to 1 to -pi/2 to pi/2
         self.robot.nozzle.solve_angles()
         self.robot.set_control(action[0], action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
         # self.robot.set_control(action[0], action[1], np.array([0.0, 0.0]))  # contraction, coast_time, nozzle angle

@@ -61,7 +61,8 @@ class Nozzle:
         target_direction = - np.array([np.cos(self.yaw), np.sin(self.yaw), 0])
         target_direction = self.R_br.transpose() @ target_direction
 
-        self.angle2 = np.arccos(2*target_direction[2] - 1)
+        val2 = np.clip(2*target_direction[2] - 1, -1.0, 1.0)
+        self.angle2 = np.arccos(val2)
         if self.angle2 <= -np.pi:
             self.angle2 += 2*np.pi
         elif self.angle2 > np.pi:
@@ -73,12 +74,15 @@ class Nozzle:
             a = 0.5 * (np.cos(self.angle2) - 1)
             b = np.sqrt(2) * np.sin(self.angle2) / 2
             c = target_direction[1]
-            self.angle1 = np.arcsin(c / np.sqrt(a**2 + b**2)) - np.arctan2(b, a)
+            val1 = np.clip(c / np.sqrt(a**2 + b**2), -1.0, 1.0)
+            self.angle1 = np.arcsin(val1) - np.arctan2(b, a)
 
         if self.angle1 <= -np.pi:
             self.angle1 += 2*np.pi
         elif self.angle1 > np.pi:
             self.angle1 -= 2*np.pi
+
+        # print(f"Solved nozzle angles: angle1 = {self.angle1}, angle2 = {self.angle2}")
         
     def get_nozzle_position(self) -> np.ndarray:
         """Calculate the nozzle position in world frame.
@@ -786,7 +790,7 @@ if __name__ == "__main__":
     all_drag_torque_data = []
     
     for i in range(n_cycles):
-        robot.nozzle.set_yaw_angle(yaw_angle=-np.pi/2)
+        robot.nozzle.set_yaw_angle(yaw_angle=np.pi / 6)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         # robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([0.0, 0.0]))
