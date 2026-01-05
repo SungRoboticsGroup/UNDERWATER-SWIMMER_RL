@@ -140,11 +140,15 @@ class Nozzle:
         pos_z = self.length1
         base_position = np.array([pos_x, pos_y, pos_z])
 
-        position = self.R_br @ self.R_mb @ base_position
+        # Middle section tip position in body frame
+        pos_x2 = 0
+        pos_y2 = 0
+        pos_z2 = self.length2
+        middle_position = np.array([pos_x2, pos_y2, pos_z2])
 
+        position = self.R_br @ (base_position + self.R_mb @ middle_position)
+        # print("Middle position:", position)
         return position
-
-
 
     def _get_rotation_matrices(self) -> np.ndarray:
         """Calculate the overall rotation matrix of the nozzle.
@@ -302,6 +306,7 @@ class Robot:
         self.mass = self.get_mass()
         self.prev_water_mass = self.mass
         self.prev_water_volume = self.volume
+        self.prev_I = self.get_inertia_matrix()
         self.drag_coefficient = self._get_drag_coefficient()
 
         # empty cycle history
@@ -324,7 +329,6 @@ class Robot:
         self.drag_coefficient_history = []
         self.drag_force_history = []
         self.drag_torque_history = []
-
 
     def set_control(self, contraction: float, coast_time: float, nozzle_angles: np.ndarray):
         """Set control inputs for the robot.
@@ -500,15 +504,16 @@ class Robot:
         Returns:
             3D angular acceleration vector
         """
-        T_asymmetry = np.zeros(3)  # TODO: Implement asymmetry torque
+        T_asymmetry = np.array([0.0, 0.0, 0.0001])  # TODO: Implement asymmetry torque
         T_coriolis = self._get_coriolis_torque()
         self.drag_torque = self._get_drag_torque()
         self.jet_torque = self._get_jet_torque()
+        T_deform = self.get_inertia_matrix_rate() @ self.angular_velocity
         # T_jet = np.array([0.0, 0.0, 0.0])  # test orientation
 
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry)
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry - T_deform)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -527,11 +532,30 @@ class Robot:
         Returns:
             3x3 inertia matrix
         """
+        r = self._get_jet_moment_arm()
+        I_nozzle = self.nozzle.mass * np.linalg.norm(r) ** 2 * np.diag(np.array([0, 1, 1]))
+
         I_xx = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.width ** 2))
         I_yy = 0.2 * self.mass[0][0] * ((self.length/2) ** 2 + (self.width/2) ** 2)
         I_zz = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.length/2) ** 2)
 
-        return np.diag([I_xx, I_yy, I_zz])
+        I_robot = np.diag([I_xx, I_yy, I_zz])
+
+        return I_robot + I_nozzle
+    
+    def get_inertia_matrix_rate(self) -> np.ndarray:
+        """Calculate rate of change of inertia matrix.
+        
+        Note: Currently not implemented.
+        
+        Returns:
+            3x3 inertia matrix rate (zeros)
+        """
+
+        I_rate = (self.get_inertia_matrix() - self.prev_I) / self.dt
+        self.prev_I = self.get_inertia_matrix()
+
+        return I_rate
 
     def _get_jet_moment_arm(self) -> np.ndarray:
         """Calculate moment arm for jet force.
@@ -720,7 +744,7 @@ class Robot:
             Mass matrix (diagonal)
         """
         self.water_mass = self._get_water_mass()
-        mass = self.dry_mass + self.water_mass
+        mass = self.dry_mass + self.water_mass + self.nozzle.mass
         mass = mass * np.diag(np.ones(3))
 
         return mass
@@ -754,12 +778,10 @@ if __name__ == "__main__":
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.01, length2=0.01, area=0.00009)
+    nozzle = Nozzle(length1=0.01, length2=0.01, length3=0.01, area=0.00009, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)  # set nozzle angles
-    robot.nozzle.set_yaw_angle(yaw_angle=np.pi/2)  # set nozzle yaw angle
-    robot.nozzle.solve_angles()  # solve for nozzle angles based on yaw
     
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.reset()
@@ -790,10 +812,9 @@ if __name__ == "__main__":
     all_drag_torque_data = []
     
     for i in range(n_cycles):
-        robot.nozzle.set_yaw_angle(yaw_angle=np.pi / 6)
+        robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
-        # robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([0.0, 0.0]))
         robot.step_through_cycle()
     
         # Create time array for this cycle
