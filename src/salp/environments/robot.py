@@ -513,7 +513,7 @@ class Robot:
 
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry - T_deform)
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry + T_deform)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""

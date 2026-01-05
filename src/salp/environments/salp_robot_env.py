@@ -42,6 +42,7 @@ class SalpRobotEnv(gym.Env):
         
         # # Robot state
         self.robot = robot
+        self.action = np.array([0.0, 0.0, 0.0])  # Current action
         
         # Action space: [inhale_control (0/1), nozzle_direction (-1 to 1)]
         self.action_space = spaces.Box(
@@ -50,11 +51,17 @@ class SalpRobotEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation space: [pos_x, pos_y, vel_x, vel_y, body_angle, angular_vel, body_size, breathing_phase, water_volume, nozzle_angle]
-        # TODO: pull some of these limits out from the robot 
+        scale = 20.0  # pixels per meter
+        # Observation space:
+        pos_x_limits = [(-self.width + self.tank_margin) / 2 / scale, (self.width - self.tank_margin) / 2 / scale]
+        pos_y_limits = [(-self.height + self.tank_margin) / 2 / scale, (self.height - self.tank_margin) / 2 / scale]
+        vel_x_limits = [-np.inf, np.inf]
+        vel_y_limits = [-np.inf, np.inf]
+        yaw_limits = [-np.inf, np.inf]
+        angular_vel_limits = [-np.inf, np.inf] 
         self.observation_space = spaces.Box(
-            low=np.array([0, 0, -10, -10, -math.pi, -0.1, 0.5, 0, 0, -1]),
-            high=np.array([width, height, 10, 10, math.pi, 0.1, 2.0, 2, 1, 1]),
+            low=np.array([pos_x_limits[0], pos_y_limits[0], vel_x_limits[0], vel_y_limits[0], yaw_limits[0], angular_vel_limits[0]]),
+            high=np.array([pos_x_limits[1], pos_y_limits[1], vel_x_limits[1], vel_y_limits[1], yaw_limits[1], angular_vel_limits[1]]),
             dtype=np.float32
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
@@ -78,6 +85,10 @@ class SalpRobotEnv(gym.Env):
     
     def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
         super().reset(seed=seed)
+
+        # initialize a target point
+        self.target_point = self.generate_target_point(strategy="random")
+        print(f"New target point: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) meters")
         
         # Reset robot to center
         self.robot.reset()
@@ -100,12 +111,13 @@ class SalpRobotEnv(gym.Env):
         return self._get_observation(), {}
     
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
-        self.robot.nozzle.set_yaw_angle(yaw_angle=-np.pi / 12)  # Map -1 to 1 to -pi/2 to pi/2
+
+        self.prev_action = self.action
+        self.action = action  # Store for reward calculation
+        self.robot.nozzle.set_yaw_angle(yaw_angle = action[2])  # Map -1 to 1 to -pi/2 to pi/2
         self.robot.nozzle.solve_angles()
         self.robot.set_control(action[0], action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
-        # self.robot.set_control(action[0], action[1], np.array([0.0, 0.0]))  # contraction, coast_time, nozzle angle
         self.robot.step_through_cycle()
-        # print(position_history)
 
         # store the most recent breathing-cycle histories (meters)
         try:
@@ -147,38 +159,205 @@ class SalpRobotEnv(gym.Env):
     
     def _calculate_reward(self) -> float:
         """Calculate reward based on realistic movement and efficiency."""
-        # Reward for smooth movement
-        # speed = math.sqrt(self.robot_velocity[0]**2 + self.robot_velocity[1]**2)
-        # movement_reward = min(speed * 0.08, 0.6)
         
-        # # Reward for efficient breathing (not too frequent)
-        # breathing_efficiency = 0.15 if self.breathing_phase == "rest" else 0.08
+        error = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
+        error_direction = error / np.linalg.norm(error + 1e-6)
+        r_track = np.exp(-2.0 * error**2) 
         
-        # # Small penalty for excessive nozzle movement (energy cost)
-        # nozzle_penalty = abs(self.nozzle_angle) * 0.02
+        # 2. Heading (Dot Product)
+        # Normalize vectors first!
+        heading = self.robot.velocity[0:-1] / (np.linalg.norm(self.robot.velocity[0:-1]) + 1e-6)
+        r_heading = np.dot(heading, error_direction)
         
-        # # Small reward for staying in bounds
-        # bounds_reward = 0.05
+        # 3. Energy (Thrust + Coasting)
+        thrust, coast_time, nozzle_yaw = self.action
+        # Penalize high thrust, Reward long coasting
+        r_energy = -0.1 * (thrust ** 2) + 0.5 * coast_time
         
-        return 0
+        # 4. Smoothness (Action Jerk)
+        # Only penalize the nozzle angle change, not the thrust change
+        angle_change = abs(nozzle_yaw - self.prev_action[2])
+        r_smooth = -0.1 * (angle_change ** 2)
+        
+        # Total
+        # Note: Weights are critical. Tracking is usually the most important.
+        total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth
+        
+        return total_reward
+    
+    def generate_target_point(self, strategy: str = "random", 
+                             center: Optional[np.ndarray] = None,
+                             max_distance: float = 2.0) -> np.ndarray:
+        """
+        Generate a target point for the robot to reach.
+        
+        Args:
+            strategy: Target generation strategy:
+                - "random": Uniform random point within tank bounds
+                - "relative": Point relative to robot's current position
+                - "circle": Point on a circle around a center point
+                - "corridor": Point along a horizontal corridor
+                
+            center: Center point for relative/circle strategies. 
+                   Defaults to robot's current position or tank center.
+                   
+            max_distance: Maximum distance from center (for relative/circle strategies).
+                         Default is 2.0 meters.
+        
+        Returns:
+            Target point as [x, y] in meters (robot frame coordinates)
+        """
+        scale = 200.0  # pixels to meters conversion
+        
+        # Get current robot position
+        current_pos = self.robot.position[0:-1] if hasattr(self.robot, 'position') else np.array([0.0, 0.0])
+        
+        if strategy == "random":
+            # Generate random point within tank bounds
+            # Convert pixel bounds to meters
+            x_min = (-self.width / 2 + self.tank_margin) / scale
+            x_max = (self.width / 2 - self.tank_margin) / scale
+            y_min = (-self.height / 2 + self.tank_margin) / scale
+            y_max = (self.height / 2 - self.tank_margin) / scale
+            
+            target = np.array([
+                np.random.uniform(x_min, x_max),
+                np.random.uniform(y_min, y_max)
+            ])
+            
+        elif strategy == "relative":
+            # Generate point relative to current position
+            if center is None:
+                center = current_pos
+            
+            # Random distance and angle
+            distance = np.random.uniform(0.1, max_distance)
+            angle = np.random.uniform(0, 2 * np.pi)
+            
+            target = center + distance * np.array([np.cos(angle), np.sin(angle)])
+            
+        elif strategy == "circle":
+            # Generate point on circle around center
+            if center is None:
+                center = current_pos
+            
+            angle = np.random.uniform(0, 2 * np.pi)
+            target = center + max_distance * np.array([np.cos(angle), np.sin(angle)])
+            
+        elif strategy == "corridor":
+            # Generate point along a horizontal corridor at robot's y-position
+            if center is None:
+                center = current_pos
+            
+            x_min = (-self.width / 2 + self.tank_margin) / scale
+            x_max = (self.width / 2 - self.tank_margin) / scale
+            
+            target = np.array([
+                np.random.uniform(x_min, x_max),
+                center[1]  # Keep same y-coordinate
+            ])
+            
+        else:
+            raise ValueError(f"Unknown target generation strategy: {strategy}")
+        
+        # Clamp to tank bounds
+        x_min = (-self.width / 2 + self.tank_margin) / scale
+        x_max = (self.width / 2 - self.tank_margin) / scale
+        y_min = (-self.height / 2 + self.tank_margin) / scale
+        y_max = (self.height / 2 - self.tank_margin) / scale
+        
+        target[0] = np.clip(target[0], x_min, x_max)
+        target[1] = np.clip(target[1], y_min, y_max)
+        
+        return target.astype(np.float32)
+    
+    def sample_random_action(self) -> np.ndarray:
+        """
+        Sample a random action from the action space.
+        
+        The action space contains three continuous values:
+        - inhale_control: [0.0, 1.0] - Controls water intake
+        - coast_time: [0.0, 1.0] - Duration of coasting phase
+        - nozzle_direction: [-1.0, 1.0] - Steering angle for nozzle
+        
+        Returns:
+            Random action as numpy array of shape (3,) with dtype float32
+        """
+        action = self.action_space.sample()
+
+        # scale to robot inputs
+        action[0] *= 0.06  # inhale_control
+        action[1] *= 10.0   # coast_time
+        action[2] *= np.pi / 2  # nozzle yaw
+
+        return action.astype(np.float32)
+    
+    def _draw_target_point(self, scale: float = 200):
+        """
+        Draw the target point on the screen.
+        
+        Args:
+            scale: Pixels per meter for coordinate conversion
+        """
+        if not hasattr(self, 'target_point') or self.target_point is None:
+            return
+        
+        if self.screen is None:
+            return
+        
+        # Convert target point from meters to screen pixels
+        target_screen_x = int(self.pos_init[0] + self.target_point[0] * scale)
+        target_screen_y = int(self.pos_init[1] + self.target_point[1] * scale)
+        # print(f"Drawing target at screen pos: ({target_screen_x}, {target_screen_y})")
+        
+        # Draw target point as a circle with crosshair
+        target_radius = 15
+        target_color = (255, 0, 0)  # Bright red
+        outline_color = (255, 100, 100)  # Light red outline
+        crosshair_color = (200, 0, 0)  # Darker red for crosshair
+        
+        # Draw filled circle
+        pygame.draw.circle(self.screen, target_color, (target_screen_x, target_screen_y), target_radius)
+        
+        # Draw outline
+        pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 3)
+        
+        # Draw crosshair (plus sign)
+        crosshair_size = target_radius + 5
+        pygame.draw.line(self.screen, crosshair_color, 
+                        (target_screen_x - crosshair_size, target_screen_y),
+                        (target_screen_x + crosshair_size, target_screen_y), 2)
+        pygame.draw.line(self.screen, crosshair_color,
+                        (target_screen_x, target_screen_y - crosshair_size),
+                        (target_screen_x, target_screen_y + crosshair_size), 2)
+        
+        # Draw label
+        if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+            pygame.font.init()
+        font = pygame.font.Font(None, 14)
+        label = font.render("TARGET", True, outline_color)
+        label_rect = label.get_rect(midbottom=(target_screen_x, target_screen_y - target_radius - 10))
+        self.screen.blit(label, label_rect)
+        
+        # Draw distance to target as info
+        robot_pos = self.robot.position[0:-1]
+        distance_to_target = np.linalg.norm(self.target_point - robot_pos)
+        dist_label = font.render(f"d:{distance_to_target:.2f}m", True, crosshair_color)
+        dist_label_rect = dist_label.get_rect(midtop=(target_screen_x, target_screen_y + target_radius + 10))
+        self.screen.blit(dist_label, dist_label_rect)
     
     def _get_observation(self) -> np.ndarray:
         """Get current observation."""
         # Map breathing phase to number
         
-        # return np.array([
-        #     self.robot_pos[0] / self.width,  # Normalized position
-        #     self.robot_pos[1] / self.height,
-        #     self.robot_velocity[0] / 5.0,  # Normalized velocity
-        #     self.robot_velocity[1] / 5.0,
-        #     self.robot_angle / math.pi,  # Normalized body angle
-        #     self.robot_angular_velocity / 0.1,  # Normalized angular velocity
-        #     max(self.ellipse_a, self.ellipse_b),  # Normalized body size
-        #     phase_num / 2.0,  # Normalized breathing phase
-        #     self.water_volume,  # Water volume (0-1)
-        #     self.nozzle_angle  # Normalized nozzle angle
-        # ], dtype=np.float32)
-        return 0
+        return np.array([
+            self.robot.position[0] - self.target_point[0],  # Normalized position
+            self.robot.position[1] - self.target_point[1],
+            self.robot.velocity[0],  # Normalized velocity
+            self.robot.velocity[1],
+            self.robot.euler_angle[2],  # Normalized body angle
+            self.robot.angular_velocity[2],  # Normalized angular velocity
+        ], dtype=np.float32)
     
     def _get_info(self) -> Dict:
         """Get additional information."""
@@ -709,6 +888,7 @@ class SalpRobotEnv(gym.Env):
         scale = 200
 
         # robot screen center in pixels (convert robot meter positions to screen coordinates)
+        # print(f"Robot world pos: ({self.robot.position[0]}, {self.robot.position[1]})")
         robot_x = int(self.pos_init[0] + self.robot.position[0] * scale)
         robot_y = int(self.pos_init[1] + self.robot.position[1] * scale)
         # print(f"Robot screen pos: ({robot_x}, {robot_y})")
@@ -719,9 +899,12 @@ class SalpRobotEnv(gym.Env):
         # draw a small reference frame at the tank center (x/y axes)
         self._draw_reference_frame(scale)
 
+        self._draw_target_point(scale)
         # draw historical path and sized ellipses
         # draw real-time animated history of the current cycle
         self._draw_history(scale)
+
+        # draw target point
 
         # draw current robot body at end-of-cycle position
         # self._draw_body(scale, robot_x, robot_y)
@@ -761,8 +944,9 @@ if __name__ == "__main__":
     done = False
     cnt = 0
     while not done:
-        action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
+        # action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
+        action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
         cnt += 1
         # Wait for the animation to complete before next step
