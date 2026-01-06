@@ -664,7 +664,9 @@ class Robot:
         self.drag_coefficient = self._get_drag_coefficient()
         F_drag = -0.5 * self.density * self.area * self.drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
 
-        return F_drag
+        F_linear = -0.5 * self.density * self.area * self.drag_coefficient * self.velocity
+
+        return F_drag + F_linear
     
     def _get_added_mass(self) -> float:
         """Calculate added mass from surrounding fluid.
@@ -817,8 +819,8 @@ if __name__ == "__main__":
         # robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
         # contraction = np.random.uniform(0.0, 0.06)
         # coast_time = np.random.uniform(0.0, 2.0)
-        contraction = 0.06
-        coast_time = 100
+        contraction = 0.01
+        coast_time = 10
         robot.nozzle.set_yaw_angle(yaw_angle=0.0)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
