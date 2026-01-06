@@ -350,6 +350,7 @@ class Robot:
 
         self.refill_time = self._contract_model()
         self.jet_time = self._release_model()
+        # print(f"Refill time = {self.refill_time:.2f}s, Jet time = {self.jet_time:.2f}s")
 
     def update_state(self):
         """Determine current phase based on cycle time.
@@ -699,7 +700,7 @@ class Robot:
         if self.state == self.phase[0]:  # inhale
             length = self.init_length - self.cycle_time*self._contract_rate
         elif self.state == self.phase[1]:  # exhale
-            length = self.init_length - self.max_contraction + (self.cycle_time - self.refill_time)*self._release_rate
+            length = self.init_length - self.contraction + (self.cycle_time - self.refill_time)*self._release_rate
         else:
             length = self.init_length
 
@@ -714,7 +715,7 @@ class Robot:
         if self.state == self.phase[0]:  # inhale
             width = self.init_width + self.cycle_time*self._contract_rate
         elif self.state == self.phase[1]:  # exhale
-            width = self.init_width + self.max_contraction - (self.cycle_time - self.refill_time)*self._release_rate
+            width = self.init_width + self.contraction - (self.cycle_time - self.refill_time)*self._release_rate
         else:
             width = self.init_width
 
@@ -813,8 +814,10 @@ if __name__ == "__main__":
     
     for i in range(n_cycles):
         robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
+        contraction = np.random.uniform(0.0, 0.06)
+        coast_time = np.random.uniform(0.0, 2.0)
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.06, coast_time=1, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
+        robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
         # Create time array for this cycle
