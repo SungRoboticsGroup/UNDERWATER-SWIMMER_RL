@@ -225,9 +225,9 @@ def main():
     print("=" * 60)
     
     # Compare individual action parameters
-    # compare_contraction_levels()
+    compare_contraction_levels()
     # compare_coast_times()
-    compare_yaw_angles()
+    # compare_yaw_angles()
     
     # Compare action combinations
     # compare_action_combinations()

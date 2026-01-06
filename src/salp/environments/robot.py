@@ -505,7 +505,7 @@ class Robot:
         Returns:
             3D angular acceleration vector
         """
-        T_asymmetry = np.array([0.0, 0.0, 0.000])  # TODO: Implement asymmetry torque
+        T_asymmetry = np.array([0.0, 0.0, 0.1*np.linalg.norm(self.velocity)])  # TODO: Implement asymmetry torque
         T_coriolis = self._get_coriolis_torque()
         self.drag_torque = self._get_drag_torque()
         self.jet_torque = self._get_jet_torque()
