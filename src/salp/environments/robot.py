@@ -590,7 +590,6 @@ class Robot:
         mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
         C_discharge = 0.1  # discharge coefficient
 
-
         return C_discharge * mass_rate * self.jet_velocity
     
     def _get_jet_velocity(self) -> np.ndarray:
@@ -649,8 +648,8 @@ class Robot:
         Returns:
             3D torque vector
         """
-        T_drag = - 4.0 / 15.0 * self.density * self.drag_coefficient * \
-                (self.width/2) ** 2 * (self.length / 2) ** 4 * abs(self.angular_velocity) * self.angular_velocity
+        T_drag = - self.density * self.drag_coefficient * (self.width / 2) * \
+            (self.length / 2) ** 4 * np.linalg.norm(self.angular_velocity) * self.angular_velocity
         self.drag_torque = T_drag
         return T_drag
     
@@ -782,7 +781,7 @@ if __name__ == "__main__":
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00004, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)  # set nozzle angles
