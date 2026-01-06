@@ -219,7 +219,7 @@ class Robot:
         self.contraction = 0.0  # contraction level
         self._contract_rate = 0.0
         self._release_rateS = 0.0
-        self._drag_coefficents = [0.2, 0.5] # min and max drag coefficients for different shapes
+        self._drag_coefficents = [0.4, 1.0] # min and max drag coefficients for different shapes
 
         # cycle tracking 
         self.state = self.phase[3]  # initial state is rest
@@ -505,7 +505,7 @@ class Robot:
         Returns:
             3D angular acceleration vector
         """
-        T_asymmetry = np.array([0.0, 0.0, 0.0001])  # TODO: Implement asymmetry torque
+        T_asymmetry = np.array([0.0, 0.0, 0.000])  # TODO: Implement asymmetry torque
         T_coriolis = self._get_coriolis_torque()
         self.drag_torque = self._get_drag_torque()
         self.jet_torque = self._get_jet_torque()
@@ -514,7 +514,7 @@ class Robot:
 
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry + T_deform)
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry - T_deform)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -536,7 +536,7 @@ class Robot:
         r = self._get_jet_moment_arm()
         I_nozzle = self.nozzle.mass * np.linalg.norm(r) ** 2 * np.diag(np.array([0, 1, 1]))
 
-        I_xx = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.width ** 2))
+        I_xx = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.width/2) ** 2)
         I_yy = 0.2 * self.mass[0][0] * ((self.length/2) ** 2 + (self.width/2) ** 2)
         I_zz = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.length/2) ** 2)
 
@@ -588,7 +588,8 @@ class Robot:
             return np.zeros(3)
 
         mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
-        C_discharge = 0.001  # discharge coefficient
+        C_discharge = 0.1  # discharge coefficient
+
 
         return C_discharge * mass_rate * self.jet_velocity
     
@@ -661,7 +662,7 @@ class Robot:
         """
         #TODO: drag has a slight discountinuity!
         self.drag_coefficient = self._get_drag_coefficient()
-        F_drag = -0.5 * self.density * self.area * self.drag_coefficient * abs(self.velocity) * self.velocity
+        F_drag = -0.5 * self.density * self.area * self.drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
 
         return F_drag
     
@@ -681,7 +682,7 @@ class Robot:
         Returns:
             3D force vector
         """
-        return self.get_mass() @ self.angular_velocity * self.velocity
+        return self.get_mass() @ np.cross(self.angular_velocity, self.velocity)
 
     def _get_coriolis_torque(self) -> np.ndarray:
         """Calculate Coriolis torque.
@@ -779,7 +780,7 @@ if __name__ == "__main__":
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.01, length2=0.01, length3=0.01, area=0.00009, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00004, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)  # set nozzle angles
@@ -788,7 +789,7 @@ if __name__ == "__main__":
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 10
+    n_cycles = 1
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -813,9 +814,12 @@ if __name__ == "__main__":
     all_drag_torque_data = []
     
     for i in range(n_cycles):
-        robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
-        contraction = np.random.uniform(0.0, 0.06)
-        coast_time = np.random.uniform(0.0, 2.0)
+        # robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
+        # contraction = np.random.uniform(0.0, 0.06)
+        # coast_time = np.random.uniform(0.0, 2.0)
+        contraction = 0.06
+        coast_time = 100
+        robot.nozzle.set_yaw_angle(yaw_angle=0.0)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
@@ -878,7 +882,7 @@ if __name__ == "__main__":
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
-    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
@@ -887,5 +891,5 @@ if __name__ == "__main__":
     # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
     
     # Plot trajectory in x-y plane with yaw orientation
-    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
     
