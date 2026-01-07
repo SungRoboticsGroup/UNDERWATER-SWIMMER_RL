@@ -53,8 +53,10 @@ class SalpRobotEnv(gym.Env):
         
         scale = 20.0  # pixels per meter
         # Observation space:
-        pos_x_limits = [(-self.width + self.tank_margin) / 2 / scale, (self.width - self.tank_margin) / 2 / scale]
-        pos_y_limits = [(-self.height + self.tank_margin) / 2 / scale, (self.height - self.tank_margin) / 2 / scale]
+        # pos_x_limits = [(-self.width + self.tank_margin) / 2 / scale, (self.width - self.tank_margin) / 2 / scale]
+        # pos_y_limits = [(-self.height + self.tank_margin) / 2 / scale, (self.height - self.tank_margin) / 2 / scale]
+        pos_x_limits = [-np.inf, np.inf]
+        pos_y_limits = [-np.inf, np.inf]
         vel_x_limits = [-np.inf, np.inf]
         vel_y_limits = [-np.inf, np.inf]
         yaw_limits = [-np.inf, np.inf]
@@ -88,7 +90,7 @@ class SalpRobotEnv(gym.Env):
 
         # initialize a target point
         self.target_point = self.generate_target_point(strategy="random")
-        print(f"New target point: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) meters")
+        # print(f"New target point: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) meters")
         
         # Reset robot to center
         self.robot.reset()
@@ -109,14 +111,27 @@ class SalpRobotEnv(gym.Env):
         self._history_step = 1
 
         return self._get_observation(), {}
-    
+
+    def _rescale_action(self, action: np.ndarray) -> np.ndarray:
+
+        """Rescale action from [-1, 1] to robot input ranges."""
+        rescaled = np.zeros_like(action)
+        rescaled[0] = action[0] * 0.06  # inhale_control
+        rescaled[1] = action[1] * 10.0   # coast_time
+        rescaled[2] = action[2] * (np.pi / 2)  # nozzle yaw\
+
+        return rescaled
+     
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
 
+        rescaled_action = self._rescale_action(action) 
+
+        # print(f"Action taken: Inhale: {action[0]:.2f}, Coast Time: {action[1]:.2f}, Nozzle Yaw: {action[2]:.2f} rad")
         self.prev_action = self.action
-        self.action = action  # Store for reward calculation
-        self.robot.nozzle.set_yaw_angle(yaw_angle = action[2])  # Map -1 to 1 to -pi/2 to pi/2
+        self.action = rescaled_action  # Store for reward calculation
+        self.robot.nozzle.set_yaw_angle(yaw_angle = rescaled_action[2])  # Map -1 to 1 to -pi/2 to pi/2
         self.robot.nozzle.solve_angles()
-        self.robot.set_control(action[0], action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
+        self.robot.set_control(rescaled_action[0], rescaled_action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
         self.robot.step_through_cycle()
 
         # store the most recent breathing-cycle histories (meters)
@@ -148,6 +163,8 @@ class SalpRobotEnv(gym.Env):
         truncated = False
         
         observation = self._get_observation()
+        # print(f"Obs: {observation}")
+
         # info = self._get_info()
         info = {
             'position_history': self.robot.position_history,
@@ -161,29 +178,34 @@ class SalpRobotEnv(gym.Env):
         """Calculate reward based on realistic movement and efficiency."""
         
         error = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
-        error_direction = error / np.linalg.norm(error + 1e-6)
+        error_direction = (self.robot.position[0:-1] - self.target_point) / np.linalg.norm(error + 1e-6)
         r_track = np.exp(-2.0 * error**2) 
+        # print(r_track)
         
         # 2. Heading (Dot Product)
         # Normalize vectors first!
         heading = self.robot.velocity[0:-1] / (np.linalg.norm(self.robot.velocity[0:-1]) + 1e-6)
         r_heading = np.dot(heading, error_direction)
+        # print(r_heading)
         
         # 3. Energy (Thrust + Coasting)
         thrust, coast_time, nozzle_yaw = self.action
         # Penalize high thrust, Reward long coasting
         r_energy = -0.1 * (thrust ** 2) + 0.5 * coast_time
+        # print(r_energy)
         
         # 4. Smoothness (Action Jerk)
         # Only penalize the nozzle angle change, not the thrust change
         angle_change = abs(nozzle_yaw - self.prev_action[2])
         r_smooth = -0.1 * (angle_change ** 2)
+        # print(r_smooth)
         
         # Total
         # Note: Weights are critical. Tracking is usually the most important.
         total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth
+        # print(total_reward)
         
-        return total_reward
+        return float(total_reward)
     
     def generate_target_point(self, strategy: str = "random", 
                              center: Optional[np.ndarray] = None,
@@ -286,11 +308,9 @@ class SalpRobotEnv(gym.Env):
         action = self.action_space.sample()
 
         # scale to robot inputs
-        action[0] *= 0.06  # inhale_control
-        action[1] *= 10.0   # coast_time
-        action[2] *= np.pi / 2  # nozzle yaw
+        rescaled_action = self._rescale_action(action)
 
-        return action.astype(np.float32)
+        return rescaled_action.astype(np.float32)
     
     def _draw_target_point(self, scale: float = 200):
         """
@@ -350,6 +370,15 @@ class SalpRobotEnv(gym.Env):
         """Get current observation."""
         # Map breathing phase to number
         
+        # print( np.array([
+        #     self.robot.position[0] - self.target_point[0],  # Normalized position
+        #     self.robot.position[1] - self.target_point[1],
+        #     self.robot.velocity[0],  # Normalized velocity
+        #     self.robot.velocity[1],
+        #     self.robot.euler_angle[2],  # Normalized body angle
+        #     self.robot.angular_velocity[2],  # Normalized angular velocity
+        # ], dtype=np.float32))
+
         return np.array([
             self.robot.position[0] - self.target_point[0],  # Normalized position
             self.robot.position[1] - self.target_point[1],
