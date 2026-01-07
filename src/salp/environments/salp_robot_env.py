@@ -161,6 +161,14 @@ class SalpRobotEnv(gym.Env):
         # Check termination
         done = False
         truncated = False
+
+        distance_to_target = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
+        if distance_to_target < 0.01:
+            done = True
+            reward += 10.0  # big reward for reaching target
+        elif distance_to_target > 5.0:
+            truncated = True
+            reward -= 5.0  # penalty for going out of bounds
         
         observation = self._get_observation()
         # print(f"Obs: {observation}")
@@ -191,7 +199,7 @@ class SalpRobotEnv(gym.Env):
         # 3. Energy (Thrust + Coasting)
         thrust, coast_time, nozzle_yaw = self.action
         # Penalize high thrust, Reward long coasting
-        r_energy = -0.1 * (thrust ** 2) + 0.5 * coast_time
+        r_energy = -0.1 * (thrust ** 2) - 0.01 / (coast_time + 1e-6)
         # print(r_energy)
         
         # 4. Smoothness (Action Jerk)

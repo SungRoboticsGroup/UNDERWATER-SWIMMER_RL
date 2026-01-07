@@ -348,6 +348,9 @@ class Robot:
         self.cycle += 1
         self.cycle_time = 0.0
 
+        if self.cycle % 50 == 0:
+            print(f"Cycle {self.cycle}")
+
         self.refill_time = self._contract_model()
         self.jet_time = self._release_model()
         # print(f"Refill time = {self.refill_time:.2f}s, Jet time = {self.jet_time:.2f}s")
@@ -818,6 +821,7 @@ if __name__ == "__main__":
         # robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
         # contraction = np.random.uniform(0.0, 0.06)
         # coast_time = np.random.uniform(0.0, 2.0)
+        # TODO: debug this Action taken: Inhale: 0.51, Coast Time: 0.86, Nozzle Yaw: -0.85 rad
         contraction = 0.01
         coast_time = 10
         robot.nozzle.set_yaw_angle(yaw_angle=0.0)
