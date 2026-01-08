@@ -135,25 +135,26 @@ class SalpRobotEnv(gym.Env):
         self.robot.step_through_cycle()
 
         # store the most recent breathing-cycle histories (meters)
-        try:
-            # convert to Python lists for easier use in render
-            self.cycle_positions = [np.array(p) for p in self.robot.position_history]
-            self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
-            self.cycle_lengths = [float(l) for l in self.robot.length_history]
-            self.cycle_widths = [float(w) for w in self.robot.width_history]
-            self.cycle_nozzle_yaws = [float(ny) for ny in self.robot.nozzle_yaw_history]
-            # start drawing from the first recorded sample
-            self._history_draw_index = 0
-            # Reset animation for new cycle
-            self._animation_start_time = None
-            self._animation_complete = False
-        except Exception:
-            self.cycle_positions = []
-            self.cycle_euler_angles = []
-            self.cycle_lengths = []
-            self.cycle_widths = []
-            self.cycle_nozzle_yaws = []
-            self._animation_complete = True
+        if self.render_mode == "human":
+            try:
+                # convert to Python lists for easier use in render
+                self.cycle_positions = [np.array(p) for p in self.robot.position_history]
+                self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
+                self.cycle_lengths = [float(l) for l in self.robot.length_history]
+                self.cycle_widths = [float(w) for w in self.robot.width_history]
+                self.cycle_nozzle_yaws = [float(ny) for ny in self.robot.nozzle_yaw_history]
+                # start drawing from the first recorded sample
+                self._history_draw_index = 0
+                # Reset animation for new cycle
+                self._animation_start_time = None
+                self._animation_complete = False
+            except Exception:
+                self.cycle_positions = []
+                self.cycle_euler_angles = []
+                self.cycle_lengths = []
+                self.cycle_widths = []
+                self.cycle_nozzle_yaws = []
+                self._animation_complete = True
 
         # Calculate reward
         reward = self._calculate_reward()
@@ -186,7 +187,7 @@ class SalpRobotEnv(gym.Env):
         """Calculate reward based on realistic movement and efficiency."""
         
         error = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
-        error_direction = (self.robot.position[0:-1] - self.target_point) / np.linalg.norm(error + 1e-6)
+        error_direction = - (self.robot.position[0:-1] - self.target_point) / np.linalg.norm(error + 1e-6)
         r_track = np.exp(-2.0 * error**2) 
         # print(r_track)
         
@@ -315,10 +316,7 @@ class SalpRobotEnv(gym.Env):
         """
         action = self.action_space.sample()
 
-        # scale to robot inputs
-        rescaled_action = self._rescale_action(action)
-
-        return rescaled_action.astype(np.float32)
+        return action.astype(np.float32)
     
     def _draw_target_point(self, scale: float = 200):
         """
@@ -971,10 +969,11 @@ class SalpRobotEnv(gym.Env):
 if __name__ == "__main__":
     
     # TODO: need to fix the scale issues with the robot size and movement speed
-    nozzle = Nozzle(length1=0.01, length2=0.01, area=0.00009)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)
+    robot.set_environment(density=1000)  # water density in kg/m^3
     env = SalpRobotEnv(render_mode="human", robot=robot)
     obs, info = env.reset()
     
