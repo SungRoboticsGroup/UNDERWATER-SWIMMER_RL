@@ -95,6 +95,7 @@ class SalpRobotEnv(gym.Env):
         # Reset robot to center
         self.robot.reset()
         self.pos_init = np.array([self.width / 2, self.height / 2])
+        self.prev_dist = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
        
         # self.body_radius = self.base_radius  # Current body radius
         self.ellipse_a = self.robot.get_current_length()    # Semi-major axis for ellipse
@@ -118,7 +119,7 @@ class SalpRobotEnv(gym.Env):
         rescaled = np.zeros_like(action)
         rescaled[0] = action[0] * 0.06  # inhale_control
         rescaled[1] = action[1] * 10.0   # coast_time
-        rescaled[2] = action[2] * (np.pi / 2)  # nozzle yaw\
+        rescaled[2] = action[2] * (np.pi / 2)  # nozzle yaw angle
 
         return rescaled
      
@@ -127,8 +128,6 @@ class SalpRobotEnv(gym.Env):
         rescaled_action = self._rescale_action(action) 
 
         # print(f"Action taken: Inhale: {action[0]:.2f}, Coast Time: {action[1]:.2f}, Nozzle Yaw: {action[2]:.2f} rad")
-        self.prev_action = self.action
-        self.action = rescaled_action  # Store for reward calculation
         self.robot.nozzle.set_yaw_angle(yaw_angle = rescaled_action[2])  # Map -1 to 1 to -pi/2 to pi/2
         self.robot.nozzle.solve_angles()
         self.robot.set_control(rescaled_action[0], rescaled_action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
@@ -170,6 +169,10 @@ class SalpRobotEnv(gym.Env):
         elif distance_to_target > 5.0:
             truncated = True
             reward -= 5.0  # penalty for going out of bounds
+
+        # reset after a certain number of steps
+        if self.robot.cycle >= 1000:
+            truncated = True
         
         observation = self._get_observation()
         # print(f"Obs: {observation}")
@@ -181,26 +184,31 @@ class SalpRobotEnv(gym.Env):
             'width_history': self.robot.width_history
         }
         
+        self.prev_action = self.action
         return observation, reward, done, truncated, info
     
     def _calculate_reward(self) -> float:
         """Calculate reward based on realistic movement and efficiency."""
         
-        error = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
-        error_direction = - (self.robot.position[0:-1] - self.target_point) / np.linalg.norm(error + 1e-6)
-        r_track = np.exp(-2.0 * error**2) 
+        current_diff = self.robot.position[0:-1] - self.target_point
+        current_dist = np.linalg.norm(current_diff)
+        dist_improvement = current_dist - self.prev_dist   # Negative distance as improvement
+        r_track = dist_improvement * 100
         # print(r_track)
         
         # 2. Heading (Dot Product)
         # Normalize vectors first!
-        heading = self.robot.velocity[0:-1] / (np.linalg.norm(self.robot.velocity[0:-1]) + 1e-6)
+
+        error_direction = - (current_diff / np.linalg.norm(current_diff + 1e-6))
+        heading = self.robot.velocity_world[0:-1] / (np.linalg.norm(self.robot.velocity_world[0:-1]) + 1e-6)
         r_heading = np.dot(heading, error_direction)
         # print(r_heading)
         
-        # 3. Energy (Thrust + Coasting)
-        thrust, coast_time, nozzle_yaw = self.action
-        # Penalize high thrust, Reward long coasting
-        r_energy = -0.1 * (thrust ** 2) - 0.01 / (coast_time + 1e-6)
+        # 3. Energy (Thrust + Coasting) I don't care about this for now
+        _, _, nozzle_yaw = self.action
+        # # Penalize high thrust, Reward long coasting
+        # r_energy = -0.1 * (thrust ** 2) - 0.01 / (coast_time + 1e-6)
+        r_energy = 0.0
         # print(r_energy)
         
         # 4. Smoothness (Action Jerk)
