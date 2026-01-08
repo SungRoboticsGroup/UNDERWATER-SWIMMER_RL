@@ -348,7 +348,7 @@ class Robot:
         self.cycle += 1
         self.cycle_time = 0.0
 
-        if self.cycle % 50 == 0:
+        if self.cycle % 1000 == 0:
             print(f"Cycle {self.cycle}")
 
         self.refill_time = self._contract_model()
@@ -395,26 +395,26 @@ class Robot:
     # Define getter functions for current values
     def get_current_values(self):
         return {
-            'state_history': self.state,
-            'position_history': self.position.copy(),
-            'velocity_history': self.velocity.copy(),
-            'acceleration_history': self.acceleration.copy(),
-            'euler_angle_history': self.euler_angle.copy(),
-            'euler_angle_rate_history': self.euler_angle_rate.copy(),
-            'angular_velocity_history': self.angular_velocity.copy(),
-            'angular_acceleration_history': self.angular_acceleration.copy(),
-            'length_history': self.length,
-            'width_history': self.width,
-            'area_history': self.area,
-            'volume_history': self.volume,
-            'mass_history': self.mass[0,0],  # store only scalar mass value
-            'jet_velocity_history': self.jet_velocity,
-            'jet_force_history': self.jet_force,
-            'jet_torque_history': self.jet_torque.copy(),
-            'drag_coefficient_history': self.drag_coefficient,
-            'drag_force_history': self.drag_force,
-            'drag_torque_history': self.drag_torque.copy(),
-            'nozzle_yaw_history': self.nozzle.yaw,
+            # 'state_history': self.state,
+            # 'position_history': self.position.copy(),
+            # 'velocity_history': self.velocity.copy(),
+            # 'acceleration_history': self.acceleration.copy(),
+            # 'euler_angle_history': self.euler_angle.copy(),
+            # 'euler_angle_rate_history': self.euler_angle_rate.copy(),
+            # 'angular_velocity_history': self.angular_velocity.copy(),
+            # 'angular_acceleration_history': self.angular_acceleration.copy(),
+            # 'length_history': self.length,
+            # 'width_history': self.width,
+            # 'area_history': self.area,
+            # 'volume_history': self.volume,
+            # 'mass_history': self.mass[0,0],  # store only scalar mass value
+            # 'jet_velocity_history': self.jet_velocity,
+            # 'jet_force_history': self.jet_force,
+            # 'jet_torque_history': self.jet_torque.copy(),
+            # 'drag_coefficient_history': self.drag_coefficient,
+            # 'drag_force_history': self.drag_force,
+            # 'drag_torque_history': self.drag_torque.copy(),
+            # 'nozzle_yaw_history': self.nozzle.yaw,
         }
 
     def step_through_cycle(self):
@@ -887,7 +887,7 @@ if __name__ == "__main__":
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
-    plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
