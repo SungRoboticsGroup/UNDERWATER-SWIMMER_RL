@@ -82,7 +82,7 @@ class Nozzle:
         elif self.angle1 > np.pi:
             self.angle1 -= 2*np.pi
 
-        # print(f"Solved nozzle angles: angle1 = {self.angle1}, angle2 = {self.angle2}")
+        print(f"Solved nozzle angles: angle1 = {self.angle1}, angle2 = {self.angle2}")
         
     def get_nozzle_position(self) -> np.ndarray:
         """Calculate the nozzle position in world frame.
@@ -780,7 +780,8 @@ if __name__ == "__main__":
         plot_euler_angles, plot_robot_geometry, plot_robot_mass, plot_mass_rate,
         plot_volume_rate, plot_cross_sectional_area, plot_jet_velocity,
         plot_jet_properties, plot_drag_coefficient, plot_drag_properties,
-        plot_robot_position, plot_robot_velocity, plot_jet_torque, plot_trajectory_xy
+        plot_robot_position, plot_robot_velocity, plot_jet_torque, plot_trajectory_xy,
+        plot_nozzle_direction
     )
 
     # Test the Robot and Nozzle classes
@@ -824,9 +825,11 @@ if __name__ == "__main__":
         # TODO: debug this Action taken: Inhale: 0.51, Coast Time: 0.86, Nozzle Yaw: -0.85 rad
         contraction = 0.01
         coast_time = 10
-        robot.nozzle.set_yaw_angle(yaw_angle=0.0)
+        robot.nozzle.set_yaw_angle(yaw_angle=-np.pi/4)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
+        robot.nozzle.set_angles(angle1=-0.43, angle2=1.14)
+        plot_nozzle_direction(robot.nozzle, title=f'Cycle {i+1} Nozzle Direction')
         robot.step_through_cycle()
     
         # Create time array for this cycle
@@ -887,7 +890,7 @@ if __name__ == "__main__":
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
-    plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)

@@ -7,6 +7,7 @@ including geometry, forces, velocities, torques, and other physical properties.
 
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from enum import Enum
 
 
@@ -883,3 +884,176 @@ def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
     
     plt.tight_layout()
     plt.show()
+
+
+def plot_nozzle_direction(nozzle, euler_angles=None, title="Nozzle Direction Visualization"):
+    """
+    Visualize the nozzle direction in 3D space.
+    
+    Creates a 3D plot showing:
+    - Robot body axes (X, Y, Z)
+    - Nozzle position
+    - Nozzle direction vector
+    - Nozzle's rotation angles
+    
+    Args:
+        nozzle: Nozzle object with position and direction methods
+        euler_angles: Optional tuple of (roll, pitch, yaw) angles for robot orientation.
+                     If provided, the visualization will show the nozzle direction
+                     in the world frame. Otherwise shows body frame.
+        title: Plot title
+    
+    Returns:
+        Figure object
+    """
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Get nozzle position and direction
+    nozzle_position = nozzle.get_nozzle_position()
+    nozzle_direction = nozzle.get_nozzle_direction()
+    middle_position = nozzle.get_middle_position()
+    
+    # Normalize direction for visualization
+    direction_normalized = nozzle_direction / (np.linalg.norm(nozzle_direction) + 1e-8)
+    arrow_length = 0.1  # length of direction arrow in visualization
+    
+    # Plot robot body reference frame (origin at center of mass)
+    origin = np.array([0, 0, 0])
+    axis_length = 0.15
+    
+    ax.quiver(origin[0], origin[1], origin[2], axis_length, 0, 0, 
+              color='r', arrow_length_ratio=0.2, linewidth=2, label='X-axis (forward)')
+    ax.quiver(origin[0], origin[1], origin[2], 0, axis_length, 0, 
+              color='g', arrow_length_ratio=0.2, linewidth=2, label='Y-axis (lateral)')
+    ax.quiver(origin[0], origin[1], origin[2], 0, 0, axis_length, 
+              color='b', arrow_length_ratio=0.2, linewidth=2, label='Z-axis (vertical)')
+    
+    # Plot nozzle middle position
+    ax.scatter(*middle_position, color='orange', s=100, marker='o', 
+               label='Nozzle joint', zorder=5)
+    
+    # Plot nozzle tip position
+    ax.scatter(*nozzle_position, color='purple', s=100, marker='s', 
+               label='Nozzle tip', zorder=5)
+    
+    # Plot nozzle direction vector
+    ax.quiver(nozzle_position[0], nozzle_position[1], nozzle_position[2],
+              direction_normalized[0] * arrow_length, 
+              direction_normalized[1] * arrow_length, 
+              direction_normalized[2] * arrow_length,
+              color='darkred', arrow_length_ratio=0.3, linewidth=2.5, 
+              label='Nozzle direction', zorder=4)
+    
+    # Plot nozzle structure (line from joint to tip)
+    ax.plot([middle_position[0], nozzle_position[0]], 
+            [middle_position[1], nozzle_position[1]], 
+            [middle_position[2], nozzle_position[2]], 
+            'k--', linewidth=1.5, alpha=0.7, label='Nozzle structure')
+    
+    # Set labels and limits
+    ax.set_xlabel('X (m)', fontsize=11)
+    ax.set_ylabel('Y (m)', fontsize=11)
+    ax.set_zlabel('Z (m)', fontsize=11)
+    
+    # Set equal aspect ratio and limits
+    limit = 0.2
+    ax.set_xlim([-limit, limit])
+    ax.set_ylim([-limit, limit])
+    ax.set_zlim([-limit, limit])
+    
+    ax.set_title(title, fontsize=13, fontweight='bold')
+    ax.legend(loc='upper left', fontsize=10)
+    ax.grid(True, alpha=0.3)
+    
+    # Add text annotation with nozzle angles
+    angle1_deg = np.degrees(nozzle.angle1)
+    angle2_deg = np.degrees(nozzle.angle2)
+    yaw_deg = np.degrees(nozzle.yaw)
+    
+    textstr = f'Angle1 (Y-axis): {angle1_deg:.1f}°\nAngle2 (Z-axis): {angle2_deg:.1f}°\nYaw: {yaw_deg:.1f}°'
+    ax.text2D(0.05, 0.95, textstr, transform=ax.transAxes, 
+              fontsize=10, verticalalignment='top',
+              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_nozzle_direction_sequence(nozzle_directions, nozzle_positions=None, 
+                                   title="Nozzle Direction Sequence"):
+    """
+    Visualize multiple nozzle directions to show steering capability.
+    
+    Useful for understanding the nozzle's reachable workspace and steering range.
+    
+    Args:
+        nozzle_directions: List or array of direction vectors (Nx3)
+        nozzle_positions: Optional list of corresponding nozzle tip positions (Nx3).
+                         If not provided, all arrows start from origin.
+        title: Plot title
+    
+    Returns:
+        Figure object
+    """
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Convert to numpy array if needed
+    nozzle_directions = np.array(nozzle_directions)
+    if nozzle_positions is not None:
+        nozzle_positions = np.array(nozzle_positions)
+    
+    # Color map based on index
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(nozzle_directions)))
+    
+    # Plot robot body reference frame
+    origin = np.array([0, 0, 0])
+    axis_length = 0.15
+    
+    ax.quiver(origin[0], origin[1], origin[2], axis_length, 0, 0, 
+              color='r', arrow_length_ratio=0.2, linewidth=2, alpha=0.5)
+    ax.quiver(origin[0], origin[1], origin[2], 0, axis_length, 0, 
+              color='g', arrow_length_ratio=0.2, linewidth=2, alpha=0.5)
+    ax.quiver(origin[0], origin[1], origin[2], 0, 0, axis_length, 
+              color='b', arrow_length_ratio=0.2, linewidth=2, alpha=0.5)
+    
+    arrow_length = 0.08
+    
+    # Plot each nozzle direction
+    for i, direction in enumerate(nozzle_directions):
+        direction_normalized = direction / (np.linalg.norm(direction) + 1e-8)
+        
+        if nozzle_positions is not None:
+            start_pos = nozzle_positions[i]
+        else:
+            start_pos = origin
+        
+        ax.quiver(start_pos[0], start_pos[1], start_pos[2],
+                  direction_normalized[0] * arrow_length,
+                  direction_normalized[1] * arrow_length,
+                  direction_normalized[2] * arrow_length,
+                  color=colors[i], arrow_length_ratio=0.3, linewidth=1.5, alpha=0.8)
+        
+        # Plot starting point
+        ax.scatter(*start_pos, color=colors[i], s=50, alpha=0.6)
+    
+    # Set labels and limits
+    ax.set_xlabel('X (m)', fontsize=11)
+    ax.set_ylabel('Y (m)', fontsize=11)
+    ax.set_zlabel('Z (m)', fontsize=11)
+    
+    limit = 0.15
+    ax.set_xlim([-limit, limit])
+    ax.set_ylim([-limit, limit])
+    ax.set_zlim([-limit, limit])
+    
+    ax.set_title(title, fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
