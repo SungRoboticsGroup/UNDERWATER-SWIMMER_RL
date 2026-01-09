@@ -783,7 +783,8 @@ if __name__ == "__main__":
         plot_euler_angles, plot_robot_geometry, plot_robot_mass, plot_mass_rate,
         plot_volume_rate, plot_cross_sectional_area, plot_jet_velocity,
         plot_jet_properties, plot_drag_coefficient, plot_drag_properties,
-        plot_robot_position, plot_robot_velocity, plot_jet_torque, plot_trajectory_xy
+        plot_robot_position, plot_robot_velocity, plot_jet_torque, plot_trajectory_xy,
+        plot_nozzle_direction
     )
 
     # Test the Robot and Nozzle classes
@@ -857,13 +858,17 @@ if __name__ == "__main__":
         # contraction = np.random.uniform(0.0, 0.06)
         # coast_time = np.random.uniform(0.0, 2.0)
         # TODO: debug this Action taken: Inhale: 0.51, Coast Time: 0.86, Nozzle Yaw: -0.85 rad
+
         contraction = 0.06 * test_actions[i, 0]
         coast_time = 10 * test_actions[i, 1]
         yaw_angle = test_actions[i, 2] * np.pi/2    
 
         robot.nozzle.set_yaw_angle(yaw_angle=yaw_angle)
+
         robot.nozzle.solve_angles()
         robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
+        robot.nozzle.set_angles(angle1=-0.43, angle2=1.14)
+        plot_nozzle_direction(robot.nozzle, title=f'Cycle {i+1} Nozzle Direction')
         robot.step_through_cycle()
     
         # Create time array for this cycle
