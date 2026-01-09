@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # 4. Setup Saving (Checkpoints)
     # Save the model every 10,000 steps so you don't lose progress if it crashes.
     checkpoint_callback = CheckpointCallback(
-        save_freq=25000,
+        save_freq= 5000,
         save_path='./logs/',
         name_prefix='salp_robot_model'
     )
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     # 5. Train
     print("Starting training...")
     model.learn(
-        total_timesteps=1000000, # Run for 1M steps
+        total_timesteps=200000, # Run for 200k steps
         callback=checkpoint_callback
     )
 

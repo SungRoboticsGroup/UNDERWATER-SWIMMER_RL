@@ -138,9 +138,9 @@ def compare_coast_times():
     robot.set_environment(density=1000)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     
-    coast_times = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]  # Different coast times
+    coast_times = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]  # Different coast times
     n_cycles = 1
-    contraction = 0.01
+    contraction = 0.06
     yaw_angle = 0.0
     
     trajectories = []
@@ -165,10 +165,10 @@ def compare_yaw_angles():
     robot.set_environment(density=1000)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     
-    yaw_angles = [-np.pi/2, -np.pi/4, -np.pi/8, 0.0, np.pi/8, np.pi/4, np.pi/2]  # Different yaw angles
+    yaw_angles = [-np.pi/2, -np.pi/4, -np.pi/8, np.pi/16, np.pi/32, 0.0, np.pi/32, np.pi/16, np.pi/8, np.pi/4, np.pi/2]  # Different yaw angles
     n_cycles = 1
     contraction = 0.06
-    coast_time = 1.0
+    coast_time = 10.0
     
     trajectories = []
     labels = []
@@ -176,9 +176,10 @@ def compare_yaw_angles():
     for yaw_angle in yaw_angles:
         traj = simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle)
         trajectories.append(traj)
-        labels.append(f'Yaw = {np.degrees(yaw_angle):.0f}°')
+        labels.append(f'Yaw = {np.degrees(yaw_angle):.0f}°')  
         final_pos = traj['positions'][-1]
-        print(f"  Yaw {np.degrees(yaw_angle):.0f}°: Final position = ({final_pos[0]:.3f}, {final_pos[1]:.3f}, {final_pos[2]:.3f}) m")
+        final_dist = np.linalg.norm(final_pos)
+        print(f"  Yaw {np.degrees(yaw_angle):.0f}°: Final position = ({final_pos[0]:.3f}, {final_pos[1]:.3f}, {final_pos[2]:.3f}) m, Distance = {final_dist:.3f} m")
     
     plot_trajectory_comparison(trajectories, labels, "Comparison: Different Yaw Angles")
 
@@ -225,9 +226,9 @@ def main():
     print("=" * 60)
     
     # Compare individual action parameters
-    compare_contraction_levels()
+    # compare_contraction_levels()
     # compare_coast_times()
-    # compare_yaw_angles()
+    compare_yaw_angles()
     
     # Compare action combinations
     # compare_action_combinations()

@@ -3,13 +3,13 @@ from stable_baselines3 import SAC
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 
-nozzle = Nozzle(length1=0.01, length2=0.01, area=0.00009)
+nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.000016, mass=1.0)
 robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
 robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
 env = SalpRobotEnv(render_mode="human", robot=robot)
 # Load the trained model
-model = SAC.load("./logs/salp_robot_model_30000_steps", env=env)   
+model = SAC.load("./salp_robot_final", env=env)   
 
 
 obs, _ = env.reset()

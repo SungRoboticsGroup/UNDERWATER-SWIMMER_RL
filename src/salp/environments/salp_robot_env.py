@@ -96,6 +96,7 @@ class SalpRobotEnv(gym.Env):
         self.robot.reset()
         self.pos_init = np.array([self.width / 2, self.height / 2])
         self.prev_dist = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
+        self.prev_action = np.array([0.0, 0.0, 0.0])
        
         # self.body_radius = self.base_radius  # Current body radius
         self.ellipse_a = self.robot.get_current_length()    # Semi-major axis for ellipse
@@ -171,7 +172,7 @@ class SalpRobotEnv(gym.Env):
             reward -= 5.0  # penalty for going out of bounds
 
         # reset after a certain number of steps
-        if self.robot.cycle >= 1000:
+        if self.robot.cycle >= 500:
             truncated = True
         
         observation = self._get_observation()
@@ -192,14 +193,16 @@ class SalpRobotEnv(gym.Env):
         
         current_diff = self.robot.position[0:-1] - self.target_point
         current_dist = np.linalg.norm(current_diff)
-        dist_improvement = current_dist - self.prev_dist   # Negative distance as improvement
+        dist_improvement = - current_dist + self.prev_dist   # Negative distance as improvement
+        # print(f"Distance to target: {current_dist:.3f} m, Improvement: {dist_improvement:.3f} m")
         r_track = dist_improvement * 100
+        self.prev_dist = current_dist
         # print(r_track)
         
         # 2. Heading (Dot Product)
         # Normalize vectors first!
 
-        error_direction = - (current_diff / np.linalg.norm(current_diff + 1e-6))
+        error_direction = - (current_diff / (np.linalg.norm(current_diff) + 1e-6))
         heading = self.robot.velocity_world[0:-1] / (np.linalg.norm(self.robot.velocity_world[0:-1]) + 1e-6)
         r_heading = np.dot(heading, error_direction)
         # print(r_heading)
@@ -221,6 +224,8 @@ class SalpRobotEnv(gym.Env):
         # Note: Weights are critical. Tracking is usually the most important.
         total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth
         # print(total_reward)
+
+        # print(f"Reward components: Track={r_track:.3f}, Heading={r_heading:.3f}, Energy={r_energy:.3f}, Smoothness={r_smooth:.3f}, Total={total_reward:.3f}")
         
         return float(total_reward)
     
@@ -987,11 +992,45 @@ if __name__ == "__main__":
     
     done = False
     cnt = 0
+    test_actions = np.array([
+        [0.22891083, 0.06766406, -0.9850989],
+        [0.2842933, 0.963629, 0.9741967],
+        [0.8862339, 0.32421368, -0.9328714],
+        [0.05561769, 0.91966885, 0.85212207],
+        [0.25341812, 0.6691348, 0.7325938],
+        [0.8321035, 0.23156995, -0.92043316],
+        [0.05115855, 0.96011114, 0.8534517],
+        [0.24099252, 0.71873295, 0.7108506],
+        [0.6869794, 0.04822099, -0.86440706],
+        [0.2337848, 0.9906088, 0.99013484],
+        [0.6945975, 0.09169137, -0.8268971],
+        [0.06978488, 0.9933312, 0.9369149],
+        [0.06852683, 0.7448164, 0.8688922],
+        [0.4922041, 0.10394484, 0.8375015],
+        [0.68481743, 0.00496772, -0.99800324],
+        [0.9857271, 0.647208, 0.99998224],
+        [0.7742654, 0.83240354, -0.66497386],
+        [0.78678393, 0.01270097, 0.9582412],
+        [3.6354065e-03, 1.2317300e-04, -9.9999970e-01],
+        [6.2082112e-03, 3.0893087e-04, -9.9999964e-01],
+        [8.4684789e-03, 2.1675229e-04, -9.9999875e-01],
+        [1.7061472e-02, 3.0627847e-04, -9.9999666e-01],
+        [6.9575727e-02, 5.1766634e-04, -9.9997485e-01],
+        [0.6683986, 0.02849919, -0.984029],
+        [0.99468315, 0.3537972, 0.9998045],
+        [0.6911941, 0.04722786, -0.96879447],
+        [0.9897277, 0.33548862, 0.9979936],
+        [0.89258796, 0.00411212, -0.96228147],
+    ])
+
     while not done:
         # action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
-        action = env.sample_random_action()
+        # action = env.sample_random_action()
+        action = test_actions[cnt % len(test_actions)]
         obs, reward, done, truncated, info = env.step(action)
+        # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
+        # print(reward)
         cnt += 1
         # Wait for the animation to complete before next step
         env.wait_for_animation()

@@ -293,6 +293,7 @@ class Robot:
 
         self.position = np.zeros(3)  # x, y, z positions
         self.velocity = np.zeros(3)  # x, y, z velocities
+        self.velocity_world = np.zeros(3)  # x, y, z velocities in world frame
         self.acceleration = np.zeros(3)  # x, y, z accelerations
         self.euler_angle = np.zeros(3)  # roll, pitch, yaw
         self.euler_angle_rate = np.zeros(3)  # roll, pitch, yaw rates
@@ -349,8 +350,8 @@ class Robot:
         self.cycle += 1
         self.cycle_time = 0.0
 
-        if self.cycle % 1000 == 0:
-            print(f"Cycle {self.cycle}")
+        # if self.cycle % 1000 == 0:
+        #     print(f"Cycle {self.cycle}")
 
         self.refill_time = self._contract_model()
         self.jet_time = self._release_model()
@@ -818,15 +819,49 @@ if __name__ == "__main__":
     all_drag_coefficient_data = []
     all_drag_force_data = []
     all_drag_torque_data = []
-    
-    for i in range(n_cycles):
+
+    # Test action sequence
+    test_actions = np.array([
+        [0.22891083, 0.06766406, -0.9850989],
+        [0.2842933, 0.963629, 0.9741967],
+        [0.8862339, 0.32421368, -0.9328714],
+        [0.05561769, 0.91966885, 0.85212207],
+        # [0.25341812, 0.6691348, 0.7325938],
+        # [0.8321035, 0.23156995, -0.92043316],
+        # [0.05115855, 0.96011114, 0.8534517],
+        # [0.24099252, 0.71873295, 0.7108506],
+        # [0.6869794, 0.04822099, -0.86440706],
+        # [0.2337848, 0.9906088, 0.99013484],
+        # [0.6945975, 0.09169137, -0.8268971],
+        # [0.06978488, 0.9933312, 0.9369149],
+        # [0.06852683, 0.7448164, 0.8688922],
+        # [0.4922041, 0.10394484, 0.8375015],
+        # [0.68481743, 0.00496772, -0.99800324],
+        # [0.9857271, 0.647208, 0.99998224],
+        # [0.7742654, 0.83240354, -0.66497386],
+        # [0.78678393, 0.01270097, 0.9582412],
+        # [3.6354065e-03, 1.2317300e-04, -9.9999970e-01],
+        # [6.2082112e-03, 3.0893087e-04, -9.9999964e-01],
+        # [8.4684789e-03, 2.1675229e-04, -9.9999875e-01],
+        # [1.7061472e-02, 3.0627847e-04, -9.9999666e-01],
+        # [6.9575727e-02, 5.1766634e-04, -9.9997485e-01],
+        # [0.6683986, 0.02849919, -0.984029],
+        # [0.99468315, 0.3537972, 0.9998045],
+        # [0.6911941, 0.04722786, -0.96879447],
+        # [0.9897277, 0.33548862, 0.9979936],
+        # [0.89258796, 0.00411212, -0.96228147],
+    ])
+
+    for i in range(len(test_actions)):
         # robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
         # contraction = np.random.uniform(0.0, 0.06)
         # coast_time = np.random.uniform(0.0, 2.0)
         # TODO: debug this Action taken: Inhale: 0.51, Coast Time: 0.86, Nozzle Yaw: -0.85 rad
-        contraction = 0.01
-        coast_time = 10
-        robot.nozzle.set_yaw_angle(yaw_angle=0.0)
+        contraction = 0.06 * test_actions[i, 0]
+        coast_time = 10 * test_actions[i, 1]
+        yaw_angle = test_actions[i, 2] * np.pi/2    
+
+        robot.nozzle.set_yaw_angle(yaw_angle=yaw_angle)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
@@ -898,5 +933,5 @@ if __name__ == "__main__":
     # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
     
     # Plot trajectory in x-y plane with yaw orientation
-    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
     
