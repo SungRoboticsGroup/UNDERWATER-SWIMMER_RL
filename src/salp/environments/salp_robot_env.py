@@ -82,6 +82,10 @@ class SalpRobotEnv(gym.Env):
         self._animation_start_time = None
         self._animation_complete = True
         self._animation_speed = 20  # milliseconds per frame
+        
+        # Interactive control state
+        self.current_coast_time = 0.5
+        self.current_compression = 0.0
 
         self.reset()
     
@@ -539,9 +543,9 @@ class SalpRobotEnv(gym.Env):
 
     def _draw_body(self, scale: float, robot_x: int, robot_y: int):
         """Draw the current robot body at the end-of-cycle position with current dimensions."""
-        # Body color - yellow
-        body_color = (255, 200, 0)  # Yellow
-        outline_color = (255, 255, 255)  # White outline
+        # Body color - use same color and alpha as history for consistency
+        alpha = 180
+        body_color = (*self._history_color, alpha)  # Yellow with alpha
 
         # Get current robot dimensions at end of cycle
         try:
@@ -557,10 +561,9 @@ class SalpRobotEnv(gym.Env):
         ellipse_width = max(4, int(scale * body_length))
         ellipse_height = max(4, int(scale * body_width))
 
-        # Create and draw the ellipse
+        # Create and draw the ellipse (same style as history)
         ellipse_surf = pygame.Surface((ellipse_width, ellipse_height), pygame.SRCALPHA)
         pygame.draw.ellipse(ellipse_surf, body_color, (0, 0, ellipse_width, ellipse_height))
-        pygame.draw.ellipse(ellipse_surf, outline_color, (0, 0, ellipse_width, ellipse_height), 2)
 
         # Rotate according to robot's current yaw angle
         rotated_surf = pygame.transform.rotate(ellipse_surf, -math.degrees(body_angle))
@@ -675,7 +678,7 @@ class SalpRobotEnv(gym.Env):
         axis_px = max(8, int(axis_len_m * scale))
 
         try:
-            yaw = float(self.robot.euler_angles[0])
+            yaw = float(self.robot.euler_angle[2])
         except Exception:
             yaw = 0.0
 
@@ -834,8 +837,8 @@ class SalpRobotEnv(gym.Env):
     def _draw_nozzle(self, scale: float, robot_x: int, robot_y: int):
         """Draw the nozzle at the rear of the robot: straight connector + revolute joint + steerable nozzle."""
         try:
-            yaw = float(self.robot.euler_angles[0])
-            nozzle_angle = float(self.robot.nozzle_angle)
+            yaw = float(self.robot.euler_angle[2])
+            nozzle_angle = float(self.robot.nozzle.yaw)
         except Exception:
             yaw = 0.0
             nozzle_angle = 0.0
@@ -903,6 +906,15 @@ class SalpRobotEnv(gym.Env):
         angle_deg = math.degrees(self.robot.euler_angle[2])
         angle_text = small_font.render(f"Yaw: {angle_deg:.1f}°", True, (200, 200, 200))
         self.screen.blit(angle_text, (10, 90))
+        
+        # Coast time
+        coast_text = small_font.render(f"Coast Time: {self.current_coast_time:.2f}s", True, (100, 200, 255))
+        self.screen.blit(coast_text, (10, 115))
+        
+        # Compression
+        compression_pct = self.current_compression * 100
+        compression_text = small_font.render(f"Compression: {compression_pct:.1f}%", True, (255, 150, 100))
+        self.screen.blit(compression_text, (10, 140))
 
     def get_cycle_count(self) -> int:
         """Get the current cycle count from the robot."""
@@ -939,16 +951,17 @@ class SalpRobotEnv(gym.Env):
         # draw real-time animated history of the current cycle
         self._draw_history(scale)
 
-        # draw target point
+        # Only draw static body/nozzle when animation is complete
+        # During animation, the history frames show the robot movement
+        if self._animation_complete:
+            # draw current robot body at end-of-cycle position
+            self._draw_body(scale, robot_x, robot_y)
 
-        # draw current robot body at end-of-cycle position
-        # self._draw_body(scale, robot_x, robot_y)
+            # draw robot-attached reference frame (rotated with robot yaw)
+            self._draw_robot_reference_frame(scale, robot_x, robot_y)
 
-        # draw robot-attached reference frame (rotated with robot yaw)
-        # self._draw_robot_reference_frame(scale, robot_x, robot_y)
-
-        # draw nozzle (straight connector + revolute joint + steerable nozzle)
-        # self._draw_nozzle(scale, robot_x, robot_y)
+            # draw nozzle (straight connector + revolute joint + steerable nozzle)
+            self._draw_nozzle(scale, robot_x, robot_y)
 
         # draw cycle info overlay
         self._draw_cycle_info()
@@ -959,6 +972,210 @@ class SalpRobotEnv(gym.Env):
         else:
             return np.transpose(pygame.surfarray.array3d(self.screen), axes=(1, 0, 2))
     
+    def interactive_control(self, max_cycles: Optional[int] = None):
+        """
+        Run the robot in interactive keyboard control mode.
+        
+        Allows real-time control of the robot using keyboard input.
+        
+        Controls:
+        - SPACE: Hold to control compression length (longer hold = more compression)
+        - UP/DOWN arrows: Increase/decrease coast time
+        - W/S: Adjust nozzle steering angle (W=right, S=left)
+        - LEFT/RIGHT arrows: Fine-tune nozzle steering
+        - C: Reset nozzle angle to center (0)
+        - R: Reset robot to starting position
+        - N: Generate new target point
+        - Q or ESC: Quit
+        
+        Args:
+            max_cycles: Maximum number of breathing cycles to run. 
+                       If None, runs until user quits.
+        """
+        if self.render_mode is None:
+            raise ValueError("Interactive control requires render_mode='human'")
+        
+        # State variables for keyboard control
+        nozzle_steering = 0.0  # Range: [-1, 1] where -1 is left, 0 is center, 1 is right
+        coast_time = 0.0  # Default coast time
+        
+        # Space key tracking for compression control
+        space_press_time = None
+        space_was_pressed = False  # Track previous SPACE state to detect release
+        max_hold_time = 3000  # Maximum hold time in milliseconds for full compression
+        last_compression = 0.0  # Store compression amount for release
+        
+        # Controls hint
+        print("\n" + "="*60)
+        print("SALP ROBOT INTERACTIVE CONTROL MODE")
+        print("="*60)
+        print("\nKeyboard Controls:")
+        print("  SPACE         - Hold to control compression (longer = more compression)")
+        print("  UP/DOWN ↑↓    - Increase/decrease coast time")
+        print("  W/S           - Adjust nozzle steering angle (W=right, S=left)")
+        print("  LEFT/RIGHT ←→ - Fine-tune nozzle steering")
+        print("  C             - Center nozzle (reset to 0°)")
+        print("  R             - Reset robot to start position")
+        print("  N             - Generate new target point")
+        print("  Q / ESC       - Quit interactive mode")
+        print("\nCurrent State:")
+        print("="*60 + "\n")
+        
+        running = True
+        cycle_count = 0
+        
+        while running:
+            # Handle pygame events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in [pygame.K_q, pygame.K_ESCAPE]:
+                        running = False
+                    elif event.key == pygame.K_SPACE:
+                        # Record when SPACE was pressed
+                        space_press_time = pygame.time.get_ticks()
+                    elif event.key == pygame.K_r:
+                        # Reset robot
+                        obs, info = self.reset()
+                        print("✓ Robot reset to starting position")
+                    elif event.key == pygame.K_n:
+                        # Generate new target
+                        self.target_point = self.generate_target_point(strategy="random")
+                        print(f"✓ New target: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) m")
+                    elif event.key == pygame.K_c:
+                        # Center nozzle
+                        nozzle_steering = 0.0
+                        print("✓ Nozzle centered")
+                    elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
+                        # Increase coast time
+                        coast_time = min(1.0, coast_time + 0.1)
+                        print(f"✓ Coast time: {coast_time:.1f}")
+                    elif event.key == pygame.K_MINUS:
+                        # Decrease coast time
+                        coast_time = max(0.1, coast_time - 0.1)
+                        print(f"✓ Coast time: {coast_time:.1f}")
+            
+            # Get continuous key states
+            keys = pygame.key.get_pressed()
+            
+            # SPACE key handling - calculate compression based on hold duration
+            space_is_pressed = keys[pygame.K_SPACE]
+            inhale_control = 0.0
+            execute_step = False
+            
+            if space_is_pressed:
+                # SPACE is currently held
+                if not space_was_pressed:
+                    # Just pressed - start tracking
+                    space_press_time = pygame.time.get_ticks()
+                
+                if space_press_time is not None:
+                    # Calculate how long SPACE has been held
+                    current_time = pygame.time.get_ticks()
+                    hold_duration = current_time - space_press_time
+                    
+                    # Map hold duration to compression (0.0 to 1.0)
+                    last_compression = min(1.0, hold_duration / max_hold_time)
+                    self.current_compression = last_compression
+            else:
+                # SPACE is not pressed
+                if space_was_pressed:
+                    # Just released - execute step with stored compression
+                    if last_compression > 0.0:
+                        inhale_control = last_compression
+                        execute_step = True
+                    self.current_compression = 0.0
+                space_press_time = None
+            
+            space_was_pressed = space_is_pressed
+            
+            # Coast time adjustment (UP/DOWN arrows)
+            if keys[pygame.K_UP]:
+                coast_time = min(1.0, coast_time + 0.01)
+                self.current_coast_time = coast_time
+            if keys[pygame.K_DOWN]:
+                coast_time = max(0.1, coast_time - 0.01)
+                self.current_coast_time = coast_time
+            
+            # Nozzle steering (W/S and LEFT/RIGHT)
+            nozzle_delta = 0.0
+            
+            if keys[pygame.K_w]:
+                nozzle_delta += 0.02  # Steer right
+            if keys[pygame.K_s]:
+                nozzle_delta -= 0.02  # Steer left
+            if keys[pygame.K_LEFT]:
+                nozzle_delta -= 0.01  # Fine adjustment left
+            if keys[pygame.K_RIGHT]:
+                nozzle_delta += 0.01  # Fine adjustment right
+            
+            # Update and clamp nozzle steering
+            nozzle_steering = np.clip(nozzle_steering + nozzle_delta, -1.0, 1.0)
+            
+            # Update nozzle angle for visualization (even without stepping)
+            self.robot.nozzle.set_yaw_angle(yaw_angle=nozzle_steering * (np.pi / 2))
+            
+            # Only execute step when SPACE is released
+            has_input = execute_step
+            
+            done = False
+            truncated = False
+            reward = 0.0
+            
+            if has_input:
+                # Create action array: [inhale_control, coast_time, nozzle_direction]
+                action = np.array([inhale_control, coast_time, nozzle_steering], dtype=np.float32)
+                
+                # Execute step only when SPACE is held
+                obs, reward, done, truncated, info = self.step(action)
+                
+                # Print current state (update less frequently to avoid spam)
+                if cycle_count % 10 == 0:  # Print every 10 cycles
+                    robot_pos = self.robot.position[0:-1]
+                    distance_to_target = np.linalg.norm(self.target_point - robot_pos)
+                    nozzle_angle_deg = np.degrees(nozzle_steering * (np.pi / 2))
+                    compression_pct = inhale_control * 100
+                    print(f"Cycle {self.robot.cycle:3d} | Pos: ({robot_pos[0]:6.3f}, {robot_pos[1]:6.3f}) m | "
+                          f"Target dist: {distance_to_target:.3f} m | Compression: {compression_pct:5.1f}% | "
+                          f"Nozzle: {nozzle_angle_deg:7.1f}°")
+                
+                cycle_count += 1
+                
+                # Wait for animation to complete after step
+                self.wait_for_animation()
+            
+            # Render every frame (whether or not step was executed)
+            self.render()
+            
+            # Check termination conditions (only if step was executed)
+            if has_input and (done or truncated):
+                print(f"\n✓ Episode ended at cycle {self.robot.cycle}")
+                if done:
+                    robot_pos = self.robot.position[0:-1]
+                    print(f"  Goal reached! Final distance: {np.linalg.norm(self.target_point - robot_pos):.3f} m")
+                elif truncated:
+                    print(f"  Robot went out of bounds or reached maximum cycles")
+                
+                # Ask if user wants to continue
+                response = input("\nStart new episode? (y/n): ").strip().lower()
+                if response == 'y':
+                    obs, info = self.reset()
+                    cycle_count = 0
+                    print("✓ New episode started\n")
+                else:
+                    running = False
+            
+            # Check max cycles limit
+            if max_cycles is not None and cycle_count >= max_cycles:
+                print(f"\nReached maximum cycles ({max_cycles})")
+                running = False
+        
+        print("\n" + "="*60)
+        print("Exited interactive control mode")
+        print("="*60)
+        self.close()
+
     def close(self):
         """Clean up resources."""
         if self.screen is not None:
