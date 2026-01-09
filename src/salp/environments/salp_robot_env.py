@@ -9,8 +9,11 @@ from gymnasium import spaces
 import numpy as np
 import pygame
 import math
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 import matplotlib.pyplot as plt
+from PIL import Image
+import os
+from datetime import datetime
 from robot import Robot, Nozzle
 
 class SalpRobotEnv(gym.Env):
@@ -81,7 +84,12 @@ class SalpRobotEnv(gym.Env):
         # Animation control
         self._animation_start_time = None
         self._animation_complete = True
-        self._animation_speed = 20  # milliseconds per frame
+        self._animation_total_duration_ms = 2000  # Total animation duration in milliseconds
+        
+        # GIF recording
+        self._recording = False
+        self._recorded_frames: List[np.ndarray] = []
+        self._record_fps = 30  # FPS for saved GIF
         
         # Interactive control state
         self.current_coast_time = 0.5
@@ -494,9 +502,13 @@ class SalpRobotEnv(gym.Env):
         if self._animation_start_time is None:
             self._animation_start_time = pygame.time.get_ticks()
 
+        # Calculate animation speed based on number of sampled points
+        # Speed = total duration / number of frames
+        animation_speed = self._animation_total_duration_ms / len(pts) if len(pts) > 0 else 20
+        
         # Calculate current frame based on elapsed time since animation start
         elapsed_time = pygame.time.get_ticks() - self._animation_start_time
-        current_frame_idx = int(elapsed_time / self._animation_speed)
+        current_frame_idx = int(elapsed_time / animation_speed)
 
         # Check if animation is complete
         if current_frame_idx >= len(pts):
@@ -979,11 +991,94 @@ class SalpRobotEnv(gym.Env):
         # draw cycle info overlay
         self._draw_cycle_info()
 
+        # Capture frame if recording
+        if self._recording and self.screen is not None:
+            # Convert pygame surface to numpy array
+            frame = pygame.surfarray.array3d(self.screen)
+            # Transpose to correct orientation (width, height, channels) -> (height, width, channels)
+            frame = np.transpose(frame, (1, 0, 2))
+            self._recorded_frames.append(frame)
+
         if self.render_mode == "human":
             pygame.display.flip()
             self.clock.tick(self.metadata["render_fps"])
         else:
             return np.transpose(pygame.surfarray.array3d(self.screen), axes=(1, 0, 2))
+    
+    def start_recording(self):
+        """Start recording frames for GIF creation."""
+        self._recording = True
+        self._recorded_frames = []
+        print("Started recording animation...")
+    
+    def stop_recording(self, filename: Optional[str] = None, output_dir: str = "recordings") -> str:
+        """Stop recording and save frames as GIF.
+        
+        Args:
+            filename: Output filename (without extension). If None, generates timestamp-based name.
+            output_dir: Directory to save the GIF file. Defaults to 'recordings'.
+            
+        Returns:
+            Path to the saved GIF file.
+        """
+        self._recording = False
+        
+        if not self._recorded_frames:
+            print("No frames recorded.")
+            return ""
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate filename if not provided
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"salp_animation_{timestamp}"
+        
+        # Ensure .gif extension
+        if not filename.endswith('.gif'):
+            filename += '.gif'
+        
+        filepath = os.path.join(output_dir, filename)
+        
+        # Convert frames to PIL Images
+        pil_frames = [Image.fromarray(frame.astype('uint8'), mode='RGB') for frame in self._recorded_frames]
+        
+        # Calculate duration per frame in milliseconds
+        duration_ms = int(1000 / self._record_fps)
+        
+        # Save as GIF
+        print(f"Saving {len(pil_frames)} frames to {filepath}...")
+        pil_frames[0].save(
+            filepath,
+            save_all=True,
+            append_images=pil_frames[1:],
+            duration=duration_ms,
+            loop=0  # 0 means infinite loop
+        )
+        
+        print(f"✓ GIF saved: {filepath}")
+        print(f"  Frames: {len(pil_frames)}")
+        print(f"  Duration: {len(pil_frames) * duration_ms / 1000:.2f}s")
+        print(f"  FPS: {self._record_fps}")
+        
+        # Clear recorded frames to free memory
+        self._recorded_frames = []
+        
+        return filepath
+    
+    def is_recording(self) -> bool:
+        """Check if currently recording."""
+        return self._recording
+    
+    def set_record_fps(self, fps: int):
+        """Set the FPS for GIF recording.
+        
+        Args:
+            fps: Frames per second for the output GIF (default: 30)
+        """
+        self._record_fps = max(1, min(fps, 60))  # Clamp between 1 and 60
+        print(f"GIF recording FPS set to: {self._record_fps}")
     
     def interactive_control(self, max_cycles: Optional[int] = None):
         """
@@ -999,6 +1094,7 @@ class SalpRobotEnv(gym.Env):
         - C: Reset nozzle angle to center (0)
         - R: Reset robot to starting position
         - N: Generate new target point
+        - G: Start/stop GIF recording
         - Q or ESC: Quit
         
         Args:
@@ -1030,6 +1126,7 @@ class SalpRobotEnv(gym.Env):
         print("  C             - Center nozzle (reset to 0°)")
         print("  R             - Reset robot to start position")
         print("  N             - Generate new target point")
+        print("  G             - Start/stop GIF recording")
         print("  Q / ESC       - Quit interactive mode")
         print("\nCurrent State:")
         print("="*60 + "\n")
@@ -1060,6 +1157,12 @@ class SalpRobotEnv(gym.Env):
                         # Center nozzle
                         nozzle_steering = 0.0
                         print("✓ Nozzle centered")
+                    elif event.key == pygame.K_g:
+                        # Toggle GIF recording
+                        if self._recording:
+                            filepath = self.stop_recording()
+                        else:
+                            self.start_recording()
                     elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
                         # Increase coast time
                         coast_time = min(1.0, coast_time + 0.1)
@@ -1209,42 +1312,27 @@ if __name__ == "__main__":
     
     done = False
     cnt = 0
-    test_actions = np.array([
-        [0.22891083, 0.06766406, -0.9850989],
-        [0.2842933, 0.963629, 0.9741967],
-        [0.8862339, 0.32421368, -0.9328714],
-        [0.05561769, 0.91966885, 0.85212207],
-        [0.25341812, 0.6691348, 0.7325938],
-        [0.8321035, 0.23156995, -0.92043316],
-        [0.05115855, 0.96011114, 0.8534517],
-        [0.24099252, 0.71873295, 0.7108506],
-        [0.6869794, 0.04822099, -0.86440706],
-        [0.2337848, 0.9906088, 0.99013484],
-        [0.6945975, 0.09169137, -0.8268971],
-        [0.06978488, 0.9933312, 0.9369149],
-        [0.06852683, 0.7448164, 0.8688922],
-        [0.4922041, 0.10394484, 0.8375015],
-        [0.68481743, 0.00496772, -0.99800324],
-        [0.9857271, 0.647208, 0.99998224],
-        [0.7742654, 0.83240354, -0.66497386],
-        [0.78678393, 0.01270097, 0.9582412],
-        [3.6354065e-03, 1.2317300e-04, -9.9999970e-01],
-        [6.2082112e-03, 3.0893087e-04, -9.9999964e-01],
-        [8.4684789e-03, 2.1675229e-04, -9.9999875e-01],
-        [1.7061472e-02, 3.0627847e-04, -9.9999666e-01],
-        [6.9575727e-02, 5.1766634e-04, -9.9997485e-01],
-        [0.6683986, 0.02849919, -0.984029],
-        [0.99468315, 0.3537972, 0.9998045],
-        [0.6911941, 0.04722786, -0.96879447],
-        [0.9897277, 0.33548862, 0.9979936],
-        [0.89258796, 0.00411212, -0.96228147],
+    
+    # Test action sequence
+    actions = np.array([
+        [0.695722, 0.01922786, -0.06692487],
+        [0.2808507, 0.8017318, 0.87773895],
+        [0.57452214, 0.11145315, -0.82465506],
+        [0.32618135, 0.11088043, 0.88842094],
+        [0.17267734, 0.6958977, -0.9337022],
+        [0.49285844, 0.2883283, 0.81122017],
+        [0.34796143, 0.35572827, -0.8472595],
+        [0.49369425, 0.27951986, 0.8069289],
+        [0.37975544, 0.338947, -0.8655774],
+        [0.4979022, 0.23918751, 0.7962456]
     ])
-
-    while not done:
+    
+    env.start_recording()
+    while cnt < 10:
         # action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
-        action = test_actions[cnt % len(test_actions)]
+        action = actions[cnt % len(actions)]
         obs, reward, done, truncated, info = env.step(action)
         # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
         # print(reward)
@@ -1252,5 +1340,6 @@ if __name__ == "__main__":
         # Wait for the animation to complete before next step
         env.wait_for_animation()
         # env.render()
+    gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()
-    
+      
