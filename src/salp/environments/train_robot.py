@@ -32,21 +32,22 @@ if __name__ == "__main__":
     print("Environment is valid!")
 
     # 3. Define the Model (SAC)
-    model = SAC(
-        "MlpPolicy",           # Use standard Dense Neural Network
-        vec_env,
-        verbose=1,
-        tensorboard_log="./sac_salp_robot_tensorboard/",
+    # model = SAC(
+    #     "MlpPolicy",           # Use standard Dense Neural Network
+    #     vec_env,
+    #     verbose=1,
+    #     tensorboard_log="./sac_salp_robot_tensorboard/",
         
-        # --- Tuning for Robotics ---
-        learning_rate=3e-4,
-        buffer_size=100000,    # Big memory for off-policy
-        batch_size=512,        # Mini-batch size
-        ent_coef='auto',       # Automatically adjust exploration (Temperature)
-        gamma=0.99,            # Discount factor
-        tau=0.005,             # Polyak averaging (Soft update)
-        device="cuda"
-    )
+    #     # --- Tuning for Robotics ---
+    #     learning_rate=3e-4,
+    #     buffer_size=100000,    # Big memory for off-policy
+    #     batch_size=512,        # Mini-batch size
+    #     ent_coef='auto',       # Automatically adjust exploration (Temperature)
+    #     gamma=0.99,            # Discount factor
+    #     tau=0.005,             # Polyak averaging (Soft update)
+    #     device="cuda" 
+    # )
+    model = SAC.load("./salp_robot_final", env=vec_env)
 
     # 4. Setup Saving (Checkpoints)
     # Save the model every 10,000 steps so you don't lose progress if it crashes.
@@ -60,9 +61,11 @@ if __name__ == "__main__":
     print("Starting training...")
     model.learn(
         total_timesteps=200000, # Run for 200k steps
-        callback=checkpoint_callback
+        callback=checkpoint_callback,
+        reset_num_timesteps=False,
+        tb_log_name="salp_robot_run1"
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_final")
+    model.save("salp_robot_finalv2")
     print("Training finished.")
