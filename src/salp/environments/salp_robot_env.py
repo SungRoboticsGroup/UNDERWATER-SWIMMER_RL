@@ -176,7 +176,7 @@ class SalpRobotEnv(gym.Env):
         truncated = False
 
         distance_to_target = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
-        if distance_to_target < 0.01:
+        if distance_to_target < 0.1:  # 10cm threshold (more achievable)
             done = True
             reward += 10.0  # big reward for reaching target
         elif distance_to_target > 5.0:
@@ -477,14 +477,13 @@ class SalpRobotEnv(gym.Env):
 
         n = len(self.cycle_positions)
 
-        # Sample points to reduce rendering load
-        sample_step = max(1, n // 50)
-        sampled = list(range(0, n, sample_step))
-        if sampled[-1] != n - 1:
-            sampled.append(n - 1)
-
+        # Sample for smooth animation - take more frames for better quality
+        # Target 200-300 frames for ~3-5 second smooth animation at 60 FPS
+        target_frames = min(300, n)  # Cap at 300 frames max
+        sample_step = max(1, n // target_frames)
+        
         pts = []
-        for idx in sampled:
+        for idx in range(0, n, sample_step):
             try:
                 p = self.cycle_positions[idx]
             except Exception:
@@ -493,6 +492,16 @@ class SalpRobotEnv(gym.Env):
             px = int(float(p[0]) * scale) + self.pos_init[0]
             py = int(float(p[1]) * scale) + self.pos_init[1]
             pts.append((px, py, idx))
+        
+        # Always include the last frame
+        if pts and pts[-1][2] != n - 1:
+            try:
+                p = self.cycle_positions[n - 1]
+                px = int(float(p[0]) * scale) + self.pos_init[0]
+                py = int(float(p[1]) * scale) + self.pos_init[1]
+                pts.append((px, py, n - 1))
+            except Exception:
+                pass
 
         if not pts:
             self._animation_complete = True
@@ -502,9 +511,9 @@ class SalpRobotEnv(gym.Env):
         if self._animation_start_time is None:
             self._animation_start_time = pygame.time.get_ticks()
 
-        # Calculate animation speed based on number of sampled points
-        # Speed = total duration / number of frames
-        animation_speed = self._animation_total_duration_ms / len(pts) if len(pts) > 0 else 20
+        # Calculate animation speed for smooth 60 FPS playback
+        # Speed = time per frame in milliseconds
+        animation_speed = 1000.0 / 60.0  # ~16.67ms per frame for 60 FPS
         
         # Calculate current frame based on elapsed time since animation start
         elapsed_time = pygame.time.get_ticks() - self._animation_start_time
@@ -1342,4 +1351,3 @@ if __name__ == "__main__":
         # env.render()
     gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()
-      
