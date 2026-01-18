@@ -94,6 +94,10 @@ class SalpRobotEnv(gym.Env):
         # Interactive control state
         self.current_coast_time = 0.5
         self.current_compression = 0.0
+        
+        # Trajectory visualization
+        self.trajectory_waypoints = []  # List of waypoints to visualize
+        self.current_waypoint_index = 0  # Index of current target in trajectory
 
         self.reset()
     
@@ -160,6 +164,9 @@ class SalpRobotEnv(gym.Env):
                 # Reset animation for new cycle
                 self._animation_start_time = None
                 self._animation_complete = False
+                # Set animation duration based on actual cycle time (convert to milliseconds)
+                actual_cycle_time = max(self.robot.refill_time, self.robot.nozzle.turn_time) + self.robot.jet_time + self.robot.coast_time
+                self._animation_total_duration_ms = actual_cycle_time / 2 * 1000
             except Exception:
                 self.cycle_positions = []
                 self.cycle_euler_angles = []
@@ -229,12 +236,15 @@ class SalpRobotEnv(gym.Env):
         # 4. Smoothness (Action Jerk)
         # Only penalize the nozzle angle change, not the thrust change
         angle_change = abs(nozzle_yaw - self.prev_action[2])
-        r_smooth = -0.1 * (angle_change ** 2)
+        r_smooth = - 5.0 * (angle_change ** 2)
         # print(r_smooth)
+
+        # 5. yaw Stability (Penalize large yaw changes)
+        r_yaw = -0.5 * (abs(self.robot.angular_velocity[2]) ** 2)
         
         # Total
         # Note: Weights are critical. Tracking is usually the most important.
-        total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth
+        total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth + r_yaw
         # print(total_reward)
 
         # print(f"Reward components: Track={r_track:.3f}, Heading={r_heading:.3f}, Energy={r_energy:.3f}, Smoothness={r_smooth:.3f}, Total={total_reward:.3f}")
@@ -362,7 +372,7 @@ class SalpRobotEnv(gym.Env):
         # print(f"Drawing target at screen pos: ({target_screen_x}, {target_screen_y})")
         
         # Draw target point as a circle with crosshair
-        target_radius = 15
+        target_radius = 7
         target_color = (255, 0, 0)  # Bright red
         outline_color = (255, 100, 100)  # Light red outline
         crosshair_color = (200, 0, 0)  # Darker red for crosshair
@@ -371,7 +381,7 @@ class SalpRobotEnv(gym.Env):
         pygame.draw.circle(self.screen, target_color, (target_screen_x, target_screen_y), target_radius)
         
         # Draw outline
-        pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 3)
+        pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 1)
         
         # Draw crosshair (plus sign)
         crosshair_size = target_radius + 5
@@ -396,6 +406,72 @@ class SalpRobotEnv(gym.Env):
         dist_label = font.render(f"d:{distance_to_target:.2f}m", True, crosshair_color)
         dist_label_rect = dist_label.get_rect(midtop=(target_screen_x, target_screen_y + target_radius + 10))
         self.screen.blit(dist_label, dist_label_rect)
+    
+    def set_trajectory(self, waypoints: List[np.ndarray]):
+        """
+        Set a trajectory for the robot to follow.
+        
+        Args:
+            waypoints: List of [x, y] waypoints in meters
+        """
+        self.trajectory_waypoints = waypoints
+        self.current_waypoint_index = 0
+        if len(waypoints) > 0:
+            self.target_point = waypoints[0]
+    
+    def _draw_trajectory(self, scale: float = 200.0):
+        """
+        Draw the entire trajectory path.
+        
+        Args:
+            scale: Pixels per meter for coordinate conversion
+        """
+        if not hasattr(self, 'trajectory_waypoints') or len(self.trajectory_waypoints) == 0:
+            return
+        
+        if self.screen is None:
+            return
+        
+        # Draw lines connecting waypoints
+        if len(self.trajectory_waypoints) > 1:
+            points = []
+            for waypoint in self.trajectory_waypoints:
+                screen_x = int(self.pos_init[0] + waypoint[0] * scale)
+                screen_y = int(self.pos_init[1] + waypoint[1] * scale)
+                points.append((screen_x, screen_y))
+
+            points.append(points[0]) # close the loop
+            # Draw trajectory path
+            pygame.draw.lines(self.screen, (100, 100, 255), False, points, 2)
+        
+        # Draw all waypoints
+        for i, waypoint in enumerate(self.trajectory_waypoints):
+            screen_x = int(self.pos_init[0] + waypoint[0] * scale)
+            screen_y = int(self.pos_init[1] + waypoint[1] * scale)
+            
+            # Color based on status: visited (gray), current (red), future (blue)
+            if i < self.current_waypoint_index:
+                # Already visited - gray
+                color = (100, 100, 100)
+                radius = 5
+            elif i == self.current_waypoint_index:
+                # Current target - already drawn by _draw_target_point
+                continue
+            else:
+                # Future waypoints - blue
+                color = (0, 100, 255)
+                radius = 7
+            
+            pygame.draw.circle(self.screen, color, (screen_x, screen_y), radius)
+            pygame.draw.circle(self.screen, (255, 255, 255), (screen_x, screen_y), radius, 1)
+            
+            # Draw waypoint number
+            if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+                pygame.font.init()
+            font = pygame.font.Font(None, 12)
+            label = font.render(str(i+1), True, (255, 255, 255))
+            label_rect = label.get_rect(center=(screen_x, screen_y - radius - 8))
+            self.screen.blit(label, label_rect)
     
     def _get_observation(self) -> np.ndarray:
         """Get current observation."""
@@ -570,6 +646,7 @@ class SalpRobotEnv(gym.Env):
         return self._animation_complete
 
     def wait_for_animation(self):
+
         """Block until the current cycle animation completes."""
         while not self._animation_complete:
             self.render()
@@ -980,6 +1057,9 @@ class SalpRobotEnv(gym.Env):
         # draw a small reference frame at the tank center (x/y axes)
         self._draw_reference_frame(scale)
 
+        # draw trajectory waypoints (before target point so it's on top)
+        self._draw_trajectory(scale)
+        
         self._draw_target_point(scale)
         # draw historical path and sized ellipses
         # draw real-time animated history of the current cycle
@@ -1314,7 +1394,7 @@ if __name__ == "__main__":
     nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)
+    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
     env = SalpRobotEnv(render_mode="human", robot=robot)
     obs, info = env.reset()
@@ -1322,26 +1402,11 @@ if __name__ == "__main__":
     done = False
     cnt = 0
     
-    # Test action sequence
-    actions = np.array([
-        [0.695722, 0.01922786, -0.06692487],
-        [0.2808507, 0.8017318, 0.87773895],
-        [0.57452214, 0.11145315, -0.82465506],
-        [0.32618135, 0.11088043, 0.88842094],
-        [0.17267734, 0.6958977, -0.9337022],
-        [0.49285844, 0.2883283, 0.81122017],
-        [0.34796143, 0.35572827, -0.8472595],
-        [0.49369425, 0.27951986, 0.8069289],
-        [0.37975544, 0.338947, -0.8655774],
-        [0.4979022, 0.23918751, 0.7962456]
-    ])
-    
-    env.start_recording()
-    while cnt < 10:
-        # action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
+    # env.start_recording()
+    while not done:
+        action = [1, 0.1, (cnt % 2) * 1]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
-        action = actions[cnt % len(actions)]
         obs, reward, done, truncated, info = env.step(action)
         # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
         # print(reward)
@@ -1349,5 +1414,5 @@ if __name__ == "__main__":
         # Wait for the animation to complete before next step
         env.wait_for_animation()
         # env.render()
-    gif_path = env.stop_recording(filename="manual_actions.gif")
+    # gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()

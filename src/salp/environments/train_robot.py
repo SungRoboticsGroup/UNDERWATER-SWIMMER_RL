@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # check_env(env)
     print("Environment is valid!")
 
-    # 3. Define the Model (SAC)
+    # 3. Define the Model (SAC) - Training from scratch with CPU
     model = SAC(
         "MlpPolicy",           # Use standard Dense Neural Network
         vec_env,
@@ -45,27 +45,27 @@ if __name__ == "__main__":
         ent_coef='auto',       # Automatically adjust exploration (Temperature)
         gamma=0.99,            # Discount factor
         tau=0.005,             # Polyak averaging (Soft update)
-        device="cpu"           # Using CPU (CUDA not available)
+        device="cpu"           # Using CPU instead of CUDA
     )
-    # model = SAC.load("./salp_robot_final", env=vec_env)  # Commented out for fresh training
+    # model = SAC.load("./salp_robot_final_nozzle_continuity", env=vec_env)  # For continuing training
 
     # 4. Setup Saving (Checkpoints)
-    # Save the model every 10,000 steps so you don't lose progress if it crashes.
+    # Save the model every 5,000 steps so you don't lose progress if it crashes.
     checkpoint_callback = CheckpointCallback(
         save_freq= 5000,
         save_path='./logs/',
-        name_prefix='salp_robot_model'
+        name_prefix='salp_robot_model_yaw_continuity'
     )
-
+    
     # 5. Train
     print("Starting training...")
     model.learn(
-        total_timesteps=200000, # Run for 200k steps
+        total_timesteps=400000, # Run for 400k steps
         callback=checkpoint_callback,
-        reset_num_timesteps=False,
-        tb_log_name="salp_robot_run1"
+        reset_num_timesteps=True,
+        tb_log_name="salp_robot_run_yaw_continuity"
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_finalv2")
+    model.save("salp_robot_final_yaw_continuity")
     print("Training finished.")

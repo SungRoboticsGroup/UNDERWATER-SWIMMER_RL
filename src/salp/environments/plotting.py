@@ -88,6 +88,48 @@ def plot_robot_geometry(time_data, length_data, width_data, state_data=None, tit
     return fig
 
 
+def plot_nozzle_yaw_angle(time_data, yaw_data, state_data=None, title="Nozzle Yaw Angle Over Time"):
+    """
+    Plot nozzle yaw angle over time.
+    
+    Args:
+        time_data: Array of time values
+        yaw_data: Array of nozzle yaw angle values (in radians)
+        state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
+        title: Plot title
+    
+    Returns:
+        Matplotlib figure object
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Add phase backgrounds if state_data provided
+    if state_data is not None:
+        _add_phase_backgrounds(ax, time_data, state_data)
+    
+    # Convert to degrees for better readability
+    yaw_degrees = np.degrees(yaw_data)
+    
+    # Plot nozzle yaw angle
+    ax.plot(time_data, yaw_degrees, 'purple', linewidth=2, label='Nozzle Yaw', zorder=3)
+    
+    # Add reference lines at 0 and typical limits
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+    ax.axhline(y=90, color='red', linestyle='--', linewidth=0.8, alpha=0.3, label='±90°')
+    ax.axhline(y=-90, color='red', linestyle='--', linewidth=0.8, alpha=0.3)
+    
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Yaw Angle (degrees)')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
 def plot_robot_mass(time_data, mass_data, state_data=None, title="Robot Total Mass Over Time"):
     """
     Plot robot total mass over time.
