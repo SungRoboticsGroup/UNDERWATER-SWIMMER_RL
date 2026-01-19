@@ -61,6 +61,16 @@ data/models/
 data/logs/
 *.log
 
+# Training artifacts
+*_tensorboard/
+logs/
+models_robot/
+training_output.log
+*.zip
+
+# TensorBoard events
+events.out.tfevents.*
+
 # Temporary files
 *.tmp
 *.temp

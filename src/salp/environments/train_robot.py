@@ -2,16 +2,26 @@ from stable_baselines3 import SAC
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.callbacks import BaseCallback
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 import numpy as np
+import time
 
 def make_env():
     # Create and return the SalpRobotEnv environment
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                    max_contraction=0.06, nozzle=nozzle)
+    nozzle = Nozzle(
+        length1=0.05, 
+        length2=0.05, 
+        length3=0.05, 
+        area=0.00016, 
+        mass=1.0)
+    robot = Robot(
+        dry_mass=1.0, 
+        init_length=0.3, 
+        init_width=0.15, 
+        max_contraction=0.06, 
+        nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
     robot.set_environment(density=1000)  # water density in kg/m^3
 
@@ -49,19 +59,91 @@ if __name__ == "__main__":
     )
     # model = SAC.load("./salp_robot_final_nozzle_continuity", env=vec_env)  # For continuing training
 
-    # 4. Setup Saving (Checkpoints)
-    # Save the model every 5,000 steps so you don't lose progress if it crashes.
-    checkpoint_callback = CheckpointCallback(
-        save_freq= 5000,
+    # 4. Setup Detailed Logging Callback
+    class DetailedLoggingCallback(BaseCallback):
+        """
+        Custom callback for detailed training progress logging.
+        Shows timesteps, episodes, rewards, and saves checkpoints.
+        """
+        def __init__(self, check_freq, save_path, name_prefix, total_timesteps):
+            super().__init__()
+            self.check_freq = check_freq
+            self.save_path = save_path
+            self.name_prefix = name_prefix
+            self.total_timesteps = total_timesteps
+            self.episode_count = 0
+            self.start_time = None
+            
+        def _on_training_start(self):
+            self.start_time = time.time()
+            print("\n" + "="*70)
+            print("🚀 TRAINING STARTED")
+            print("="*70)
+            print(f"Total timesteps: {self.total_timesteps:,}")
+            print(f"Checkpoint frequency: every {self.check_freq:,} steps")
+            print(f"Parallel environments: {vec_env.num_envs}")
+            print("="*70 + "\n")
+        
+        def _on_step(self):
+            # Print progress every 1000 steps
+            if self.n_calls % 1000 == 0 and self.n_calls > 0:
+                elapsed = time.time() - self.start_time
+                progress = (self.n_calls / self.total_timesteps) * 100
+                steps_per_sec = self.n_calls / elapsed if elapsed > 0 else 0
+                eta_seconds = (self.total_timesteps - self.n_calls) / steps_per_sec if steps_per_sec > 0 else 0
+                
+                print(f"\n{'='*70}")
+                print(f"⏱️  Timestep: {self.n_calls:,} / {self.total_timesteps:,} ({progress:.1f}%)")
+                print(f"📊 Speed: {steps_per_sec:.1f} steps/sec")
+                print(f"⏳ Elapsed: {elapsed/60:.1f} min | ETA: {eta_seconds/60:.1f} min")
+                
+                # Print recent episode stats if available
+                if len(self.model.ep_info_buffer) > 0:
+                    recent_eps = list(self.model.ep_info_buffer)[-10:]
+                    rewards = [ep['r'] for ep in recent_eps]
+                    lengths = [ep['l'] for ep in recent_eps]
+                    
+                    print(f"\n📈 Last {len(recent_eps)} Episodes:")
+                    print(f"   Reward: {np.mean(rewards):7.2f} ± {np.std(rewards):6.2f}")
+                    print(f"   Length: {np.mean(lengths):7.1f} steps")
+                    print(f"   Best:   {np.max(rewards):7.2f}")
+                    print(f"   Worst:  {np.min(rewards):7.2f}")
+                
+                print("="*70)
+            
+            # Save checkpoint
+            if self.n_calls % self.check_freq == 0 and self.n_calls > 0:
+                path = f"{self.save_path}/{self.name_prefix}_{self.n_calls}_steps"
+                self.model.save(path)
+                print(f"\n💾 Checkpoint saved: {path}.zip")
+            
+            return True
+        
+        def _on_training_end(self):
+            elapsed = time.time() - self.start_time
+            print("\n" + "="*70)
+            print("✅ TRAINING COMPLETE!")
+            print("="*70)
+            print(f"Total time: {elapsed/3600:.2f} hours")
+            print(f"Final timesteps: {self.n_calls:,}")
+            if len(self.model.ep_info_buffer) > 0:
+                all_rewards = [ep['r'] for ep in self.model.ep_info_buffer]
+                print(f"Average reward: {np.mean(all_rewards):.2f}")
+            print("="*70 + "\n")
+    
+    # Create the callback
+    callback = DetailedLoggingCallback(
+        check_freq=5000,
         save_path='./logs/',
-        name_prefix='salp_robot_model_yaw_continuity'
+        name_prefix='salp_robot_model_yaw_continuity',
+        total_timesteps=400000
     )
     
     # 5. Train
     print("Starting training...")
     model.learn(
         total_timesteps=400000, # Run for 400k steps
-        callback=checkpoint_callback,
+        callback=callback,
         reset_num_timesteps=True,
         tb_log_name="salp_robot_run_yaw_continuity"
     )
