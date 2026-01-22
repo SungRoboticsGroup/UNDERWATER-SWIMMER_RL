@@ -1,9 +1,20 @@
 # test_robot.py
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from stable_baselines3 import SAC
-from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
+
+# Import environment with proper module structure
+import importlib.util
+spec = importlib.util.spec_from_file_location("salp_robot_env", "salp_robot_env.py")
+salp_robot_env_module = importlib.util.module_from_spec(spec)
+sys.modules['salp_robot_env'] = salp_robot_env_module
+spec.loader.exec_module(salp_robot_env_module)
+SalpRobotEnv = salp_robot_env_module.SalpRobotEnv
 
 
 def generate_circle_trajectory(center, radius, num_points=20):
