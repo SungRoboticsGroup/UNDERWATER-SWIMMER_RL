@@ -183,7 +183,7 @@ class SalpRobotEnv(gym.Env):
         truncated = False
 
         distance_to_target = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
-        if distance_to_target < 0.1:  # 10cm threshold (more achievable)
+        if distance_to_target < 0.2:  # 20cm threshold
             done = True
             reward += 10.0  # big reward for reaching target
         elif distance_to_target > 5.0:

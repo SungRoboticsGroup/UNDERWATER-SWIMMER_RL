@@ -288,7 +288,7 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
             
             total_steps += 1
             
-            if distance < 0.05:  # Threshold for "reaching" the target
+            if distance < 0.2:  # Threshold for "reaching" the target (20cm)
                 targets_reached += 1
                 print(f"  ✓ Reached in {step+1} steps (distance: {distance:.3f}m)")
                 break

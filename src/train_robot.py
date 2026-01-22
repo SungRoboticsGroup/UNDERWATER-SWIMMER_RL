@@ -2,11 +2,12 @@ from stable_baselines3 import SAC
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, StopTrainingOnNoModelImprovement
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 import numpy as np
 import time
+import os
 
 def make_env():
     # Create and return the SalpRobotEnv environment
@@ -131,18 +132,48 @@ if __name__ == "__main__":
                 print(f"Average reward: {np.mean(all_rewards):.2f}")
             print("="*70 + "\n")
     
-    # Create the callback
-    callback = DetailedLoggingCallback(
+    # Create logging callback
+    logging_callback = DetailedLoggingCallback(
         check_freq=5000,
         save_path='./logs/',
         name_prefix='salp_robot_model_yaw_continuity',
-        total_timesteps=400000
+        total_timesteps=500000
     )
+    
+    # Create evaluation environment (separate from training)
+    eval_env = make_vec_env(make_env, n_envs=1)
+    
+    # Setup early stopping: stop if no improvement for N evaluations
+    stop_callback = StopTrainingOnNoModelImprovement(
+        max_no_improvement_evals=30,  # Stop if no improvement for 30 evals
+        min_evals=10,                 # Need at least 10 evals before considering stopping
+        verbose=1
+    )
+    
+    # Evaluation callback: evaluates model every N steps
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path='./logs/best_model/',
+        log_path='./logs/eval/',
+        eval_freq=1000,               # Evaluate every 1000 steps
+        n_eval_episodes=5,            # Run 5 episodes per evaluation
+        deterministic=True,
+        render=False,
+        callback_after_eval=stop_callback,  # Check for early stopping after each eval
+        verbose=1
+    )
+    
+    # Combine callbacks
+    from stable_baselines3.common.callbacks import CallbackList
+    callback = CallbackList([logging_callback, eval_callback])
     
     # 5. Train
     print("Starting training...")
+    print("📊 Early stopping enabled: will stop if no improvement for 30 evaluations")
+    print("🎯 Best model will be saved to: ./logs/best_model/\n")
+    
     model.learn(
-        total_timesteps=400000, # Run for 400k steps
+        total_timesteps=500000, # Run for 500k steps
         callback=callback,
         reset_num_timesteps=True,
         tb_log_name="salp_robot_run_yaw_continuity"
