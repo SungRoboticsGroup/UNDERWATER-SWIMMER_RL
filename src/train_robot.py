@@ -81,8 +81,9 @@ if __name__ == "__main__":
             print("🚀 TRAINING STARTED")
             print("="*70)
             print(f"Total timesteps: {self.total_timesteps:,}")
-            print(f"Checkpoint frequency: every {self.check_freq:,} steps")
+            print(f"Progress updates: every {self.check_freq:,} steps")
             print(f"Parallel environments: {vec_env.num_envs}")
+            print(f"Only best model will be saved (no regular checkpoints)")
             print("="*70 + "\n")
         
         def _on_step(self):
@@ -112,12 +113,6 @@ if __name__ == "__main__":
                 
                 print("="*70)
             
-            # Save checkpoint
-            if self.n_calls % self.check_freq == 0 and self.n_calls > 0:
-                path = f"{self.save_path}/{self.name_prefix}_{self.n_calls}_steps"
-                self.model.save(path)
-                print(f"\n💾 Checkpoint saved: {path}.zip")
-            
             return True
         
         def _on_training_end(self):
@@ -134,7 +129,7 @@ if __name__ == "__main__":
     
     # Create logging callback
     logging_callback = DetailedLoggingCallback(
-        check_freq=5000,
+        check_freq=1000,
         save_path='./logs/',
         name_prefix='salp_robot_model_yaw_continuity',
         total_timesteps=500000

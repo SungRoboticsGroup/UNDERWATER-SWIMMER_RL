@@ -464,8 +464,8 @@ if __name__ == "__main__":
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     env = SalpRobotEnv(render_mode="human", robot=robot)
     
-    # Load the trained model
-    model = SAC.load("./salp_robot_final_yaw_continuity", env=env)   
+    # Load the trained model - use best model from training
+    model = SAC.load("./logs/best_model/best_model", env=env)
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])
