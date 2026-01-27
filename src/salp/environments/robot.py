@@ -240,8 +240,10 @@ class Robot:
             max_contraction: Maximum contraction distance (m)
             nozzle: Nozzle object for jet propulsion
         """
+        self._domain_randomization = False
 
         # constant properties during cycle
+        self.dischange_coefficent = 0.1  # discharge coefficient for jet
         self.dry_mass = dry_mass  # kg
         self.init_length = init_length  # meters
         self.init_width = init_width  # meters
@@ -254,7 +256,7 @@ class Robot:
         self.coast_time = 0.0
         self.contraction = 0.0  # contraction level
         self._contract_rate = 0.0
-        self._release_rateS = 0.0
+        self._release_rate = 0.0
         self._drag_coefficents = [0.4, 1.0] # min and max drag coefficients for different shapes
 
         # cycle tracking 
@@ -312,6 +314,9 @@ class Robot:
         self.drag_torque_history = []
         self.nozzle_yaw_history = []
 
+    def enable_domain_randomization(self):
+        """Enable domain randomization."""
+        self._domain_randomization = True
 
     def set_environment(self, density: float):
         """Set the environment properties.
@@ -378,6 +383,10 @@ class Robot:
             coast_time: Duration of coast phase (s)
             angle: Nozzle steering angle
         """
+        
+        if self._domain_randomization:
+
+            self._randomize_parameters()
 
         # set control inputs    
         self.contraction = contraction
@@ -394,6 +403,12 @@ class Robot:
         self.refill_time = self._contract_model()
         self.jet_time = self._release_model()
         # print(f"Refill time = {self.refill_time:.2f}s, Jet time = {self.jet_time:.2f}s")
+
+    def _randomize_parameters(self):
+
+        """Randomize robot parameters for domain randomization."""
+        # Randomize dry mass within ±10%
+        self.discharge_coefficient = np.random.uniform(0.1, 0.5)
 
     def update_state(self):
         """Determine current phase based on cycle time.
@@ -633,9 +648,8 @@ class Robot:
             return np.zeros(3)
 
         mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
-        C_discharge = 0.1  # discharge coefficient
 
-        return C_discharge * mass_rate * self.jet_velocity
+        return self.discharge_coefficient * mass_rate * self.jet_velocity
     
     def _get_jet_velocity(self) -> np.ndarray:
         """Calculate jet velocity vector.

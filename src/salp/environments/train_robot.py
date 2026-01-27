@@ -14,6 +14,7 @@ def make_env():
                     max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
     robot.set_environment(density=1000)  # water density in kg/m^3
+    robot.enable_domain_randomization()  # enable domain randomization
 
     env = SalpRobotEnv(render_mode=None, robot=robot)
 
@@ -32,22 +33,22 @@ if __name__ == "__main__":
     print("Environment is valid!")
 
     # 3. Define the model (SAC)
-    # model = SAC(
-    #     "MlpPolicy",           # Use standard Dense Neural Network
-    #     vec_env,
-    #     verbose=1,
-    #     tensorboard_log="./sac_salp_robot_tensorboard/",
+    model = SAC(
+        "MlpPolicy",           # Use standard Dense Neural Network
+        vec_env,
+        verbose=1,
+        tensorboard_log="./sac_salp_robot_tensorboard/",
         
-    #     # --- Tuning for Robotics ---
-    #     learning_rate=3e-4,
-    #     buffer_size=100000,    # Big memory for off-policy
-    #     batch_size=512,        # Mini-batch size
-    #     ent_coef='auto',       # Automatically adjust exploration (Temperature)
-    #     gamma=0.99,            # Discount factor
-    #     tau=0.005,             # Polyak averaging (Soft update)
-    #     device="cuda" 
-    # )
-    model = SAC.load("./salp_robot_final_roll_back", env=vec_env)
+        # --- Tuning for Robotics ---
+        learning_rate=3e-4,
+        buffer_size=100000,    # Big memory for off-policy
+        batch_size=512,        # Mini-batch size
+        ent_coef='auto',       # Automatically adjust exploration (Temperature)
+        gamma=0.99,            # Discount factor
+        tau=0.005,             # Polyak averaging (Soft update)
+        device="cuda" 
+    )
+    # model = SAC.load("./salp_robot_final_roll_back", env=vec_env)
     # model.learning_rate = 1e-3  # Reset learning rate when loading
 
     # 4. Setup Saving (Checkpoints)
@@ -55,7 +56,7 @@ if __name__ == "__main__":
     checkpoint_callback = CheckpointCallback(
         save_freq= 10000,
         save_path='./logs/',
-        name_prefix='salp_robot_model_roll_back'
+        name_prefix='salp_robot_dm'
     )
     
     # 5. Train
@@ -63,10 +64,10 @@ if __name__ == "__main__":
     model.learn(
         total_timesteps=400000, # Run for 400k steps
         callback=checkpoint_callback,
-        reset_num_timesteps=False,
-        tb_log_name="salp_robot_run_roll_back"
+        reset_num_timesteps=True,
+        tb_log_name="salp_robot_run_dm"
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_final_roll_backv2")
+    model.save("salp_robot_final_dm")
     print("Training finished.")
