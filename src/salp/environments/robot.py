@@ -243,7 +243,12 @@ class Robot:
         self._domain_randomization = False
 
         # constant properties during cycle
+        # parameters for randomization
         self.dischange_coefficent = 0.1  # discharge coefficient for jet
+        self.drag_force_ratio = 0.5
+        self.added_mass_coefficient = np.diag([0.1, 0.1, 0.1])
+        self.added_mass_rate_coefficient = np.diag([0.01, 0.01, 0.01])
+
         self.dry_mass = dry_mass  # kg
         self.init_length = init_length  # meters
         self.init_width = init_width  # meters
@@ -257,8 +262,8 @@ class Robot:
         self.contraction = 0.0  # contraction level
         self._contract_rate = 0.0
         self._release_rate = 0.0
-        self._drag_coefficents = [0.4, 1.0] # min and max drag coefficients for different shapes
-
+        self._drag_coefficent_range = self._construct_drag_coefficients()
+    
         # cycle tracking 
         self.state = self.phase[3]  # initial state is rest
         self.cycle = 0
@@ -268,7 +273,7 @@ class Robot:
         # properties updated each step
         self.length = 0.0
         self.width = 0.0
-        self.area = 0.0
+        self.area = np.zeros(3)
         self.volume = 0.0  # water volume inside the robot
         self.mass = np.diag(np.zeros(3))  # total mass including water
         self.water_mass = 0.0
@@ -277,7 +282,7 @@ class Robot:
         self.jet_velocity = np.zeros(3)  # jet velocity vector
         self.jet_force = np.zeros(3)  # jet force vector
         self.jet_torque = np.zeros(3)  # jet torque vector
-        self.drag_coefficient = 0.0
+        self.drag_coefficient = np.zeros(3)
         self.drag_force = np.zeros(3)  # drag force vector
         self.drag_torque = np.zeros(3)  # drag torque vector
 
@@ -313,6 +318,16 @@ class Robot:
         self.drag_force_history = []
         self.drag_torque_history = []
         self.nozzle_yaw_history = []
+    
+    def _construct_drag_coefficients(self):
+        
+        # different drag coefficients for x, y, z directions
+        # initial and end of deformation drag coefficients
+        drag_coefficient_x = [0.5, 1.0]
+        drag_coefficient_y = [1.2, 0.5]
+        drag_coefficient_z = [1.2, 0.5]
+
+        return [drag_coefficient_x, drag_coefficient_y, drag_coefficient_z]
 
     def enable_domain_randomization(self):
         """Enable domain randomization."""
@@ -551,12 +566,14 @@ class Robot:
         Returns:
             3D acceleration vector
         """
-        F_coriolis = self._get_coriolis_force()
+
+        self.coriolis_force = self._get_coriolis_force()
         self.drag_force = self._get_drag_force()
         self.jet_force = self._get_jet_force()
+        self.added_mass_force = self._get_added_mass_force()
         self.mass = self.get_mass()
 
-        return np.linalg.inv(self.mass) @ (self.jet_force + self.drag_force + F_coriolis)
+        return np.linalg.inv(self.mass) @ (-self.jet_force + self.drag_force + self.added_mass_force - self.coriolis_force)
 
     def _euler_equations(self) -> np.ndarray:
         """Compute angular accelerations using Euler's equations.
@@ -646,8 +663,8 @@ class Robot:
         self.jet_velocity = self._get_jet_velocity()
         if self.state != self.phase[1]:  # only produce jet force during release phase
             return np.zeros(3)
-
-        mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
+    
+        mass_rate = self.get_mass_rate()
 
         return self.discharge_coefficient * mass_rate * self.jet_velocity
     
@@ -660,7 +677,7 @@ class Robot:
         if self.state != self.phase[1]:  # only produce jet velocity during release phase
             return np.zeros(3)      
 
-        volume_rate = -(self.volume - self.prev_water_volume) / self.dt
+        volume_rate = (self.volume - self.prev_water_volume) / self.dt
         jet_speed = volume_rate / self.nozzle.area
         direction = self.nozzle.get_nozzle_direction()
 
@@ -691,15 +708,17 @@ class Robot:
         init_aspect_ratio = self.init_length / self.init_width  # most elongated
         contracted_length = self.init_length - self.max_contraction
         contracted_width = self._length_width_relation(contracted_length)
-        min_aspect_ratio = contracted_length / contracted_width  # most spherical
+        end_aspect_ratio = contracted_length / contracted_width  # most spherical
         
         # Normalize to [0, 1]: 0 = most spherical, 1 = most elongated
-        normalized_ratio = (aspect_ratio - min_aspect_ratio) / (init_aspect_ratio - min_aspect_ratio)
+        normalized_ratio = (aspect_ratio - end_aspect_ratio) / (init_aspect_ratio - end_aspect_ratio)
         normalized_ratio = np.clip(normalized_ratio, 0, 1)
         
-        C_d = self._drag_coefficents[1] - normalized_ratio * (self._drag_coefficents[1] - self._drag_coefficents[0])
-
-        return C_d
+        drag_coefficient = []
+        for range in self.drag_coefficient_range:
+            drag_coefficient.append(range[1] - normalized_ratio * (range[1] - range[0]))
+    
+        return drag_coefficient
 
     def _get_drag_torque(self) -> np.ndarray:
         """Calculate drag torque on the robot.
@@ -719,22 +738,28 @@ class Robot:
             3D force vector
         """
         #TODO: drag has a slight discountinuity!
-        self.drag_coefficient = self._get_drag_coefficient()
-        F_drag = -0.5 * self.density * self.area * self.drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
-
+        self.drag_coefficient = np.array(self._get_drag_coefficient())
+        F_quadratic = -0.5 * self.density * self.area * self.drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
         F_linear = -0.5 * self.density * self.area * self.drag_coefficient * self.velocity
 
-        return F_drag + F_linear
+        return F_quadratic + self.drag_force_ratio * F_linear
     
-    def _get_added_mass(self) -> float:
+    def _get_added_mass_force(self) -> float:
         """Calculate added mass from surrounding fluid.
         
         Returns:
             Added mass (currently not implemented)
         """
-        # TODO: Implement added mass calculation
-        # added_mass = 0.5 * self.density * self._get_water_volume()
-        return 0.0
+        mass = self.get_mass()
+        mass_rate = self.get_mass_rate()
+
+        added_mass = mass @ self.added_mass_coefficient
+        added_mass_rate = mass_rate @ self.added_mass_rate_coefficient
+        added_mass_force = added_mass * self.acceleration + \
+                           np.cross(self.angular_velocity, added_mass * self.velocity) + \
+                           added_mass_rate * self.velocity
+        
+        return added_mass_force
     
     def _get_coriolis_force(self) -> np.ndarray:
         """Calculate Coriolis force.
@@ -742,7 +767,7 @@ class Robot:
         Returns:
             3D force vector
         """
-        return self.get_mass() @ np.cross(self.angular_velocity, self.velocity)
+        return np.cross(self.angular_velocity, self.get_mass() @ self.velocity)
 
     def _get_coriolis_torque(self) -> np.ndarray:
         """Calculate Coriolis torque.
@@ -790,8 +815,11 @@ class Robot:
 
     def _get_cross_sectional_area(self) -> float:
 
-        area = np.pi * (self.length/2) * (self.width/2)
-        return area
+        A_yz = np.pi * (self.width/2) * (self.width/2)
+        A_xz = np.pi * (self.length/2) * (self.width/2)
+        A_xy = np.pi * (self.length/2) * (self.length/2)
+
+        return [A_yz, A_xz, A_xy]
 
     def _get_water_volume(self) -> float:
         
@@ -816,6 +844,13 @@ class Robot:
         mass = mass * np.diag(np.ones(3))
 
         return mass
+
+    def get_mass_rate(self) -> float:
+ 
+        mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
+        mass_rate *= np.diag(np.ones(3))
+              
+        return mass_rate
 
     def _contract_model(self) -> float:
         """Calculate contraction time based on contraction distance.
