@@ -282,7 +282,8 @@ class Robot:
         self.jet_velocity = np.zeros(3)  # jet velocity vector
         self.jet_force = np.zeros(3)  # jet force vector
         self.jet_torque = np.zeros(3)  # jet torque vector
-        self.drag_coefficient = np.zeros(3)
+        self.trans_drag_coefficient = np.zeros(3)
+        self.rot_drag_coefficient = np.zeros(3)
         self.drag_force = np.zeros(3)  # drag force vector
         self.drag_torque = np.zeros(3)  # drag torque vector
 
@@ -581,16 +582,32 @@ class Robot:
         Returns:
             3D angular acceleration vector
         """
-        T_asymmetry = np.array([0.0, 0.0, 0.1*np.linalg.norm(self.velocity)])  # TODO: Implement asymmetry torque
-        T_coriolis = self._get_coriolis_torque()
+        self.asymmetry_torque = self._asymmetry_torque_model()
+        self.coriolis_torque = self._get_coriolis_torque()
         self.drag_torque = self._get_drag_torque()
         self.jet_torque = self._get_jet_torque()
-        T_deform = self.get_inertia_matrix_rate() @ self.angular_velocity
-        # T_jet = np.array([0.0, 0.0, 0.0])  # test orientation
+        self.deform_torque = self._get_deform_torque()
+        self.added_mass_torque = self._get_added_mass_torque()
 
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + T_coriolis + T_asymmetry - T_deform)
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque - self.coriolis_torque + self.asymmetry_torque - self.deform_torque + self.added_mass_torque)
+    
+    def _get_deform_torque(self) -> np.ndarray:
+        """Calculate torque due to deformation of the robot.
+        
+        Returns:
+            3D torque vector
+        """
+        return self.get_inertia_matrix_rate() @ self.angular_velocity
+
+    def _asymmetry_torque_model(self) -> np.ndarray:
+        """Calculate asymmetry torque based on current velocity.
+        
+        Returns:
+            3D torque vector
+        """
+        return np.array([0.0, 0.0, 0.1*np.linalg.norm(self.velocity)])
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -726,10 +743,12 @@ class Robot:
         Returns:
             3D torque vector
         """
-        T_drag = - self.density * self.drag_coefficient * (self.width / 2) * \
-            (self.length / 2) ** 4 * np.linalg.norm(self.angular_velocity) * self.angular_velocity
-        self.drag_torque = T_drag
-        return T_drag
+        T_quadratic = - 0.5 * self.density * self.rot_drag_coefficient * self.area * \
+        np.linalg.norm(self.angular_velocity) * self.angular_velocity * np.array([self.width ** 3, self.length ** 3, self.length ** 3])
+        
+        T_linear = - 0.5 * self.density * self.rot_drag_coefficient * self.area * self.angular_velocity * self.width 
+            
+        return T_quadratic + self.drag_torque_ratio * T_linear
     
     def _get_drag_force(self) -> np.ndarray:
         """Calculate drag force on the robot.
@@ -761,6 +780,24 @@ class Robot:
         
         return added_mass_force
     
+    def _get_added_mass_torque(self) -> np.ndarray:
+        """Calculate added mass torque on the robot.
+        
+        Returns:
+            3D torque vector
+        """
+        I = self.get_inertia_matrix
+        I_rate = self.get_inertia_matrix_rate
+
+        added_mass = I @ self.added_mass_torque_coefficient
+        added_mass_rate = I_rate @ self.added_mass_torque_rate_coefficient
+        added_mass_torque = added_mass * self.angular_acceleration + \
+                            np.cross(self.angular_velocity, added_mass * self.angular_velocity) + \
+                                added_mass_rate * self.angular_velocity + \
+                            np.cross(self.velocity, added_mass * self.velocity)
+
+        return added_mass_torque
+    
     def _get_coriolis_force(self) -> np.ndarray:
         """Calculate Coriolis force.
         
@@ -775,7 +812,7 @@ class Robot:
         Returns:
             3D torque vector
         """
-        return -np.cross(self.angular_velocity, self.get_inertia_matrix() @ self.angular_velocity)
+        return np.cross(self.angular_velocity, self.get_inertia_matrix() @ self.angular_velocity)
 
     def get_current_length(self) -> float:
         """Calculate current body length based on phase.
