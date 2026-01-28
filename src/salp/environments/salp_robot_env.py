@@ -117,9 +117,9 @@ class SalpRobotEnv(gym.Env):
         # Reset robot to center
         self.robot.reset()
         self.pos_init = np.array([self.width / 2, self.height / 2])
-        self.prev_dist = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
+        self.prev_dist = np.linalg.norm(self.robot.position_world[0:-1] - self.target_point)
         self.prev_action = np.array([0.0, 0.0, 0.0])
-        self.prev_target_point = self.robot.position[0:-1].copy()
+        self.prev_target_point = self.robot.position_world[0:-1].copy()
        
         # self.body_radius = self.base_radius  # Current body radius
         self.ellipse_a = self.robot.get_current_length()    # Semi-major axis for ellipse
@@ -192,7 +192,7 @@ class SalpRobotEnv(gym.Env):
         done = False
         truncated = False
 
-        distance_to_target = np.linalg.norm(self.robot.position[0:-1] - self.target_point)
+        distance_to_target = np.linalg.norm(self.robot.position_world[0:-1] - self.target_point)
         if distance_to_target < 0.01:
             done = True
             reward += 10.0  # big reward for reaching target
@@ -222,7 +222,7 @@ class SalpRobotEnv(gym.Env):
     def _calculate_reward(self) -> float:
         """Calculate reward based on realistic movement and efficiency."""
         
-        current_diff = self.robot.position[0:-1] - self.target_point
+        current_diff = self.robot.position_world[0:-1] - self.target_point
         current_dist = np.linalg.norm(current_diff)
         dist_improvement = - current_dist + self.prev_dist   # Negative distance as improvement
         # print(f"Distance to target: {current_dist:.3f} m, Improvement: {dist_improvement:.3f} m")
@@ -235,13 +235,13 @@ class SalpRobotEnv(gym.Env):
         path_vec = self.target_point - self.prev_target_point
         path_length = np.linalg.norm(path_vec) + 1e-6
         path_dir = path_vec / path_length
-        robot_vec = self.robot.position[0:-1] - self.prev_target_point
+        robot_vec = self.robot.position_world[0:-1] - self.prev_target_point
 
         # 6. cross track error penalty
         projection = np.dot(robot_vec, path_dir)
         projection = np.clip(projection, 0.0, path_length)
         closest_point = self.prev_target_point + projection * path_dir 
-        cross_track_error = np.linalg.norm(self.robot.position[0:-1] - closest_point)
+        cross_track_error = np.linalg.norm(self.robot.position_world[0:-1] - closest_point)
 
         cross_track_tol = 0.05  # 5 cm tolerance
         excess_track_error = max(0.0, cross_track_error - cross_track_tol)
@@ -433,7 +433,7 @@ class SalpRobotEnv(gym.Env):
         self.screen.blit(label, label_rect)
         
         # Draw distance to target as info
-        robot_pos = self.robot.position[0:-1]
+        robot_pos = self.robot.position_world[0:-1]
         distance_to_target = np.linalg.norm(self.target_point - robot_pos)
         dist_label = font.render(f"d:{distance_to_target:.2f}m", True, crosshair_color)
         dist_label_rect = dist_label.get_rect(midtop=(target_screen_x, target_screen_y + target_radius + 10))
@@ -521,7 +521,7 @@ class SalpRobotEnv(gym.Env):
         path_vec = self.target_point - self.prev_target_point
         path_length = np.linalg.norm(path_vec) + 1e-6   
         path_dir = path_vec / path_length
-        robot_vec = self.robot.position[0:-1] - self.prev_target_point
+        robot_vec = self.robot.position_world[0:-1] - self.prev_target_point
         cross_track_error = np.cross(path_dir, robot_vec)
 
         path_yaw = np.arctan2(path_dir[1], path_dir[0])
@@ -529,10 +529,10 @@ class SalpRobotEnv(gym.Env):
         heading_error = (raw_error + np.pi) % (2 * np.pi) - np.pi  # Wrap to [-pi, pi]
 
         return np.array([
-            self.robot.position[0] - self.target_point[0],  # Normalized position
-            self.robot.position[1] - self.target_point[1],
+            self.robot.position_world[0] - self.target_point[0],  # Normalized position
+            self.robot.position_world[1] - self.target_point[1],
             self.robot.velocity[0],  # Normalized velocity
-            self.robot.velocity[1],
+            self.robot.velocity[1],  # Normalized velocity
             self.robot.euler_angle[2],  # Normalized body angle
             self.robot.angular_velocity[2],  # Normalized angular velocity
             # cross_track_error,
@@ -1045,7 +1045,7 @@ class SalpRobotEnv(gym.Env):
         self.screen.blit(state_text, (10, 40))
         
         # Position
-        pos_text = small_font.render(f"Position: ({self.robot.position[0]:.3f}, {self.robot.position[1]:.3f}) m", True, (200, 200, 200))
+        pos_text = small_font.render(f"Position: ({self.robot.position_world[0]:.3f}, {self.robot.position_world[1]:.3f}) m", True, (200, 200, 200))
         self.screen.blit(pos_text, (10, 65))
         
         # Angle
@@ -1082,8 +1082,8 @@ class SalpRobotEnv(gym.Env):
 
         # robot screen center in pixels (convert robot meter positions to screen coordinates)
         # print(f"Robot world pos: ({self.robot.position[0]}, {self.robot.position[1]})")
-        robot_x = int(self.pos_init[0] + self.robot.position[0] * scale)
-        robot_y = int(self.pos_init[1] + self.robot.position[1] * scale)
+        robot_x = int(self.pos_init[0] + self.robot.position_world[0] * scale)
+        robot_y = int(self.pos_init[1] + self.robot.position_world[1] * scale)
         # print(f"Robot screen pos: ({robot_x}, {robot_y})")
 
         # draw rulers and grid to visualize meters in both x and y
@@ -1426,7 +1426,7 @@ class SalpRobotEnv(gym.Env):
 if __name__ == "__main__":
     
     # TODO: need to fix the scale issues with the robot size and movement speed
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
