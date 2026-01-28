@@ -394,28 +394,40 @@ def plot_drag_properties(time_data, drag_force_data,
 def plot_drag_coefficient(time_data, drag_coefficient_data, 
                          state_data=None, title="Drag Coefficient Over Time"):
     """
-    Plot drag coefficient over time.
+    Plot drag coefficient over time for all three axes.
     
     Args:
         time_data: Array of time values
-        drag_coefficient_data: Array of drag coefficient values
+        drag_coefficient_data: Array of drag coefficient values (Nx3 for X, Y, Z)
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     
     Returns:
         Matplotlib figure object
     """
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
     
-    # Add phase backgrounds if state_data provided
-    if state_data is not None:
-        _add_phase_backgrounds(ax, time_data, state_data)
+    axis_labels = ['X', 'Y', 'Z']
+    colors = ['blue', 'green', 'red']
     
-    ax.plot(time_data, drag_coefficient_data, 'g-', linewidth=2, zorder=3)
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Drag Coefficient')
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
+    # Ensure drag_coefficient_data is 2D
+    if len(drag_coefficient_data.shape) == 1:
+        drag_coefficient_data = drag_coefficient_data.reshape(-1, 1)
+    
+    for idx, (ax, label, color) in enumerate(zip(axes, axis_labels, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot the data for this axis
+        if drag_coefficient_data.shape[1] > idx:
+            ax.plot(time_data, drag_coefficient_data[:, idx], color=color, linewidth=2, zorder=3, label=f'Drag Coeff {label}')
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Drag Coefficient {label}')
+        ax.set_title(f'{title} - {label} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='upper right')
     
     plt.tight_layout()
     plt.show()
@@ -541,30 +553,60 @@ def plot_robot_acceleration(time_data, acceleration_data,
 
 
 def plot_cross_sectional_area(time_data, area_data, 
-                             state_data=None, title="Robot Cross-Sectional Area Over Time"):
+                             state_data=None, title="Robot Cross-Sectional Areas Over Time"):
     """
-    Plot cross-sectional area over time.
+    Plot all three cross-sectional areas in separate subplots.
     
     Args:
         time_data: Array of time values
-        area_data: Array of cross-sectional area values
+        area_data: Array of cross-sectional area values (3D: [A_yz, A_xz, A_xy])
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, axes = plt.subplots(3, 1, figsize=(10, 10))
     
-    # Add phase backgrounds if state_data provided
-    if state_data is not None:
-        _add_phase_backgrounds(ax, time_data, state_data)
+    # Extract individual area components
+    area_data = np.array(area_data)
+    if area_data.ndim == 2:
+        A_yz = area_data[:, 0]
+        A_xz = area_data[:, 1]
+        A_xy = area_data[:, 2]
+        
+        # Plot A_yz
+        if state_data is not None:
+            _add_phase_backgrounds(axes[0], time_data, state_data)
+        axes[0].plot(time_data, A_yz, 'teal', linewidth=2)
+        axes[0].set_ylabel('Area (m²)')
+        axes[0].set_title('A_yz (y-z plane)')
+        axes[0].grid(True, alpha=0.3)
+        
+        # Plot A_xz
+        if state_data is not None:
+            _add_phase_backgrounds(axes[1], time_data, state_data)
+        axes[1].plot(time_data, A_xz, 'coral', linewidth=2)
+        axes[1].set_ylabel('Area (m²)')
+        axes[1].set_title('A_xz (x-z plane)')
+        axes[1].grid(True, alpha=0.3)
+        
+        # Plot A_xy
+        if state_data is not None:
+            _add_phase_backgrounds(axes[2], time_data, state_data)
+        axes[2].plot(time_data, A_xy, 'steelblue', linewidth=2)
+        axes[2].set_xlabel('Time (s)')
+        axes[2].set_ylabel('Area (m²)')
+        axes[2].set_title('A_xy (x-y plane)')
+        axes[2].grid(True, alpha=0.3)
+    else:
+        # Fallback for 1D array
+        if state_data is not None:
+            _add_phase_backgrounds(axes[0], time_data, state_data)
+        axes[0].plot(time_data, area_data, 'teal', linewidth=2)
+        axes[0].set_xlabel('Time (s)')
+        axes[0].set_ylabel('Area (m²)')
+        axes[0].set_title('Cross-Sectional Area')
+        axes[0].grid(True, alpha=0.3)
     
-    # Cross-sectional area
-    ax.plot(time_data, area_data, 'teal', linewidth=2, label='Cross-Sectional Area')
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Area (m²)')
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    
+    fig.suptitle(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.show()
     
@@ -1095,6 +1137,318 @@ def plot_nozzle_direction_sequence(nozzle_directions, nozzle_positions=None,
     ax.set_title(title, fontsize=13, fontweight='bold')
     ax.grid(True, alpha=0.3)
     
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_coriolis_force(time_data, coriolis_force_data, 
+                        state_data=None, title="Coriolis Force Over Time"):
+    """
+    Plot Coriolis force in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        coriolis_force_data: Array of Coriolis force values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot Coriolis force in each direction
+        ax.plot(time_data, coriolis_force_data[:, i], color=color, linewidth=2, 
+                label=f'Coriolis Force {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Coriolis Force {direction} (N)')
+        ax.set_title(f'Coriolis Force in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_added_mass_force(time_data, added_mass_force_data, 
+                          state_data=None, title="Added Mass Force Over Time"):
+    """
+    Plot added mass force in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        added_mass_force_data: Array of added mass force values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot added mass force in each direction
+        ax.plot(time_data, added_mass_force_data[:, i], color=color, linewidth=2, 
+                label=f'Added Mass Force {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Added Mass Force {direction} (N)')
+        ax.set_title(f'Added Mass Force in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_all_forces(time_data, jet_force_data, drag_force_data, coriolis_force_data, 
+                    added_mass_force_data, state_data=None, title="All Forces Comparison Over Time"):
+    """
+    Plot jet force, drag force, Coriolis force, and added mass force together.
+    
+    Args:
+        time_data: Array of time values
+        jet_force_data: Array of jet force values (3D vectors)
+        drag_force_data: Array of drag force values (3D vectors)
+        coriolis_force_data: Array of Coriolis force values (3D vectors)
+        added_mass_force_data: Array of added mass force values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+    
+    directions = ['X', 'Y', 'Z']
+    
+    for i, (ax, direction) in enumerate(zip(axes, directions)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot all four forces in each direction
+        ax.plot(time_data, jet_force_data[:, i], color='red', linewidth=2, 
+                label='Jet Force', zorder=3)
+        ax.plot(time_data, drag_force_data[:, i], color='blue', linewidth=2, 
+                label='Drag Force', zorder=3)
+        ax.plot(time_data, coriolis_force_data[:, i], color='green', linewidth=2, 
+                label='Coriolis Force', zorder=3)
+        ax.plot(time_data, added_mass_force_data[:, i], color='orange', linewidth=2, 
+                label='Added Mass Force', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Force {direction} (N)')
+        ax.set_title(f'All Forces in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_coriolis_torque(time_data, coriolis_torque_data, 
+                         state_data=None, title="Coriolis Torque Over Time"):
+    """
+    Plot Coriolis torque in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        coriolis_torque_data: Array of Coriolis torque values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot Coriolis torque in each direction
+        ax.plot(time_data, coriolis_torque_data[:, i], color=color, linewidth=2, 
+                label=f'Coriolis Torque {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Coriolis Torque {direction} (N·m)')
+        ax.set_title(f'Coriolis Torque in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_deform_torque(time_data, deform_torque_data, 
+                       state_data=None, title="Deformation Torque Over Time"):
+    """
+    Plot deformation torque in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        deform_torque_data: Array of deformation torque values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot deformation torque in each direction
+        ax.plot(time_data, deform_torque_data[:, i], color=color, linewidth=2, 
+                label=f'Deform Torque {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Deform Torque {direction} (N·m)')
+        ax.set_title(f'Deformation Torque in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_added_mass_torque(time_data, added_mass_torque_data, 
+                           state_data=None, title="Added Mass Torque Over Time"):
+    """
+    Plot added mass torque in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        added_mass_torque_data: Array of added mass torque values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot added mass torque in each direction
+        ax.plot(time_data, added_mass_torque_data[:, i], color=color, linewidth=2, 
+                label=f'Added Mass Torque {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Added Mass Torque {direction} (N·m)')
+        ax.set_title(f'Added Mass Torque in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_asymmetry_torque(time_data, asymmetry_torque_data, 
+                          state_data=None, title="Asymmetry Torque Over Time"):
+    """
+    Plot asymmetry torque in X, Y, Z dimensions.
+    
+    Args:
+        time_data: Array of time values
+        asymmetry_torque_data: Array of asymmetry torque values (3D vectors)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot asymmetry torque in each direction
+        ax.plot(time_data, asymmetry_torque_data[:, i], color=color, linewidth=2, 
+                label=f'Asymmetry Torque {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Asymmetry Torque {direction} (N·m)')
+        ax.set_title(f'Asymmetry Torque in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def plot_inertia_tensor(time_data, inertia_tensor_data, 
+                        state_data=None, title="Inertia Tensor Principal Axes Over Time"):
+    """
+    Plot the 3 principal axes inertia tensor values over time.
+    
+    Args:
+        time_data: Array of time values
+        inertia_tensor_data: Array of inertia tensor diagonal values (Nx3 for I_xx, I_yy, I_zz)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    axes_labels = ['I_xx (X-axis)', 'I_yy (Y-axis)', 'I_zz (Z-axis)']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, label, color) in enumerate(zip(axes, axes_labels, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot inertia tensor component for this axis
+        ax.plot(time_data, inertia_tensor_data[:, i], color=color, linewidth=2, 
+                label=label, zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'{label} (kg·m²)')
+        ax.set_title(f'Inertia Tensor Component {label}')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.show()
     
