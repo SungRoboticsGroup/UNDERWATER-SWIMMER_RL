@@ -9,48 +9,54 @@ class Nozzle:
         length1: First segment length of the nozzle
         length2: Second segment length of the nozzle
         length3: Third segment length of the nozzle
-        area: Area of nozzle openning
+        area: Area of nozzle opening
         angle1: Rotation angle around y axis
         angle2: Rotation angle around z axis
         mass: Mass of the nozzle
-        pos_com: Position of the nozzle center of mass
     """
     
     def __init__(self, length1: float = 0.0, length2: float = 0.0, 
                  length3: float = 0.0, area: float = 0.0, mass: float = 0.0):
+        """Initialize nozzle with geometric and control parameters."""
+        # Geometric properties
         self.length1 = length1
         self.length2 = length2
         self.length3 = length3
-        self.mass = mass    
         self.area = area
-        self.angle1 = 0.0 
+        self.mass = mass
+        
+        # Angle parameters
+        self.angle1 = 0.0
         self.angle2 = 0.0
         self.prev_angle1 = 0.0
-        self.prev_angle2 = 0.0  
-        self.yaw = 0.0  # yaw angle around z axis for control
+        self.prev_angle2 = 0.0
+        
+        # Yaw control parameters
+        self.yaw = 0.0
         self.prev_yaw = 0.0
-        self.current_yaw = 0.0 
+        self.current_yaw = 0.0
+        
+        # Fixed parameters
         self.gamma = np.pi / 4  # fixed tilt angle of nozzle downwards
         self.angle_speed = 31 * np.pi / 30  # rad/s
         self.turn_time = 0.0
-
+        
         # Rotation matrices
         self.R_nm = None
         self.R_mb = None
         self.R_br = None
 
+    # ==================== Control Methods ====================
     def set_angles(self, angle1: float, angle2: float):
-        """Set the nozzle angles.
+        """Set the nozzle angles and update rotation matrices.
         
         Args:
             angle1: Rotation angle around y axis
             angle2: Rotation angle around z axis
         """
-
         self.angle1 = angle1
         self.angle2 = angle2
         self.turn_time = self._nozzle_turn_time()
-        # print(f"Nozzle turn time: {self.turn_time:.2f} s")
         self._get_rotation_matrices()
     
     def set_yaw_angle(self, yaw_angle: float):
@@ -63,23 +69,19 @@ class Nozzle:
         self.yaw = yaw_angle
 
     def solve_angles(self):
-        """Inverse kinematics to find nozzle angles for a target direction.
-        
-        Args:
-            target_direction: Desired 3D direction vector
-        """ 
+        """Solve inverse kinematics to find nozzle angles for target direction."""
         self.prev_angle1 = self.angle1
         self.prev_angle2 = self.angle2
 
-        target_direction = - np.array([np.cos(self.yaw), np.sin(self.yaw), 0])
+        target_direction = -np.array([np.cos(self.yaw), np.sin(self.yaw), 0])
         target_direction = self.R_br.transpose() @ target_direction
 
-        val2 = np.clip(2*target_direction[2] - 1, -1.0, 1.0)
+        val2 = np.clip(2 * target_direction[2] - 1, -1.0, 1.0)
         self.angle2 = np.arccos(val2)
         if self.angle2 <= -np.pi:
-            self.angle2 += 2*np.pi
+            self.angle2 += 2 * np.pi
         elif self.angle2 > np.pi:
-            self.angle2 -= 2*np.pi
+            self.angle2 -= 2 * np.pi
 
         if self.angle2 == 0:
             self.angle1 = 0.0
@@ -91,46 +93,32 @@ class Nozzle:
             self.angle1 = np.arcsin(val1) - np.arctan2(b, a)
 
         if self.angle1 <= -np.pi:
-            self.angle1 += 2*np.pi
+            self.angle1 += 2 * np.pi
         elif self.angle1 > np.pi:
-            self.angle1 -= 2*np.pi
+            self.angle1 -= 2 * np.pi
 
-        # print(f"Solved nozzle angles: angle1 = {self.angle1}, angle2 = {self.angle2}")
-
-    def _nozzle_turn_time(self) -> float:
-        """Calculate time required to turn to new angles.
-        
-        Returns:
-            Time in seconds to reach new angles
-        """
-        delta_angle1 = abs(self.angle1 - self.prev_angle1)
-        delta_angle2 = abs(self.angle2 - self.prev_angle2)
-
-        time1 = delta_angle1 / self.angle_speed
-        time2 = delta_angle2 / self.angle_speed
-
-        return time1 + time2
-    
-    def step(self, time):
-
-        # only need nozzle angle history for rendering
+    # ==================== Update Methods ====================
+    def step(self, time: float):
+        """Update current yaw interpolation during turning phase."""
+        # Interpolate yaw angle during nozzle turn time
         if time < self.turn_time:
             ratio = time / self.turn_time
             self.current_yaw = self.prev_yaw + ratio * (self.yaw - self.prev_yaw)
         else:
             self.current_yaw = self.yaw
-        
+
+    # ==================== Geometry Methods ====================
     def get_nozzle_position(self) -> np.ndarray:
-        """Calculate the nozzle position in world frame.
+        """Calculate the nozzle tip position in world frame.
         
         Returns:
             3D position vector of the nozzle tip
         """
-        # Nozzle position in nozzle frame
+        # Nozzle tip position in nozzle frame
         pos_x3 = self.length3 * np.cos(self.gamma)
         pos_y3 = 0
         pos_z3 = self.length3 * np.sin(self.gamma)
-        nozzle_position = np.array([pos_x3, pos_y3, pos_z3]) 
+        nozzle_position = np.array([pos_x3, pos_y3, pos_z3])
 
         # Middle section tip position in body frame
         pos_x2 = 0
@@ -139,13 +127,12 @@ class Nozzle:
         middle_position = np.array([pos_x2, pos_y2, pos_z2])
 
         # Base section tip position in base frame
-        pos_x1 = 0 
+        pos_x1 = 0
         pos_y1 = 0
         pos_z1 = self.length1
-        base_position = np.array([pos_x1, pos_y1, pos_z1]) 
+        base_position = np.array([pos_x1, pos_y1, pos_z1])
 
         position = self.R_br @ (base_position + self.R_mb @ (middle_position + self.R_nm @ nozzle_position))
-
         return position
     
     def get_nozzle_direction(self) -> np.ndarray:
@@ -154,15 +141,12 @@ class Nozzle:
         Returns:
             3D direction unit vector in world frame
         """
-        # Nozzle tilted at 45 degrees downwards
-        
         pos_x = np.cos(self.gamma)
         pos_y = 0
         pos_z = np.sin(self.gamma)
         nozzle_direction = np.array([pos_x, pos_y, pos_z])
 
         direction = self.R_br @ self.R_mb @ self.R_nm @ nozzle_direction
-        
         return direction
     
     def get_middle_position(self) -> np.ndarray:
@@ -183,18 +167,28 @@ class Nozzle:
         middle_position = np.array([pos_x2, pos_y2, pos_z2])
 
         position = self.R_br @ (base_position + self.R_mb @ middle_position)
-        # print("Middle position:", position)
         return position
 
-    def _get_rotation_matrices(self) -> np.ndarray:
-        """Calculate the overall rotation matrix of the nozzle.
+    # ==================== Private Helper Methods ====================
+    def _nozzle_turn_time(self) -> float:
+        """Calculate time required to turn to new angles.
         
         Returns:
-            3x3 rotation matrix
+            Time in seconds to reach new angles
         """
+        delta_angle1 = abs(self.angle1 - self.prev_angle1)
+        delta_angle2 = abs(self.angle2 - self.prev_angle2)
+
+        time1 = delta_angle1 / self.angle_speed
+        time2 = delta_angle2 / self.angle_speed
+
+        return time1 + time2
+
+    def _get_rotation_matrices(self):
+        """Calculate the rotation matrices for nozzle orientation."""
         R_theta_fixed = np.array([[np.cos(self.gamma), 0, -np.sin(self.gamma)],
-                                     [0, 1, 0],
-                                     [np.sin(self.gamma), 0, np.cos(self.gamma)]])
+                                  [0, 1, 0],
+                                  [np.sin(self.gamma), 0, np.cos(self.gamma)]])
         
         R_nozzle = np.array([[np.cos(self.angle2), -np.sin(self.angle2), 0],
                              [np.sin(self.angle2), np.cos(self.angle2), 0],
@@ -222,6 +216,7 @@ class Robot:
     """
     
     class Phase(Enum):
+        """Cycle phases for robot locomotion."""
         REFILL = 0
         JET = 1
         COAST = 2
@@ -240,68 +235,83 @@ class Robot:
             max_contraction: Maximum contraction distance (m)
             nozzle: Nozzle object for jet propulsion
         """
-        self._domain_randomization = False
-
-        # constant properties during cycle
-        # parameters for randomization
-        self.dischange_coefficent = 0.1  # discharge coefficient for jet
-        self.drag_force_ratio = 0.5
-        self.added_mass_coefficient = np.diag([0.1, 0.1, 0.1])
-        self.added_mass_rate_coefficient = np.diag([0.01, 0.01, 0.01])
-
-        self.dry_mass = dry_mass  # kg
-        self.init_length = init_length  # meters
-        self.init_width = init_width  # meters
-        self.max_contraction = max_contraction  # max contraction length
+        # ==================== Physical Parameters ====================
+        self.dry_mass = dry_mass
+        self.init_length = init_length
+        self.init_width = init_width
+        self.max_contraction = max_contraction
         self.density = 1000  # kg/m^3, density of water
         self.dt = 0.01  # time step
         self.nozzle = nozzle
+        
+        # ==================== Coefficient Parameters ====================
+        self._domain_randomization = False
+        self.discharge_coefficient = 0.6
+        self.drag_force_ratio = 0.1
+        self.drag_torque_ratio = 0.1
+        self.added_mass_coefficient_force = np.diag([0.3, 0.6, 0.6])
+        self.added_mass_rate_coefficient_force = np.diag([0.2, 0.2, 0.2])
+        self.added_mass_coefficient_torque = np.diag([0.3, 0.6, 0.6])
+        self.added_mass_rate_coefficient_torque = np.diag([0.2, 0.2, 0.2])
+        self.tran_drag_coefficient_range = self._get_trans_drag_coefficient_range()
+        self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
+        
+        # ==================== Control Parameters ====================
+        self.contraction = 0.0
+        self._contract_rate = 0.0
+        self._release_rate = 0.0
         self.refill_time = 0.0
         self.jet_time = 0.0
         self.coast_time = 0.0
-        self.contraction = 0.0  # contraction level
-        self._contract_rate = 0.0
-        self._release_rate = 0.0
-        self._drag_coefficent_range = self._construct_drag_coefficients()
-    
-        # cycle tracking 
+        
+        # ==================== Cycle Tracking ====================
         self.state = self.phase[3]  # initial state is rest
         self.cycle = 0
         self.time = 0.0
         self.cycle_time = 0.0
-
-        # properties updated each step
+        
+        # ==================== Dynamic Properties ====================
         self.length = 0.0
         self.width = 0.0
         self.area = np.zeros(3)
-        self.volume = 0.0  # water volume inside the robot
-        self.mass = np.diag(np.zeros(3))  # total mass including water
+        self.volume = 0.0
         self.water_mass = 0.0
         self.prev_water_volume = 0.0
         self.prev_water_mass = 0.0
-        self.jet_velocity = np.zeros(3)  # jet velocity vector
-        self.jet_force = np.zeros(3)  # jet force vector
-        self.jet_torque = np.zeros(3)  # jet torque vector
+        self.mass = np.diag(np.zeros(3))
+        self.prev_I = None
+        
+        # ==================== Force/Torque Vectors ====================
+        self.jet_velocity = np.zeros(3)
+        self.jet_force = np.zeros(3)
+        self.jet_torque = np.zeros(3)
+        self.drag_force = np.zeros(3)
+        self.drag_torque = np.zeros(3)
+        self.coriolis_force = np.zeros(3)
+        self.coriolis_torque = np.zeros(3)
+        self.added_mass_force = np.zeros(3)
+        self.added_mass_torque = np.zeros(3)
+        self.asymmetry_torque = np.zeros(3)
+        self.deform_torque = np.zeros(3)
         self.trans_drag_coefficient = np.zeros(3)
         self.rot_drag_coefficient = np.zeros(3)
-        self.drag_force = np.zeros(3)  # drag force vector
-        self.drag_torque = np.zeros(3)  # drag torque vector
-
-        # State variables
-        self.position = np.zeros(3)  # x, y, z positions
-        self.velocity = np.zeros(3)  # x, y, z velocities
-        self.velocity_world = np.zeros(3)  # x, y, z velocities in world frame
-        self.acceleration = np.zeros(3)  # x, y, z accelerations
-
-        self.euler_angle = np.zeros(3)  # roll, pitch, yaw
-        self.euler_angle_rate = np.zeros(3)  # roll, pitch, yaw rates
-        self.angular_velocity = np.zeros(3) # body frame angular velocity 
-        self.angular_acceleration = np.zeros(3)  # body frame angular acceleration
-
-        # record cycle history
+        
+        # ==================== State Variables ====================
+        self.position_world = np.zeros(3)
+        self.velocity = np.zeros(3)
+        self.velocity_world = np.zeros(3)
+        self.acceleration = np.zeros(3)
+        
+        self.euler_angle = np.zeros(3)
+        self.euler_angle_rate = np.zeros(3)
+        self.angular_velocity = np.zeros(3)
+        self.angular_acceleration = np.zeros(3)
+        
+        # ==================== History Buffers ====================
         self.state_history = []
-        self.position_history = []
+        self.position_world_history = []
         self.velocity_history = []
+        self.velocity_world_history = []
         self.acceleration_history = []
         self.euler_angle_history = []
         self.euler_angle_rate_history = []
@@ -315,20 +325,32 @@ class Robot:
         self.jet_velocity_history = []
         self.jet_force_history = []
         self.jet_torque_history = []
-        self.drag_coefficient_history = []
+        self.trans_drag_coefficient_history = []
         self.drag_force_history = []
         self.drag_torque_history = []
         self.nozzle_yaw_history = []
-    
-    def _construct_drag_coefficients(self):
-        
-        # different drag coefficients for x, y, z directions
-        # initial and end of deformation drag coefficients
-        drag_coefficient_x = [0.5, 1.0]
-        drag_coefficient_y = [1.2, 0.5]
-        drag_coefficient_z = [1.2, 0.5]
 
-        return [drag_coefficient_x, drag_coefficient_y, drag_coefficient_z]
+    # ==================== Configuration Methods ====================
+    def _get_trans_drag_coefficient_range(self):
+        """Construct drag coefficient ranges for different body deformations."""
+        # Different drag coefficients for along x, y, z directions
+        # initial and end of deformation drag coefficients
+        trans_x = [0.5, 1.0]
+        trans_y = [1.2, 0.5]
+        trans_z = [1.2, 0.5]
+
+        return [trans_x, trans_y, trans_z]
+
+    def _get_rot_drag_coefficient_range(self):
+
+        """Construct rotational drag coefficient ranges for different body deformations."""
+        # Different drag coefficients for rotational x, y, z directions
+        # initial and end of deformation drag coefficients
+        rot_x = [0.1, 0.3]
+        rot_y = [1.2, 0.5]
+        rot_z = [1.2, 0.5]
+
+        return [rot_x, rot_y, rot_z]
 
     def enable_domain_randomization(self):
         """Enable domain randomization."""
@@ -342,37 +364,42 @@ class Robot:
         """
         self.density = density
 
+    # ==================== Reset and Initialization ====================
     def reset(self):
         """Reset the robot to initial state."""
         self.time = 0.0
         self.cycle_time = 0.0
         self.cycle = 0
-        self.state = self.phase[3]  # rest state 
+        self.state = self.phase[3]
 
-        self.position = np.zeros(3)  # x, y, z positions
-        self.velocity = np.zeros(3)  # x, y, z velocities
-        self.velocity_world = np.zeros(3)  # x, y, z velocities in world frame
-        self.acceleration = np.zeros(3)  # x, y, z accelerations
-        self.euler_angle = np.zeros(3)  # roll, pitch, yaw
-        self.euler_angle_rate = np.zeros(3)  # roll, pitch, yaw rates
-        self.angular_velocity = np.zeros(3)  # yaw rate
-        self.angular_acceleration = np.zeros(3)  # body frame angular acceleration      
+        # Reset state variables
+        self.position_world = np.zeros(3)
+        self.velocity = np.zeros(3)
+        self.velocity_world = np.zeros(3)
+        self.acceleration = np.zeros(3)
+        self.euler_angle = np.zeros(3)
+        self.euler_angle_rate = np.zeros(3)
+        self.angular_velocity = np.zeros(3)
+        self.angular_acceleration = np.zeros(3)
 
+        # Reset body properties
         self.length = self.init_length
         self.width = self.init_width
         self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
         self.water_mass = self._get_water_mass()
         self.mass = self.get_mass()
-        self.prev_water_mass = self.mass
+        self.prev_water_mass = self.water_mass
         self.prev_water_volume = self.volume
         self.prev_I = self.get_inertia_matrix()
-        self.drag_coefficient = self._get_drag_coefficient()
+        self.trans_drag_coefficient = self._get_trans_drag_coefficient()
+        self.rot_drag_coefficient = self._get_rot_drag_coefficient()
 
-        # empty cycle history
+        # Clear history
         self.state_history = []
-        self.position_history = []
+        self.position_world_history = []
         self.velocity_history = []
+        self.velocity_world_history = []
         self.acceleration_history = []
         self.euler_angle_history = []
         self.euler_angle_rate_history = []
@@ -391,47 +418,74 @@ class Robot:
         self.drag_torque_history = []
         self.nozzle_yaw_history = []
 
+    # ==================== Control Methods ====================
     def set_control(self, contraction: float, coast_time: float, nozzle_angles: np.ndarray):
         """Set control inputs for the robot.
         
         Args:
             contraction: Desired contraction distance (m)
             coast_time: Duration of coast phase (s)
-            angle: Nozzle steering angle
+            nozzle_angles: Nozzle steering angles [angle1, angle2]
         """
-        
         if self._domain_randomization:
-
             self._randomize_parameters()
 
-        # set control inputs    
         self.contraction = contraction
         self.coast_time = coast_time
         self.nozzle.set_angles(angle1=nozzle_angles[0], angle2=nozzle_angles[1])
 
-        # proceed to next cycle
+        # Proceed to next cycle
         self.cycle += 1
         self.cycle_time = 0.0
 
-        # if self.cycle % 1000 == 0:
-        #     print(f"Cycle {self.cycle}")
-
         self.refill_time = self._contract_model()
         self.jet_time = self._release_model()
-        # print(f"Refill time = {self.refill_time:.2f}s, Jet time = {self.jet_time:.2f}s")
 
     def _randomize_parameters(self):
-
         """Randomize robot parameters for domain randomization."""
-        # Randomize dry mass within ±10%
-        self.discharge_coefficient = np.random.uniform(0.1, 0.5)
-
-    def update_state(self):
-        """Determine current phase based on cycle time.
         
-        Returns:
-            Current phase state
-        """
+        # Randomize discharge coefficient
+        uncertainty = 0.5
+        upper_bound = self.discharge_coefficient * (1 + uncertainty)
+        lower_bound = self.discharge_coefficient * (1 - uncertainty)
+        self.discharge_coefficient = np.random.uniform(lower_bound, upper_bound)
+        
+        # Randomize drag ratios
+        uncertainty = 0.5
+        upper_bound = self.drag_force_ratio * (1 + uncertainty)
+        lower_bound = self.drag_force_ratio * (1 - uncertainty)
+        self.drag_force_ratio = np.random.uniform(lower_bound, upper_bound)
+        
+        uncertainty = 0.5
+        upper_bound = self.drag_torque_ratio * (1 + uncertainty)
+        lower_bound = self.drag_torque_ratio * (1 - uncertainty)
+        self.drag_torque_ratio = np.random.uniform(lower_bound, upper_bound)
+        
+        # Randomize added mass coefficients (force)
+        uncertainty = 0.5
+        upper_bound = self.added_mass_coefficient_force * (1 + uncertainty)
+        lower_bound = self.added_mass_coefficient_force * (1 - uncertainty)
+        self.added_mass_coefficient_force = np.random.uniform(lower_bound, upper_bound)
+        
+        uncertainty = 0.5
+        upper_bound = self.added_mass_rate_coefficient_force * (1 + uncertainty)
+        lower_bound = self.added_mass_rate_coefficient_force * (1 - uncertainty)
+        self.added_mass_rate_coefficient_force = np.random.uniform(lower_bound, upper_bound)
+        
+        # Randomize added mass coefficients (torque)
+        uncertainty = 0.5
+        upper_bound = self.added_mass_coefficient_torque * (1 + uncertainty)
+        lower_bound = self.added_mass_coefficient_torque * (1 - uncertainty)
+        self.added_mass_coefficient_torque = np.random.uniform(lower_bound, upper_bound)
+        
+        uncertainty = 0.5
+        upper_bound = self.added_mass_rate_coefficient_torque * (1 + uncertainty)
+        lower_bound = self.added_mass_rate_coefficient_torque * (1 - uncertainty)
+        self.added_mass_rate_coefficient_torque = np.random.uniform(lower_bound, upper_bound)
+
+    # ==================== Stepping and State Management ====================
+    def update_state(self):
+        """Determine current phase based on cycle time."""
         if self.cycle_time <= max(self.refill_time, self.nozzle.turn_time):
             self.state = self.phase[0]  # contract
         elif self.cycle_time <= max(self.refill_time, self.nozzle.turn_time) + self.jet_time:
@@ -450,13 +504,12 @@ class Robot:
         self.width = self.get_current_width()
         self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
-        self.mass = self.get_mass()[0,0]
-        self.drag_coefficient = self._get_drag_coefficient()
+        self.mass = self.get_mass()[0, 0]
+        self.trans_drag_coefficient = self._get_trans_drag_coefficient()
+        self.rot_drag_coefficient = self._get_rot_drag_coefficient()
 
     def step(self):
         """Advance simulation by one time step."""
-        
-        # proceed to next time step
         self.cycle_time += self.dt
         self.time += self.dt
         self.nozzle.step(self.cycle_time)
@@ -464,11 +517,16 @@ class Robot:
         self.update_properties()
         self.update_dynamics()
 
-    # Define getter functions for current values
-    def get_current_values(self):
+    # ==================== History and Cycle Methods ====================
+    def _get_current_values(self):
+        """Get dictionary of current state values for history tracking.
+        
+        Returns:
+            Dictionary mapping history attribute names to current values
+        """
         return {
             'state_history': self.state,
-            'position_history': self.position.copy(),
+            'position_history': self.position_world.copy(),
             'velocity_history': self.velocity.copy(),
             'acceleration_history': self.acceleration.copy(),
             'euler_angle_history': self.euler_angle.copy(),
@@ -479,41 +537,37 @@ class Robot:
             'width_history': self.width,
             'area_history': self.area,
             'volume_history': self.volume,
-            'mass_history': self.mass[0,0],  # store only scalar mass value
+            'mass_history': self.mass[0, 0],
             'jet_velocity_history': self.jet_velocity,
             'jet_force_history': self.jet_force,
             'jet_torque_history': self.jet_torque.copy(),
-            'drag_coefficient_history': self.drag_coefficient,
+            'drag_coefficient_history': self.trans_drag_coefficient,
             'drag_force_history': self.drag_force,
             'drag_torque_history': self.drag_torque.copy(),
             'nozzle_yaw_history': self.nozzle.current_yaw,
         }
 
     def step_through_cycle(self):
-        """Step through an entire breathing cycle and collect state history.
-        
-        Returns:
-            Tuple of arrays containing time history of various state variables
-        """
-
+        """Step through an entire breathing cycle and collect state history."""
         total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time
 
         # Initialize history lists with current values
-        for attr_name, initial_value in self.get_current_values().items():
+        for attr_name, initial_value in self._get_current_values().items():
             setattr(self, attr_name, [initial_value])
 
         while self.cycle_time < total_cycle_time:
             self.step()
             
             # Append current values to history lists
-            for attr_name, current_value in self.get_current_values().items():
+            for attr_name, current_value in self._get_current_values().items():
                 getattr(self, attr_name).append(current_value)
 
-        # Convert histories to numpy arrays for easier handling
-        history_names = self.get_current_values().keys()
+        # Convert histories to numpy arrays
+        history_names = self._get_current_values().keys()
         for attr_name in history_names:
-            setattr(self, attr_name, np.array(getattr(self, attr_name))) 
+            setattr(self, attr_name, np.array(getattr(self, attr_name)))
 
+    # ==================== Coordinate Transformations ====================
     def _to_euler_angle_rate(self) -> np.ndarray:
         """Convert angular velocity to Euler angle rates.
         
@@ -522,9 +576,9 @@ class Robot:
         """
         phi, theta, psi = self.euler_angle
 
-        T = np.array([[1, np.sin(phi)*np.tan(theta), np.cos(phi)*np.tan(theta)],
+        T = np.array([[1, np.sin(phi) * np.tan(theta), np.cos(phi) * np.tan(theta)],
                       [0, np.cos(phi), -np.sin(phi)],
-                      [0, np.sin(phi)/np.cos(theta), np.cos(phi)/np.cos(theta)]])
+                      [0, np.sin(phi) / np.cos(theta), np.cos(phi) / np.cos(theta)]])
 
         return T @ self.angular_velocity
 
@@ -555,8 +609,9 @@ class Robot:
 
         return R @ vector
 
+    # ==================== Dynamics Update Methods ====================
     def update_dynamics(self):
-
+        """Update acceleration and motion states."""
         self.acceleration = self._newton_equations()
         self.angular_acceleration = self._euler_equations()
         self._update_motion_states()
@@ -567,14 +622,13 @@ class Robot:
         Returns:
             3D acceleration vector
         """
-
         self.coriolis_force = self._get_coriolis_force()
         self.drag_force = self._get_drag_force()
         self.jet_force = self._get_jet_force()
         self.added_mass_force = self._get_added_mass_force()
         self.mass = self.get_mass()
 
-        return np.linalg.inv(self.mass) @ (-self.jet_force + self.drag_force + self.added_mass_force - self.coriolis_force)
+        return np.linalg.inv(self.mass) @ (-self.jet_force + self.drag_force - self.added_mass_force - self.coriolis_force)
 
     def _euler_equations(self) -> np.ndarray:
         """Compute angular accelerations using Euler's equations.
@@ -591,23 +645,7 @@ class Robot:
 
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque - self.coriolis_torque + self.asymmetry_torque - self.deform_torque + self.added_mass_torque)
-    
-    def _get_deform_torque(self) -> np.ndarray:
-        """Calculate torque due to deformation of the robot.
-        
-        Returns:
-            3D torque vector
-        """
-        return self.get_inertia_matrix_rate() @ self.angular_velocity
-
-    def _asymmetry_torque_model(self) -> np.ndarray:
-        """Calculate asymmetry torque based on current velocity.
-        
-        Returns:
-            3D torque vector
-        """
-        return np.array([0.0, 0.0, 0.1*np.linalg.norm(self.velocity)])
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque - self.coriolis_torque + self.asymmetry_torque - self.deform_torque - self.added_mass_torque)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -617,8 +655,9 @@ class Robot:
         self.euler_angle_rate = self._to_euler_angle_rate()
         self.euler_angle += self.euler_angle_rate * self.dt
         self.velocity_world = self._to_world_frame(self.velocity)
-        self.position += self.velocity_world * self.dt
+        self.position_world += self.velocity_world * self.dt
 
+    # ==================== Inertia Methods ====================
     def get_inertia_matrix(self) -> np.ndarray:
         """Calculate moment of inertia matrix.
         
@@ -630,9 +669,9 @@ class Robot:
         r = self._get_jet_moment_arm()
         I_nozzle = self.nozzle.mass * np.linalg.norm(r) ** 2 * np.diag(np.array([0, 1, 1]))
 
-        I_xx = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.width/2) ** 2)
-        I_yy = 0.2 * self.mass[0][0] * ((self.length/2) ** 2 + (self.width/2) ** 2)
-        I_zz = 0.2 * self.mass[0][0] * ((self.width/2) ** 2 + (self.length/2) ** 2)
+        I_xx = 0.2 * self.mass[0][0] * ((self.width / 2) ** 2 + (self.width / 2) ** 2)
+        I_yy = 0.2 * self.mass[0][0] * ((self.length / 2) ** 2 + (self.width / 2) ** 2)
+        I_zz = 0.2 * self.mass[0][0] * ((self.width / 2) ** 2 + (self.length / 2) ** 2)
 
         I_robot = np.diag([I_xx, I_yy, I_zz])
 
@@ -641,17 +680,14 @@ class Robot:
     def get_inertia_matrix_rate(self) -> np.ndarray:
         """Calculate rate of change of inertia matrix.
         
-        Note: Currently not implemented.
-        
         Returns:
-            3x3 inertia matrix rate (zeros)
+            3x3 inertia matrix rate
         """
-
         I_rate = (self.get_inertia_matrix() - self.prev_I) / self.dt
         self.prev_I = self.get_inertia_matrix()
-
         return I_rate
 
+    # ==================== Jet Force Methods ====================
     def _get_jet_moment_arm(self) -> np.ndarray:
         """Calculate moment arm for jet force.
         
@@ -659,7 +695,7 @@ class Robot:
             3D moment arm vector
         """
         r_nozzle = self.nozzle.get_middle_position()
-        r_robot = np.array([-self.length/2, 0.0, 0.0])  # center of mass at origin
+        r_robot = np.array([-self.length / 2, 0.0, 0.0])
         return r_nozzle + r_robot
     
     def _get_jet_torque(self) -> np.ndarray:
@@ -668,7 +704,6 @@ class Robot:
         Returns:
             3D torque vector
         """
-
         return np.cross(self._get_jet_moment_arm(), self.jet_force)
     
     def _get_jet_force(self) -> np.ndarray:
@@ -683,7 +718,7 @@ class Robot:
     
         mass_rate = self.get_mass_rate()
 
-        return self.discharge_coefficient * mass_rate * self.jet_velocity
+        return self.discharge_coefficient * mass_rate @ self.jet_velocity
     
     def _get_jet_velocity(self) -> np.ndarray:
         """Calculate jet velocity vector.
@@ -699,19 +734,9 @@ class Robot:
         direction = self.nozzle.get_nozzle_direction()
 
         return direction * jet_speed
-    
-    def _length_width_relation(self, length: float) -> float:
-        """Calculate width based on length (volume conservation).
-        
-        Args:
-            length: Current body length
-            
-        Returns:
-            Corresponding body width
-        """
-        return self.init_length - length + self.init_width
 
-    def _get_drag_coefficient(self) -> float:
+    # ==================== Drag Force and Torque Methods ====================
+    def _get_drag_coefficient(self, ranges) -> float:
         """Calculate drag coefficient based on body shape.
         
         More elongated (contracted) = lower drag, more spherical = higher drag.
@@ -719,7 +744,6 @@ class Robot:
         Returns:
             Drag coefficient
         """
-
         aspect_ratio = self.length / self.width
         
         init_aspect_ratio = self.init_length / self.init_width  # most elongated
@@ -732,10 +756,16 @@ class Robot:
         normalized_ratio = np.clip(normalized_ratio, 0, 1)
         
         drag_coefficient = []
-        for range in self.drag_coefficient_range:
-            drag_coefficient.append(range[1] - normalized_ratio * (range[1] - range[0]))
+        for range_val in ranges:
+            drag_coefficient.append(range_val[1] - normalized_ratio * (range_val[1] - range_val[0]))
     
         return drag_coefficient
+    
+    def _get_rot_drag_coefficient(self) -> float:
+        return self._get_drag_coefficient(self.rot_drag_coefficient_range)
+
+    def _get_trans_drag_coefficient(self) -> float:
+        return self._get_drag_coefficient(self.trans_drag_coefficient_range)
 
     def _get_drag_torque(self) -> np.ndarray:
         """Calculate drag torque on the robot.
@@ -743,10 +773,11 @@ class Robot:
         Returns:
             3D torque vector
         """
-        T_quadratic = - 0.5 * self.density * self.rot_drag_coefficient * self.area * \
-        np.linalg.norm(self.angular_velocity) * self.angular_velocity * np.array([self.width ** 3, self.length ** 3, self.length ** 3])
+        self.rot_drag_coefficient = self._get_rot_drag_coefficient()
+        T_quadratic = -0.5 * self.density * self.rot_drag_coefficient * self.area * \
+            np.linalg.norm(self.angular_velocity) * self.angular_velocity * np.array([self.width ** 3, self.length ** 3, self.length ** 3])
         
-        T_linear = - 0.5 * self.density * self.rot_drag_coefficient * self.area * self.angular_velocity * self.width 
+        T_linear = -0.5 * self.density * self.rot_drag_coefficient * self.area * self.angular_velocity * self.width 
             
         return T_quadratic + self.drag_torque_ratio * T_linear
     
@@ -756,24 +787,24 @@ class Robot:
         Returns:
             3D force vector
         """
-        #TODO: drag has a slight discountinuity!
-        self.drag_coefficient = np.array(self._get_drag_coefficient())
-        F_quadratic = -0.5 * self.density * self.area * self.drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
-        F_linear = -0.5 * self.density * self.area * self.drag_coefficient * self.velocity
+        self.trans_drag_coefficient = np.array(self._get_trans_drag_coefficient())
+        F_quadratic = -0.5 * self.density * self.area * self.trans_drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
+        F_linear = -0.5 * self.density * self.area * self.trans_drag_coefficient * self.velocity
 
         return F_quadratic + self.drag_force_ratio * F_linear
-    
+
+    # ==================== Added Mass Methods ====================
     def _get_added_mass_force(self) -> float:
         """Calculate added mass from surrounding fluid.
         
         Returns:
-            Added mass (currently not implemented)
+            Added mass force vector
         """
         mass = self.get_mass()
         mass_rate = self.get_mass_rate()
 
-        added_mass = mass @ self.added_mass_coefficient
-        added_mass_rate = mass_rate @ self.added_mass_rate_coefficient
+        added_mass = mass @ self.added_mass_coefficient_force
+        added_mass_rate = mass_rate @ self.added_mass_rate_coefficient_force
         added_mass_force = added_mass * self.acceleration + \
                            np.cross(self.angular_velocity, added_mass * self.velocity) + \
                            added_mass_rate * self.velocity
@@ -786,18 +817,21 @@ class Robot:
         Returns:
             3D torque vector
         """
-        I = self.get_inertia_matrix
-        I_rate = self.get_inertia_matrix_rate
+        I = self.get_inertia_matrix()
+        I_rate = self.get_inertia_matrix_rate()
+        mass = self.get_mass()
 
-        added_mass = I @ self.added_mass_torque_coefficient
-        added_mass_rate = I_rate @ self.added_mass_torque_rate_coefficient
+        added_mass = I @ self.added_mass_coefficient_torque
+        added_mass_rate = I_rate @ self.added_mass_rate_coefficient_torque
+        added_mass_force = mass @ self.added_mass_coefficient_force
         added_mass_torque = added_mass * self.angular_acceleration + \
                             np.cross(self.angular_velocity, added_mass * self.angular_velocity) + \
-                                added_mass_rate * self.angular_velocity + \
-                            np.cross(self.velocity, added_mass * self.velocity)
+                            added_mass_rate * self.angular_acceleration + \
+                            np.cross(self.velocity, added_mass_force * self.velocity)
 
         return added_mass_torque
-    
+
+    # ==================== Coriolis Force and Torque Methods ====================
     def _get_coriolis_force(self) -> np.ndarray:
         """Calculate Coriolis force.
         
@@ -814,6 +848,24 @@ class Robot:
         """
         return np.cross(self.angular_velocity, self.get_inertia_matrix() @ self.angular_velocity)
 
+    # ==================== Deformation Methods ====================
+    def _get_deform_torque(self) -> np.ndarray:
+        """Calculate torque due to deformation of the robot.
+        
+        Returns:
+            3D torque vector
+        """
+        return self.get_inertia_matrix_rate() @ self.angular_velocity
+
+    def _asymmetry_torque_model(self) -> np.ndarray:
+        """Calculate asymmetry torque based on current velocity.
+        
+        Returns:
+            3D torque vector
+        """
+        return np.array([0.0, 0.0, 0.1 * np.linalg.norm(self.velocity)])
+
+    # ==================== Geometry and Body Shape Methods ====================
     def get_current_length(self) -> float:
         """Calculate current body length based on phase.
         
@@ -822,11 +874,11 @@ class Robot:
         """
         if self.state == self.phase[0]:  # inhale
             if self.cycle_time < self.refill_time:
-                length = self.init_length - self.cycle_time*self._contract_rate
+                length = self.init_length - self.cycle_time * self._contract_rate
             else:
                 length = self.init_length - self.contraction
         elif self.state == self.phase[1]:  # exhale
-            length = self.init_length - self.contraction + (self.cycle_time - max(self.refill_time, self.nozzle.turn_time))*self._release_rate
+            length = self.init_length - self.contraction + (self.cycle_time - max(self.refill_time, self.nozzle.turn_time)) * self._release_rate
         else:
             length = self.init_length
 
@@ -840,41 +892,65 @@ class Robot:
         """
         if self.state == self.phase[0]:  # inhale
             if self.cycle_time < self.refill_time:
-                width = self.init_width + self.cycle_time*self._contract_rate
+                width = self.init_width + self.cycle_time * self._contract_rate
             else:
                 width = self.init_width + self.contraction
         elif self.state == self.phase[1]:  # exhale
-            width = self.init_width + self.contraction - (self.cycle_time - max(self.refill_time, self.nozzle.turn_time))*self._release_rate
+            width = self.init_width + self.contraction - (self.cycle_time - max(self.refill_time, self.nozzle.turn_time)) * self._release_rate
         else:
             width = self.init_width
 
         return width
 
-    def _get_cross_sectional_area(self) -> float:
+    def _length_width_relation(self, length: float) -> float:
+        """Calculate width based on length (volume conservation).
+        
+        Args:
+            length: Current body length
+            
+        Returns:
+            Corresponding body width
+        """
+        return self.init_length - length + self.init_width
 
-        A_yz = np.pi * (self.width/2) * (self.width/2)
-        A_xz = np.pi * (self.length/2) * (self.width/2)
-        A_xy = np.pi * (self.length/2) * (self.length/2)
+    def _get_cross_sectional_area(self) -> float:
+        """Calculate cross-sectional areas in three directions.
+        
+        Returns:
+            List of areas [A_yz, A_xz, A_xy]
+        """
+
+        A_yz = np.pi * (self.width / 2) * (self.width / 2)
+        A_xz = np.pi * (self.length / 2) * (self.width / 2)
+        A_xy = np.pi * (self.length / 2) * (self.length / 2)
 
         return [A_yz, A_xz, A_xy]
 
+    # ==================== Mass and Volume Methods ====================
     def _get_water_volume(self) -> float:
+        """Calculate water volume inside the robot.
         
-        volume = 4/3 * np.pi * (self.length/2) * (self.width/2) ** 2
+        Returns:
+            Volume in cubic meters
+        """
+        volume = 4 / 3 * np.pi * (self.length / 2) * (self.width / 2) ** 2
 
         return volume
 
     def _get_water_mass(self) -> float:
+        """Calculate mass of water inside the robot.
         
+        Returns:
+            Mass in kg
+        """
         water_mass = self.density * self._get_water_volume()   
-
         return water_mass
 
     def get_mass(self) -> float:
         """Calculate total mass including water.
         
         Returns:
-            Mass matrix (diagonal)
+            Mass matrix (diagonal 3x3)
         """
         self.water_mass = self._get_water_mass()
         mass = self.dry_mass + self.water_mass + self.nozzle.mass
@@ -883,19 +959,24 @@ class Robot:
         return mass
 
     def get_mass_rate(self) -> float:
- 
+        """Calculate rate of change of mass.
+        
+        Returns:
+            Mass rate matrix (diagonal 3x3)
+        """
         mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
         mass_rate *= np.diag(np.ones(3))
-              
+
         return mass_rate
 
+    # ==================== Timing Methods ====================
     def _contract_model(self) -> float:
         """Calculate contraction time based on contraction distance.
         
         Returns:
             Time duration in seconds
         """
-        self._contract_rate = 0.06/3  # m/s
+        self._contract_rate = 0.06 / 3  # m/s
         return self.contraction / self._contract_rate
 
     def _release_model(self) -> float:
@@ -904,7 +985,7 @@ class Robot:
         Returns:
             Time duration in seconds
         """
-        self._release_rate = 0.06/1.5  # m/s
+        self._release_rate = 0.06 / 1.5  # m/s
         return self.contraction / self._release_rate
 
 
@@ -922,9 +1003,9 @@ if __name__ == "__main__":
     nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
+    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     
-    robot.set_environment(density=1000)  # water density in kg/m^3
+    robot.set_environment(density=1000)
     robot.reset()
     
     # Step through multiple cycles and collect state data
@@ -954,24 +1035,19 @@ if __name__ == "__main__":
     all_nozzle_yaw_data = []
 
     for i in range(n_cycles):
-        # robot.nozzle.set_yaw_angle(yaw_angle=np.random.uniform(-np.pi/2, np.pi/2))
-        # contraction = np.random.uniform(0.0, 0.06)
-        # coast_time = np.random.uniform(0.0, 2.0)
-        # TODO: debug this Action taken: Inhale: 0.51, Coast Time: 0.86, Nozzle Yaw: -0.85 rad
-
         if i % 2 == 0:
             contraction = 0.01
             coast_time = 1
-            yaw_angle = np.pi/2
+            yaw_angle = np.pi / 2
         else:
             contraction = 0.01
             coast_time = 1
-            yaw_angle = -np.pi/2
+            yaw_angle = -np.pi / 2
 
         robot.nozzle.set_yaw_angle(yaw_angle=yaw_angle)
-
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=contraction, coast_time=coast_time, nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
+        robot.set_control(contraction=contraction, coast_time=coast_time, 
+                          nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
         # Create time array for this cycle
@@ -1024,25 +1100,6 @@ if __name__ == "__main__":
     all_drag_torque_data = np.array(all_drag_torque_data)
     all_nozzle_yaw_data = np.array(all_nozzle_yaw_data)
 
-    # Plot all cycles together
-    # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
-    # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
-    # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
-    # plot_volume_rate(all_time_data, all_volume_data, all_state_data)   
-    # plot_mass_rate(all_time_data, all_mass_data, all_state_data)
-    # plot_jet_velocity(all_time_data, all_jet_velocity_data, all_state_data)
-    # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
-    # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
-    # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
-    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
-    # plot_robot_position(all_time_data, all_position_data, all_state_data)
-    # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
-    # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
-    # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
-    # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    # Plot results
     plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
-    
-    # Plot trajectory in x-y plane with yaw orientation
-    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
     
