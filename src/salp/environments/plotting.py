@@ -83,7 +83,8 @@ def plot_robot_geometry(time_data, length_data, width_data, state_data=None, tit
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -125,7 +126,8 @@ def plot_nozzle_yaw_angle(time_data, yaw_data, state_data=None, title="Nozzle Ya
     ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -155,7 +157,8 @@ def plot_robot_mass(time_data, mass_data, state_data=None, title="Robot Total Ma
     ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -189,7 +192,8 @@ def plot_mass_rate(time_data, mass_data, state_data=None, title="Rate of Change 
     ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -223,7 +227,8 @@ def plot_volume_rate(time_data, volume_data, state_data=None, title="Rate of Cha
     ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -273,7 +278,8 @@ def plot_robot_forces(time_data, jet_force_data, drag_force_data, coriolis_force
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -311,7 +317,8 @@ def plot_jet_properties(time_data, jet_force_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -349,7 +356,8 @@ def plot_jet_velocity(time_data, jet_velocity_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -386,7 +394,8 @@ def plot_drag_properties(time_data, drag_force_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -430,7 +439,8 @@ def plot_drag_coefficient(time_data, drag_coefficient_data,
         ax.legend(loc='upper right')
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -469,7 +479,8 @@ def plot_robot_position(time_data, position_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -508,7 +519,8 @@ def plot_robot_velocity(time_data, velocity_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -547,7 +559,8 @@ def plot_robot_acceleration(time_data, acceleration_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -608,7 +621,8 @@ def plot_cross_sectional_area(time_data, area_data,
     
     fig.suptitle(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -648,7 +662,8 @@ def plot_nozzle_configuration(time_data, angle1_data, angle2_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -684,7 +699,8 @@ def plot_angular_acceleration(time_data, angular_acceleration_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -720,7 +736,8 @@ def plot_angular_velocity(time_data, angular_velocity_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -757,7 +774,8 @@ def plot_euler_angles(time_data, euler_angles_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -793,7 +811,8 @@ def plot_drag_torque(time_data, drag_torque_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -829,7 +848,8 @@ def plot_jet_torque(time_data, jet_torque_data,
     axes[-1].set_xlabel('Time (s)')
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -967,7 +987,8 @@ def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
         ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
 
 
 def plot_nozzle_direction(nozzle, euler_angles=None, title="Nozzle Direction Visualization"):
@@ -1061,7 +1082,8 @@ def plot_nozzle_direction(nozzle, euler_angles=None, title="Nozzle Direction Vis
               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1138,7 +1160,8 @@ def plot_nozzle_direction_sequence(nozzle_directions, nozzle_positions=None,
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1176,7 +1199,8 @@ def plot_coriolis_force(time_data, coriolis_force_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1214,7 +1238,8 @@ def plot_added_mass_force(time_data, added_mass_force_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1260,7 +1285,8 @@ def plot_all_forces(time_data, jet_force_data, drag_force_data, coriolis_force_d
     
     plt.suptitle(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1298,7 +1324,8 @@ def plot_coriolis_torque(time_data, coriolis_torque_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1336,7 +1363,8 @@ def plot_deform_torque(time_data, deform_torque_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1374,7 +1402,8 @@ def plot_added_mass_torque(time_data, added_mass_torque_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1412,7 +1441,8 @@ def plot_asymmetry_torque(time_data, asymmetry_torque_data,
     
     plt.suptitle(title)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig
 
@@ -1450,6 +1480,7 @@ def plot_inertia_tensor(time_data, inertia_tensor_data,
     
     plt.suptitle(title, fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.001)
     
     return fig

@@ -1426,7 +1426,7 @@ class SalpRobotEnv(gym.Env):
 if __name__ == "__main__":
     
     # TODO: need to fix the scale issues with the robot size and movement speed
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00036, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
@@ -1439,7 +1439,7 @@ if __name__ == "__main__":
     
     # env.start_recording()
     while not done:
-        action = [1, 0.1, (cnt % 2) * 1]  # inhale with no nozzle steering
+        action = [1, 0.3, 0]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
