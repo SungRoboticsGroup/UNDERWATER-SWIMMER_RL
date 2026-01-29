@@ -271,14 +271,14 @@ class Robot:
         self.cycle_time = 0.0
         
         # ==================== Dynamic Properties ====================
-        self.length = 0.0
-        self.width = 0.0
-        self.area = np.zeros(3)
-        self.volume = 0.0
-        self.water_mass = 0.0
+        self.length = self.init_length
+        self.width = self.init_width
+        self.area = self._get_cross_sectional_area()
+        self.volume = self._get_water_volume()
+        self.water_mass = self._get_water_mass()
         self.prev_water_volume = 0.0
-        self.prev_water_mass = 0.0
-        self.mass = np.diag(np.zeros(3))
+        self.prev_water_mass = 0.0 
+        self.mass = self.get_mass()
         self.prev_I = None
         
         # ==================== Force/Torque Vectors ====================
@@ -518,18 +518,19 @@ class Robot:
         self.width = self.get_current_width()
         self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
-        self.mass = self.get_mass()[0, 0]
+        self.mass = self.get_mass()
         self.trans_drag_coefficient = self._get_trans_drag_coefficient()
         self.rot_drag_coefficient = self._get_rot_drag_coefficient()
 
     def step(self):
         """Advance simulation by one time step."""
+        # I need to update dynamics first and then states?
+        self.update_dynamics()
         self.cycle_time += self.dt
         self.time += self.dt
         self.nozzle.step(self.cycle_time)
         self.update_state()
         self.update_properties()
-        self.update_dynamics()
 
     # ==================== History and Cycle Methods ====================
     def _get_current_values(self):
@@ -672,6 +673,8 @@ class Robot:
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
 
+        # states data and forces data are off by one time step dt
+
         self.velocity += self.acceleration * self.dt
         self.angular_velocity += self.angular_acceleration * self.dt
 
@@ -812,7 +815,7 @@ class Robot:
         """
         self.trans_drag_coefficient = np.array(self._get_trans_drag_coefficient())
         F_quadratic = -0.5 * self.density * self.area * self.trans_drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
-        F_linear = -0.5 * self.density * self.area * self.trans_drag_coefficient * self.velocity
+        F_linear = -0.0 * self.density * self.area * self.trans_drag_coefficient * self.velocity
 
         return F_quadratic + self.drag_force_ratio * F_linear
 
@@ -832,7 +835,8 @@ class Robot:
                            np.cross(self.angular_velocity, added_mass @ self.velocity) + \
                            added_mass_rate @ self.velocity
         
-        return -added_mass_force
+        # return -added_mass_force
+        return np.zeros(3)
     
     def _get_added_mass_torque(self) -> np.ndarray:
         """Calculate added mass torque on the robot.
@@ -1022,11 +1026,11 @@ if __name__ == "__main__":
         plot_nozzle_direction, plot_nozzle_yaw_angle, plot_coriolis_force,
         plot_added_mass_force, plot_all_forces, plot_coriolis_torque,
         plot_deform_torque, plot_added_mass_torque, plot_asymmetry_torque,
-        plot_inertia_tensor
+        plot_inertia_tensor, plot_robot_acceleration
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00036, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
@@ -1069,9 +1073,9 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle=np.pi/2)
+        robot.nozzle.set_yaw_angle(yaw_angle=0)
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.06, coast_time=1, 
+        robot.set_control(contraction=0.06, coast_time=10, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
@@ -1146,17 +1150,22 @@ if __name__ == "__main__":
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
     # plot_volume_rate(all_time_data, all_volume_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_data, all_state_data)
+
+    ## Translational Dynamics
     # plot_jet_velocity(all_time_data, all_jet_velocity_data, all_state_data)
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
     #                 all_coriolis_force_data, all_added_mass_force_data, all_state_data)
-    # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
+    plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
-    # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
-    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
+    plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
-    plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
+    # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
+
+    ## Rotational Dynamics
+    # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
     # plot_coriolis_torque(all_time_data, all_coriolis_torque_data, all_state_data)
