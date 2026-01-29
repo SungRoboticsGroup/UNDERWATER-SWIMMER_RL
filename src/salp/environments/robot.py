@@ -332,6 +332,7 @@ class Robot:
         self.deform_torque_history = []
         self.asymmetry_torque_history = []
         self.trans_drag_coefficient_history = []
+        self.rot_drag_coefficient_history = []
         self.drag_force_history = []
         self.drag_torque_history = []
         self.nozzle_yaw_history = []
@@ -427,6 +428,7 @@ class Robot:
         self.deform_torque_history = []
         self.asymmetry_torque_history = []
         self.trans_drag_coefficient_history = []
+        self.rot_drag_coefficient_history = []
         self.drag_force_history = []
         self.drag_torque_history = []
         self.nozzle_yaw_history = []
@@ -533,7 +535,7 @@ class Robot:
         self.update_properties()
 
     # ==================== History and Cycle Methods ====================
-    def _get_current_values(self):
+    def _get_state_values(self):
         """Get dictionary of current state values for history tracking.
         
         Returns:
@@ -553,20 +555,30 @@ class Robot:
             'area_history': self.area,
             'volume_history': self.volume,
             'mass_history': self.mass[0, 0],
+            'nozzle_yaw_history': self.nozzle.current_yaw,
+            'inertia_tensor_history': np.diag(self.get_inertia_matrix()).copy()
+        }
+    
+    def _get_force_values(self):
+        """Get dictionary of current force values for history tracking.
+        
+        Returns:
+            Dictionary mapping history attribute names to current values
+        """
+        return {
             'jet_velocity_history': self.jet_velocity,
             'jet_force_history': self.jet_force,
             'jet_torque_history': self.jet_torque.copy(),
-            'drag_coefficient_history': self.trans_drag_coefficient,
+            'trans_drag_coefficient_history': self.trans_drag_coefficient,
+            'rot_drag_coefficient_history': self.rot_drag_coefficient,
             'drag_force_history': self.drag_force,
             'drag_torque_history': self.drag_torque.copy(),
-            'nozzle_yaw_history': self.nozzle.current_yaw,
             'coriolis_force_history': self.coriolis_force.copy(),
             'coriolis_torque_history': self.coriolis_torque.copy(),
             'added_mass_force_history': self.added_mass_force.copy(),
             'added_mass_torque_history': self.added_mass_torque.copy(),
             'deform_torque_history': self.deform_torque.copy(),
             'asymmetry_torque_history': self.asymmetry_torque.copy(),
-            'inertia_tensor_history': np.diag(self.get_inertia_matrix()).copy()
         }
 
     def step_through_cycle(self):
@@ -574,18 +586,26 @@ class Robot:
         total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time
 
         # Initialize history lists with current values
-        for attr_name, initial_value in self._get_current_values().items():
+        for attr_name, initial_value in self._get_state_values().items():
             setattr(self, attr_name, [initial_value])
 
         while self.cycle_time < total_cycle_time:
             self.step()
             
+            # Append force values to history lists
+            for attr_name, current_value in self._get_force_values().items():
+                getattr(self, attr_name).append(current_value)
+
             # Append current values to history lists
-            for attr_name, current_value in self._get_current_values().items():
+            for attr_name, current_value in self._get_state_values().items():
                 getattr(self, attr_name).append(current_value)
 
         # Convert histories to numpy arrays
-        history_names = self._get_current_values().keys()
+        history_names = self._get_state_values().keys()
+        for attr_name in history_names:
+            setattr(self, attr_name, np.array(getattr(self, attr_name)))
+        
+        history_names = self._get_force_values().keys()
         for attr_name in history_names:
             setattr(self, attr_name, np.array(getattr(self, attr_name)))
 
@@ -739,6 +759,7 @@ class Robot:
             3D force vector
         """
         self.jet_velocity = self._get_jet_velocity()
+
         if self.state != self.phase[1]:  # only produce jet force during release phase
             return np.zeros(3)
     
@@ -1081,23 +1102,23 @@ if __name__ == "__main__":
     
         # Create time array for this cycle
         cycle_start_time = robot.time - robot.cycle_time
-        time_array = np.arange(cycle_start_time, robot.time + robot.dt, robot.dt)[:len(robot.length_history)]
+        time_array = np.arange(cycle_start_time, robot.time, robot.dt)[:len(robot.length_history)]
         
         # Accumulate data from each cycle
         all_time_data.extend(time_array)
-        all_state_data.extend(robot.state_history)
-        all_position_data.extend(robot.position_history)
-        all_velocity_data.extend(robot.velocity_history)
-        all_acceleration_data.extend(robot.acceleration_history)
-        all_euler_angle_data.extend(robot.euler_angle_history)
-        all_euler_angle_rate_data.extend(robot.euler_angle_rate_history)
-        all_angular_velocity_data.extend(robot.angular_velocity_history)
-        all_angular_acceleration_data.extend(robot.angular_acceleration_history)
-        all_length_data.extend(robot.length_history)
-        all_width_data.extend(robot.width_history)
-        all_area_data.extend(robot.area_history)
-        all_volume_data.extend(robot.volume_history)
-        all_mass_data.extend(robot.mass_history)
+        all_state_data.extend(robot.state_history[0:-1])
+        all_position_data.extend(robot.position_history[0:-1])
+        all_velocity_data.extend(robot.velocity_history[0:-1])
+        all_acceleration_data.extend(robot.acceleration_history[0:-1])
+        all_euler_angle_data.extend(robot.euler_angle_history[0:-1])
+        all_euler_angle_rate_data.extend(robot.euler_angle_rate_history[0:-1])
+        all_angular_velocity_data.extend(robot.angular_velocity_history[0:-1])
+        all_angular_acceleration_data.extend(robot.angular_acceleration_history[0:-1])
+        all_length_data.extend(robot.length_history[0:-1])
+        all_width_data.extend(robot.width_history[0:-1])
+        all_area_data.extend(robot.area_history[0:-1])
+        all_volume_data.extend(robot.volume_history[0:-1])
+        all_mass_data.extend(robot.mass_history[0:-1])
         all_jet_velocity_data.extend(robot.jet_velocity_history)
         all_jet_force_data.extend(robot.jet_force_history)
         all_jet_torque_data.extend(robot.jet_torque_history)
@@ -1110,9 +1131,8 @@ if __name__ == "__main__":
         all_drag_coefficient_data.extend(robot.trans_drag_coefficient_history)
         all_drag_force_data.extend(robot.drag_force_history)
         all_drag_torque_data.extend(robot.drag_torque_history)
-        all_nozzle_yaw_data.extend(robot.nozzle_yaw_history)
-        all_inertia_tensor_data.extend(robot.inertia_tensor_history)
-        all_drag_coefficient_data.extend(robot.drag_coefficient_history)
+        all_nozzle_yaw_data.extend(robot.nozzle_yaw_history[0:-1])
+        all_inertia_tensor_data.extend(robot.inertia_tensor_history[0:-1])
 
     # Convert accumulated data to numpy arrays
     all_time_data = np.array(all_time_data)
@@ -1155,11 +1175,11 @@ if __name__ == "__main__":
     # plot_jet_velocity(all_time_data, all_jet_velocity_data, all_state_data)
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
     #                 all_coriolis_force_data, all_added_mass_force_data, all_state_data)
-    plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
+    # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
-    plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
+    # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
     plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)

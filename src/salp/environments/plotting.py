@@ -42,7 +42,7 @@ def _add_phase_backgrounds(ax, time_data, state_data):
             current_phase = state_values[i]
     
     # Draw the last region
-    ax.axvspan(time_data[start_idx], time_data[-1], 
+    ax.axvspan(time_data[start_idx-1], time_data[-1], 
               color=colors[current_phase], alpha=alphas[current_phase],
               label=phase_names[current_phase] if current_phase not in state_values[:start_idx] else "")
 
