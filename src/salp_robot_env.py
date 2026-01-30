@@ -98,6 +98,10 @@ class SalpRobotEnv(gym.Env):
         # Trajectory visualization
         self.trajectory_waypoints = []  # List of waypoints to visualize
         self.current_waypoint_index = 0  # Index of current target in trajectory
+        
+        # Spinning detection
+        self.cumulative_abs_yaw_change = 0.0  # Track total rotation
+        self.high_spin_cycles = 0  # Count cycles with excessive spinning
 
         self.reset()
     
@@ -127,6 +131,11 @@ class SalpRobotEnv(gym.Env):
         self._history_draw_index = 0
         self._history_loop = True
         self._history_step = 1
+        
+        # Reset spinning detection
+        self.cumulative_abs_yaw_change = 0.0
+        self.high_spin_cycles = 0
+        self.prev_yaw = self.robot.euler_angle[2]
 
         return self._get_observation(), {}
 
@@ -149,6 +158,19 @@ class SalpRobotEnv(gym.Env):
         self.robot.nozzle.solve_angles()
         self.robot.set_control(rescaled_action[0], rescaled_action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
         self.robot.step_through_cycle()
+        
+        # Track spinning
+        current_yaw = self.robot.euler_angle[2]
+        yaw_change = abs(current_yaw - self.prev_yaw)
+        # Handle wrap-around at ±π
+        if yaw_change > np.pi:
+            yaw_change = 2*np.pi - yaw_change
+        self.cumulative_abs_yaw_change += yaw_change
+        self.prev_yaw = current_yaw
+        
+        # Detect excessive spinning (more than 2π rotation in one cycle)
+        if yaw_change > 2*np.pi:
+            self.high_spin_cycles += 1
 
         # store the most recent breathing-cycle histories (meters)
         if self.render_mode == "human":
@@ -189,6 +211,11 @@ class SalpRobotEnv(gym.Env):
         elif distance_to_target > 5.0:
             truncated = True
             reward -= 5.0  # penalty for going out of bounds
+        
+        # Check for excessive spinning (more than 3 full rotations)
+        if self.cumulative_abs_yaw_change > 6*np.pi:
+            truncated = True
+            reward -= 10.0  # Big penalty for spinning in circles
 
         # reset after a certain number of steps
         if self.robot.cycle >= 500:
@@ -240,11 +267,14 @@ class SalpRobotEnv(gym.Env):
         # print(r_smooth)
 
         # 5. yaw Stability (Penalize large yaw changes)
-        r_yaw = -0.5 * (abs(self.robot.angular_velocity[2]) ** 2)
+        r_yaw = -5.0 * (abs(self.robot.angular_velocity[2]) ** 2)  # Increased from 0.5 to 5.0
+        
+        # 6. Cumulative Spinning Penalty (penalize excessive rotation)
+        r_spin = -10.0 if self.cumulative_abs_yaw_change > 4*np.pi else 0.0  # Penalty for >2 full rotations
         
         # Total
         # Note: Weights are critical. Tracking is usually the most important.
-        total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth + r_yaw
+        total_reward = (1.0 * r_track) + (0.5 * r_heading) + r_energy + r_smooth + r_yaw + r_spin
         # print(total_reward)
 
         # print(f"Reward components: Track={r_track:.3f}, Heading={r_heading:.3f}, Energy={r_energy:.3f}, Smoothness={r_smooth:.3f}, Total={total_reward:.3f}")
