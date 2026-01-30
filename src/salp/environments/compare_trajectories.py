@@ -205,7 +205,7 @@ def compare_contraction_levels():
     """Compare trajectories with different contraction levels."""
     print("Comparing different contraction levels...")
     
-    nozzle = Nozzle(length1=0.01, length2=0.01, length3=0.01, area=0.00016, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.set_environment(density=1000)
@@ -213,8 +213,8 @@ def compare_contraction_levels():
     
     contractions = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06]  # Different contraction levels
     # contractions = [0.01]  # Different contraction levels
-    n_cycles = 1
-    coast_time = 1.0
+    n_cycles = 8
+    coast_time = 3.0
     yaw_angle = 0.0
     
     trajectories = []
@@ -233,7 +233,7 @@ def compare_coast_times():
     """Compare trajectories with different coast times."""
     print("\nComparing different coast times...")
     
-    nozzle = Nozzle(length1=0.01, length2=0.01, length3=0.01, area=0.00016, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.set_environment(density=1000)
@@ -260,16 +260,16 @@ def compare_yaw_angles():
     """Compare trajectories with different yaw angles."""
     print("\nComparing different yaw angles...")
     
-    nozzle = Nozzle(length1=0.01, length2=0.01, length3=0.01, area=0.00016, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.set_environment(density=1000)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     
-    yaw_angles = [-np.pi/2, -np.pi/4, -np.pi/8, np.pi/16, np.pi/32, 0.0, np.pi/32, np.pi/16, np.pi/8, np.pi/4, np.pi/2]  # Different yaw angles
-    n_cycles = 1
+    yaw_angles = [np.pi/2, np.pi/4, np.pi/8, np.pi/16, np.pi/32, 0.0]  # Different yaw angles
+    n_cycles = 8
     contraction = 0.06
-    coast_time = 10.0
+    coast_time = 10.0 
     
     trajectories = []
     labels = []
@@ -288,7 +288,7 @@ def compare_action_combinations():
     """Compare trajectories with different combinations of actions."""
     print("\nComparing different action combinations...")
     
-    nozzle = Nozzle(length1=0.01, length2=0.01, length3=0.01, area=0.00009, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.set_environment(density=1000)
@@ -328,41 +328,12 @@ def main():
     
     # Compare individual action parameters
     # compare_contraction_levels()
-    compare_coast_times()
-    # compare_yaw_angles()
+    # compare_coast_times()
+    compare_yaw_angles()
     
     # Compare action combinations
     # compare_action_combinations()
 
-    # Test action/state comparison
-    actions = np.array([
-        [0.19323313, 0.29813224, 0.48714757],
-        [7.7654147e-01, 3.8728118e-04, -8.1552941e-01],
-        [0.98571205, 0.9917865, 0.99892616],
-        [9.6167839e-01, 2.3841858e-07, -9.0644705e-01],
-        [0.9982549, 0.01162207, 0.99545634],
-        [1.097548e-01, 3.874302e-07, -9.995486e-01],
-        [9.282575e-01, 9.834766e-07, -8.856592e-01],
-        [0.9979527, 0.7998414, 0.9967793],
-        [9.7881764e-01, 8.9406967e-08, -9.4052404e-01],
-        [9.9689567e-01, 8.4903836e-04, 9.9000371e-01]
-    ])
-    
-    states = np.array([
-        [1.0155466e+00, 1.4098481e+00, 4.3595803e-04, -7.5057219e-03, -8.7840281e+00, -1.4406887e+00],
-        [1.0133374, 1.4404503, 0.18948714, 0.09714148, -1.4771231, 12.405232],
-        [9.8408753e-01, 1.4383022e+00, 5.6329452e-07, -2.0493079e-10, -2.2138830e+01, -5.8736938e-01],
-        [0.9981343, 1.4710712, 0.15838267, 0.01597089, -10.856999, 12.6343],
-        [1.0278028, 1.4743572, 0.05104179, -0.14053066, -14.307327, -10.275037],
-        [1.0507892, 1.4647142, -0.07131741, -0.2293364, -17.46547, -0.5295754],
-        [1.1534688, 1.3669854, 0.15083826, 0.02849274, -6.1852818, 12.59845],
-        [1.1619021e+00, 1.3365263e+00, 2.0421480e-06, 6.5281060e-06, -2.5727917e+01, -7.1988845e-01],
-        [1.1268356e+00, 1.3209202e+00, 1.6382785e-01, 4.4385507e-03, -1.4443778e+01, 1.2695701e+01],
-        [1.0926594e+00, 1.3207027e+00, 1.6125831e-01, -1.3447195e-02, -1.6819508e+01, -1.2374420e+01]
-    ])
-    
-    # Compare simulated trajectory with expected states
-    comparison = compare_actions_with_states(actions, states, verbose=True)
     
     print("\n" + "=" * 60)
     print("All comparisons complete!")

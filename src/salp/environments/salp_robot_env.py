@@ -1439,7 +1439,7 @@ if __name__ == "__main__":
     
     # env.start_recording()
     while not done:
-        action = [1, 0.3, 0]  # inhale with no nozzle steering
+        action = [1, 0.3, 1]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
