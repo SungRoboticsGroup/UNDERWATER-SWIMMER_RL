@@ -247,13 +247,13 @@ class Robot:
         
         # ==================== Coefficient Parameters ====================
         self._domain_randomization = False
-        self.discharge_coefficient = 0.8
-        self.drag_force_ratio = 0.25
-        self.drag_torque_ratio = 0.1
-        self.added_mass_coefficient_force = np.diag([0.5, 0.6, 0.6])
-        self.added_mass_rate_coefficient_force = np.diag([0.2, 0.2, 0.2])
-        self.added_mass_coefficient_torque = np.diag([0.3, 0.6, 0.6])
-        self.added_mass_rate_coefficient_torque = np.diag([0.2, 0.2, 0.2])
+        self.discharge_coefficient_mean = 0.8
+        self.drag_force_ratio_mean = 0.25
+        self.drag_torque_ratio_mean = 0.1
+        self.added_mass_coefficient_force_mean = np.diag([0.5, 0.6, 0.6])
+        self.added_mass_rate_coefficient_force_mean = np.diag([0.2, 0.2, 0.2])
+        self.added_mass_coefficient_torque_mean = np.diag([0.3, 0.6, 0.6])
+        self.added_mass_rate_coefficient_torque_mean = np.diag([0.2, 0.2, 0.2])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
         self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
         
@@ -455,6 +455,14 @@ class Robot:
         """
         if self._domain_randomization:
             self._randomize_parameters()
+        else:
+            self.discharge_coefficient = self.discharge_coefficient_mean
+            self.drag_force_ratio = self.drag_force_ratio_mean
+            self.drag_torque_ratio = self.drag_torque_ratio_mean
+            self.added_mass_coefficient_force = self.added_mass_coefficient_force_mean
+            self.added_mass_rate_coefficient_force = self.added_mass_rate_coefficient_force_mean
+            self.added_mass_coefficient_torque = self.added_mass_coefficient_torque_mean
+            self.added_mass_rate_coefficient_torque = self.added_mass_rate_coefficient_torque_mean
 
         self.clear_history()
         self.contraction = contraction
@@ -473,42 +481,51 @@ class Robot:
         
         # Randomize discharge coefficient
         uncertainty = 0.5
-        upper_bound = self.discharge_coefficient * (1 + uncertainty)
-        lower_bound = self.discharge_coefficient * (1 - uncertainty)
-        self.discharge_coefficient = np.random.uniform(lower_bound, upper_bound)
-        
+        upper_bound = self.discharge_coefficient_mean * (1 + uncertainty)
+        lower_bound = self.discharge_coefficient_mean * (1 - uncertainty)
+        self.discharge_coefficient = np.clip(np.random.uniform(lower_bound, upper_bound), 0, 1)
+
         # Randomize drag ratios
         uncertainty = 0.5
-        upper_bound = self.drag_force_ratio * (1 + uncertainty)
-        lower_bound = self.drag_force_ratio * (1 - uncertainty)
+        upper_bound = self.drag_force_ratio_mean * (1 + uncertainty)
+        lower_bound = self.drag_force_ratio_mean * (1 - uncertainty)
         self.drag_force_ratio = np.random.uniform(lower_bound, upper_bound)
         
         uncertainty = 0.5
-        upper_bound = self.drag_torque_ratio * (1 + uncertainty)
-        lower_bound = self.drag_torque_ratio * (1 - uncertainty)
+        upper_bound = self.drag_torque_ratio_mean * (1 + uncertainty)
+        lower_bound = self.drag_torque_ratio_mean * (1 - uncertainty)
         self.drag_torque_ratio = np.random.uniform(lower_bound, upper_bound)
         
         # Randomize added mass coefficients (force)
         uncertainty = 0.5
-        upper_bound = self.added_mass_coefficient_force * (1 + uncertainty)
-        lower_bound = self.added_mass_coefficient_force * (1 - uncertainty)
+        upper_bound = self.added_mass_coefficient_force_mean * (1 + uncertainty)
+        lower_bound = self.added_mass_coefficient_force_mean * (1 - uncertainty)
         self.added_mass_coefficient_force = np.random.uniform(lower_bound, upper_bound)
         
         uncertainty = 0.5
-        upper_bound = self.added_mass_rate_coefficient_force * (1 + uncertainty)
-        lower_bound = self.added_mass_rate_coefficient_force * (1 - uncertainty)
+        upper_bound = self.added_mass_rate_coefficient_force_mean * (1 + uncertainty)
+        lower_bound = self.added_mass_rate_coefficient_force_mean * (1 - uncertainty)
         self.added_mass_rate_coefficient_force = np.random.uniform(lower_bound, upper_bound)
         
         # Randomize added mass coefficients (torque)
         uncertainty = 0.5
-        upper_bound = self.added_mass_coefficient_torque * (1 + uncertainty)
-        lower_bound = self.added_mass_coefficient_torque * (1 - uncertainty)
+        upper_bound = self.added_mass_coefficient_torque_mean * (1 + uncertainty)
+        lower_bound = self.added_mass_coefficient_torque_mean * (1 - uncertainty)
         self.added_mass_coefficient_torque = np.random.uniform(lower_bound, upper_bound)
         
         uncertainty = 0.5
-        upper_bound = self.added_mass_rate_coefficient_torque * (1 + uncertainty)
-        lower_bound = self.added_mass_rate_coefficient_torque * (1 - uncertainty)
+        upper_bound = self.added_mass_rate_coefficient_torque_mean * (1 + uncertainty)
+        lower_bound = self.added_mass_rate_coefficient_torque_mean * (1 - uncertainty)
         self.added_mass_rate_coefficient_torque = np.random.uniform(lower_bound, upper_bound)
+
+        # print(f"Domain Randomization Applied:")
+        # print(f"  Discharge Coefficient: {self.discharge_coefficient:.4f}")
+        # print(f"  Drag Force Ratio: {self.drag_force_ratio:.4f}")
+        # print(f"  Drag Torque Ratio: {self.drag_torque_ratio:.4f}")
+        # print(f"  Added Mass Coefficient (Force): {self.added_mass_coefficient_force}")
+        # print(f"  Added Mass Rate Coefficient (Force): {self.added_mass_rate_coefficient_force}")
+        # print(f"  Added Mass Coefficient (Torque): {self.added_mass_coefficient_torque}")
+        # print(f"  Added Mass Rate Coefficient (Torque): {self.added_mass_rate_coefficient_torque}")
 
     # ==================== Stepping and State Management ====================
     def update_state(self):
@@ -1064,12 +1081,12 @@ if __name__ == "__main__":
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
-    
+    robot.enable_domain_randomization()
     robot.set_environment(density=1000)
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 1
+    n_cycles = 8
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1219,7 +1236,7 @@ if __name__ == "__main__":
     # plot_asymmetry_torque(all_time_data, all_asymmetry_torque_data, all_state_data)
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
-    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
 
     plt.show(block=True)
     

@@ -9,12 +9,12 @@ import numpy as np
 
 def make_env():
     # Create and return the SalpRobotEnv environment
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
+    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                     max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
     robot.set_environment(density=1000)  # water density in kg/m^3
-    robot.enable_domain_randomization()  # enable domain randomization
+    # robot.enable_domain_randomization()  # enable domain randomization
 
     env = SalpRobotEnv(render_mode=None, robot=robot)
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     #     tau=0.005,             # Polyak averaging (Soft update)
     #     device="cuda" 
     # )
-    model = SAC.load("./salp_robot_final_dm", env=vec_env)
+    model = SAC.load("./salp_robot_final_dm_multiple_baselinev4", env=vec_env)
     # model.learning_rate = 1e-3  # Reset learning rate when loading
 
     # 4. Setup Saving (Checkpoints)
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     checkpoint_callback = CheckpointCallback(
         save_freq= 10000,
         save_path='./logs/',
-        name_prefix='salp_robot_dm'
+        name_prefix='salp_robot_dm_multiple_baseline'
     )
     
     # 5. Train
@@ -65,9 +65,9 @@ if __name__ == "__main__":
         total_timesteps=400000, # Run for 400k steps
         callback=checkpoint_callback,
         reset_num_timesteps=False,
-        tb_log_name="salp_robot_run_dm"
+        tb_log_name="salp_robot_run_dm_multiple_baseline"
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_final_dmv2")
+    model.save("salp_robot_final_dm_multiple_baselinev5")
     print("Training finished.")
