@@ -42,6 +42,9 @@ class SalpRobotEnv(gym.Env):
         self.render_mode = render_mode
         self.screen = None
         self.clock = None
+        self.action_randomization = False
+        self.observation_randomization = False
+        self.latency = False
         
         # # Robot state
         self.robot = robot
@@ -137,6 +140,15 @@ class SalpRobotEnv(gym.Env):
 
         return self._get_observation(), {}
 
+    def enable_action_randomization(self):
+        self.action_randomization = True
+
+    def enable_observation_randomization(self):
+        self.observation_randomization = True
+
+    def enable_latency(self):
+        self.latency = True
+
     def _rescale_action(self, action: np.ndarray) -> np.ndarray:
 
         """Rescale action from [-1, 1] to robot input ranges."""
@@ -146,10 +158,63 @@ class SalpRobotEnv(gym.Env):
         rescaled[2] = action[2] * (np.pi / 2)  # nozzle yaw angle
 
         return rescaled
-     
+
+    def _randomize_actions(self, action):
+            
+        uncertainty = 0.1
+        contraction = self._randomize_number(action[0], uncertainty, 0, 1)
+
+        uncertainty = 0.1
+        coast_time = self._randomize_number(action[1], uncertainty, 0, 20)
+
+        uncertainty = 0.1
+        yaw_angle = self._randomize_number(action[2], uncertainty, -np.pi/2, np.pi/2)
+
+        randomized_action = [contraction, coast_time, yaw_angle]
+
+        return randomized_action
+
+    def _randomize_number(self, value, uncertainty=0.1, lower_bound=None, upper_bound=None):
+
+        lower_sample_bound = value * (1 - uncertainty)
+        upper_sample_bound = value * (1 + uncertainty)
+
+        if lower_bound is None:
+            lower_bound = lower_sample_bound
+        if upper_bound is None:
+            upper_bound = upper_sample_bound
+
+        return np.clip(np.random.uniform(lower_sample_bound, upper_sample_bound), lower_bound, upper_bound)
+
+    def _randomize_observations(self, observation):
+
+        pos_x = self._randomize_number(observation[0], 0.02)
+        pos_y = self._randomize_number(observation[1], 0.02)
+        v_x = self._randomize_number(observation[2], 0.02)
+        v_y = self._randomize_number(observation[3], 0.02)
+        euler_angle = self._randomize_number(observation[4], 0.1)
+        angular_velocity = self._randomize_number(observation[5], 0.02)
+        heading_error = self._randomize_number(observation[6], 0.1)
+
+        randomized_observation = np.array([
+            pos_x,
+            pos_y,
+            v_x,
+            v_y,
+            euler_angle,
+            angular_velocity,
+            heading_error
+        ])
+
+        return randomized_observation
+
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
 
         rescaled_action = self._rescale_action(action) 
+
+        if self.action_randomization:
+            rescaled_action = self._randomize_actions(rescaled_action)
+            # print(f"Randomized action: Inhale: {rescaled_action[0]:.2f}, Coast Time: {rescaled_action[1]:.2f}, Nozzle Yaw: {rescaled_action[2]:.2f} rad")
 
         # print(f"Action taken: Inhale: {action[0]:.2f}, Coast Time: {action[1]:.2f}, Nozzle Yaw: {action[2]:.2f} rad")
         self.robot.nozzle.set_yaw_angle(yaw_angle = rescaled_action[2])  # Map -1 to 1 to -pi/2 to pi/2
@@ -186,7 +251,9 @@ class SalpRobotEnv(gym.Env):
         reward = self._calculate_reward()
         
         observation = self._get_observation()
-        # print(f"Obs: {observation}")
+        if self.observation_randomization:
+            observation = self._randomize_observations(observation)
+            # print(f"randomized Obs: {observation}")
 
         # Check termination
         done = False
@@ -217,6 +284,15 @@ class SalpRobotEnv(gym.Env):
         }
         
         self.prev_action = self.action
+
+        # account for latency here
+        # pure drifting from the previous state
+        if self.latency:
+            latency = 0.05
+            latency = self._randomize_number(latency, 0.5)
+            print(f"Applying latency: {latency:.3f} seconds")
+            self.robot.set_control(contraction=0, coast_time=latency, nozzle_angles=[self.robot.nozzle.angle1, self.robot.nozzle.angle2])
+
         return observation, reward, done, truncated, info
     
     def _calculate_reward(self) -> float:
@@ -1431,7 +1507,13 @@ if __name__ == "__main__":
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
+    robot.enable_dynamic_randomization()
+    robot.enable_disturbances()
     env = SalpRobotEnv(render_mode="human", robot=robot)
+    env.enable_action_randomization()
+    env.enable_observation_randomization()
+    env.enable_latency()
+    
     obs, info = env.reset()
     
     done = False

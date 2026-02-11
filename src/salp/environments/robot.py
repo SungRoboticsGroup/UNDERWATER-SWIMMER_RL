@@ -246,9 +246,10 @@ class Robot:
         self.nozzle = nozzle
         
         # ==================== Coefficient Parameters ====================
-        self._domain_randomization = False
+        self.dynamics_randomization = False
+        self.disturbances = False
         self.discharge_coefficient_mean = 0.8
-        self.drag_force_ratio_mean = 0.25
+        self.drag_force_ratio_mean = 0.25 
         self.drag_torque_ratio_mean = 0.1
         self.added_mass_coefficient_force_mean = np.diag([0.5, 0.6, 0.6])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.2, 0.2, 0.2])
@@ -363,9 +364,12 @@ class Robot:
 
         return [rot_x, rot_y, rot_z]
 
-    def enable_domain_randomization(self):
+    def enable_dynamic_randomization(self):
         """Enable domain randomization."""
-        self._domain_randomization = True
+        self.dynamics_randomization = True
+    
+    def enable_disturbances(self):
+        self.disturbances = True
 
     def set_environment(self, density: float):
         """Set the environment properties.
@@ -453,7 +457,7 @@ class Robot:
             coast_time: Duration of coast phase (s)
             nozzle_angles: Nozzle steering angles [angle1, angle2]
         """
-        if self._domain_randomization:
+        if self.dynamics_randomization:
             self._randomize_parameters()
         else:
             self.discharge_coefficient = self.discharge_coefficient_mean
@@ -699,9 +703,15 @@ class Robot:
         self.jet_force = self._get_jet_force()
         self.added_mass_force = self._get_added_mass_force()
 
+        if self.disturbances:
+            self.noise_force = np.random.uniform(-0.2, 0.2, size=3)
+            # print(f"Noise force applied: {self.noise_force}")
+        else:
+            self.noise_force = np.zeros(3)
+
         self.mass = self.get_mass()
 
-        return np.linalg.inv(self.mass) @ (self.jet_force + self.drag_force + self.added_mass_force + self.coriolis_force)
+        return np.linalg.inv(self.mass) @ (self.jet_force + self.drag_force + self.added_mass_force + self.coriolis_force + self.noise_force)
 
     def _euler_equations(self) -> np.ndarray:
         """Compute angular accelerations using Euler's equations.
@@ -716,9 +726,15 @@ class Robot:
         self.deform_torque = self._get_deform_torque()
         self.added_mass_torque = self._get_added_mass_torque()
 
+        if self.disturbances:
+            self.noise_torque = np.random.uniform(-0.005, 0.005, size=3)
+            # print(f"Noise torque applied: {self.noise_torque}")
+        else:
+            self.noise_torque = np.zeros(3)
+
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + self.coriolis_torque + self.asymmetry_torque + self.deform_torque + self.added_mass_torque)
+        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + self.coriolis_torque + self.asymmetry_torque + self.deform_torque + self.added_mass_torque + self.noise_torque)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -937,7 +953,7 @@ class Robot:
         Returns:
             3D torque vector
         """
-        return np.array([0.0, 0.0, 0.00 * np.linalg.norm(self.velocity)])
+        return np.array([0.0, 0.0, 0.01 * np.linalg.norm(self.velocity)])
 
     # ==================== Geometry and Body Shape Methods ====================
     def get_current_length(self) -> float:
