@@ -225,8 +225,8 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
         next_pos = trajectory[1]
         
         # Set robot position to first waypoint
-        env.robot.position[0] = start_pos[0]
-        env.robot.position[1] = start_pos[1]
+        env.robot.position_world[0] = start_pos[0]
+        env.robot.position_world[1] = start_pos[1]
         
         # Calculate orientation angle from first to second waypoint
         direction = next_pos - start_pos
@@ -247,7 +247,7 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     distances_to_targets = []
     
     # Record actual robot trajectory
-    actual_trajectory = [np.array([env.robot.position[0], env.robot.position[1]])]
+    actual_trajectory = [np.array([env.robot.position_world[0], env.robot.position_world[1]])]
     
     trajectory.append(trajectory[0])  # Loop back to start for continuous tracking
     trajectory = trajectory[1:]
@@ -266,13 +266,13 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
             obs, reward, terminated, truncated, info = env.step(action)
             
             # Record robot position after each step
-            actual_trajectory.append(np.array([env.robot.position[0], env.robot.position[1]]))
+            actual_trajectory.append(np.array([env.robot.position_world[0], env.robot.position_world[1]]))
             
             if render:
                 env.wait_for_animation()
             
             # Calculate distance to current target
-            distance = np.linalg.norm(env.robot.position[0:-1] - target)
+            distance = np.linalg.norm(env.robot.position_world[0:-1] - target)
             min_distance = min(min_distance, distance)
             
             total_steps += 1
@@ -454,7 +454,7 @@ if __name__ == "__main__":
     env = SalpRobotEnv(render_mode="human", robot=robot)
     
     # Load the trained model
-    model = SAC.load("./salp_robot_final_yaw_continuity", env=env)   
+    model = SAC.load("./salp_robot_final_dm_multiple_baselinev5", env=env)   
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])

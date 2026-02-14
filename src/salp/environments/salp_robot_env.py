@@ -17,6 +17,7 @@ from datetime import datetime
 from robot import Robot, Nozzle
 import time
 
+
 class SalpRobotEnv(gym.Env):
     """
     SALP-inspired robot environment with steerable nozzle.
@@ -271,6 +272,7 @@ class SalpRobotEnv(gym.Env):
         # reset after a certain number of steps
         if self.robot.cycle >= 200:
             truncated = True
+            # reward -= 5.0
 
         # if abs(observation[-2]) > 0.5:  # cross track error too large
         #     truncated = True
@@ -304,7 +306,7 @@ class SalpRobotEnv(gym.Env):
         current_dist = np.linalg.norm(current_diff)
         dist_improvement = - current_dist + self.prev_dist   # Negative distance as improvement
         # print(f"Distance to target: {current_dist:.3f} m, Improvement: {dist_improvement:.3f} m")
-        r_track = dist_improvement * 100
+        r_track = dist_improvement * 50
         self.prev_dist = current_dist
         # print(r_track)
         
@@ -313,6 +315,8 @@ class SalpRobotEnv(gym.Env):
         path_vec = self.target_point - self.prev_target_point
         path_length = np.linalg.norm(path_vec) + 1e-6
         path_dir = path_vec / path_length
+        diff_dir = self.target_point - self.robot.position_world[0:-1]
+        diff_dir = diff_dir / np.linalg.norm(diff_dir)
         robot_vec = self.robot.position_world[0:-1] - self.prev_target_point
 
         # 6. cross track error penalty
@@ -329,7 +333,7 @@ class SalpRobotEnv(gym.Env):
         r_cross_track = 0.0
 
         on_track_weight = np.clip(1.0 - (cross_track_error / 0.3), 0.0, 1.0)  # full reward within 0.3m, none beyond that
-        r_heading = 50 * np.dot(self.robot.velocity_world[0:-1], path_dir) * on_track_weight
+        r_heading = 50 * np.dot(self.robot.velocity_world[0:-1], diff_dir) * on_track_weight
         # print(r_heading)
         
         # 3. Energy (Thrust + Coasting) I don't care about this for now
@@ -342,18 +346,21 @@ class SalpRobotEnv(gym.Env):
         # 4. Smoothness (Action Jerk)
         # Only penalize the nozzle angle change, not the thrust change
         angle_change = abs(nozzle_yaw - self.prev_action[2])
-        r_smooth = - 5.0 * (angle_change ** 2)
+        r_smooth = - 10.0 * (angle_change ** 2)
         # print(r_smooth)
 
         # 5. yaw Stability (Penalize large yaw changes)
         r_yaw = -0.5 * (abs(self.robot.angular_velocity[2]) ** 2)
 
         # 7. time penalty
-        r_time = 0.0  # small penalty to encourage faster completion
+        r_time = -0.1  # small penalty to encourage faster completion
+        
+        # 8. penalize on large nozzle angle
+        r_nozzle = -10.0 * (abs(nozzle_yaw) ** 2)
 
         # Total
         # Note: Weights are critical. Tracking is usually the most important.
-        total_reward = (1.0 * r_track) + (1 * r_heading) + r_energy + r_smooth + r_yaw + r_cross_track + r_time
+        total_reward = (1.0 * r_track) + (1 * r_heading) + r_energy + r_smooth + r_yaw + r_cross_track + r_time + r_nozzle
         # print(total_reward)
 
 
@@ -1509,6 +1516,7 @@ if __name__ == "__main__":
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
+
     robot.enable_dynamic_randomization()
     robot.enable_disturbances()
     # env = SalpRobotEnv(render_mode="human", robot=robot)
@@ -1517,6 +1525,7 @@ if __name__ == "__main__":
     env.enable_observation_randomization()
     env.enable_latency()
     
+
     obs, info = env.reset()
     
     done = False
@@ -1531,7 +1540,7 @@ if __name__ == "__main__":
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
         end_time = time.perf_counter()
-        print(f"Step time: {end_time - start_time:.6f} seconds")
+        print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
         # print(env.target_point, env.prev_target_point)
         # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
         # print(reward)
