@@ -15,6 +15,9 @@ from PIL import Image
 import os
 from datetime import datetime
 from robot import Robot, Nozzle
+import time
+
+
 
 class SalpRobotEnv(gym.Env):
     """
@@ -210,12 +213,13 @@ class SalpRobotEnv(gym.Env):
         #     reward -= 5.0  # penalty for large cross track error
 
         # info = self._get_info()
-        info = {
-            'position_history': self.robot.position_history,
-            'length_history': self.robot.length_history,
-            'width_history': self.robot.width_history,
-            'nozzle_yaw_history': self.robot.nozzle_yaw_history
-        }
+        # info = {
+        #     'position_history': self.robot.position_history,
+        #     'length_history': self.robot.length_history,
+        #     'width_history': self.robot.width_history,
+        #     'nozzle_yaw_history': self.robot.nozzle_yaw_history
+        # }
+        info = {}
         
         self.prev_action = self.action
         return observation, reward, done, truncated, info
@@ -1437,7 +1441,7 @@ if __name__ == "__main__":
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
-    env = SalpRobotEnv(render_mode="human", robot=robot)
+    env = SalpRobotEnv(render_mode=None, robot=robot)
     obs, info = env.reset()
     
     done = False
@@ -1445,16 +1449,19 @@ if __name__ == "__main__":
     
     # env.start_recording()
     while not done:
+        start_time = time.perf_counter()
         action = [1, 0.3, 1]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
+        end_time = time.perf_counter()
+        print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
         # print(env.target_point, env.prev_target_point)
         # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
         # print(reward)
         cnt += 1
         # Wait for the animation to complete before next step
-        env.wait_for_animation()
+        # env.wait_for_animation()
         # env.render()
     # gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()
