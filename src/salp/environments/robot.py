@@ -242,7 +242,7 @@ class Robot:
         self.init_width = init_width
         self.max_contraction = max_contraction
         self.density = 1000  # kg/m^3, density of water
-        self.dt = 0.01  # time step
+        self.dt = 0.02  # time step
         self.nozzle = nozzle
         
         # ==================== Coefficient Parameters ====================
@@ -619,29 +619,29 @@ class Robot:
         """Step through an entire breathing cycle and collect state history."""
         total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time
 
-        # Initialize history lists with current values
-        for attr_name, initial_value in self._get_state_values().items():
-            setattr(self, attr_name, [initial_value])
+        # # Initialize history lists with current values
+        # for attr_name, initial_value in self._get_state_values().items():
+        #     setattr(self, attr_name, [initial_value])
 
         while self.cycle_time < total_cycle_time:
             self.step()
             
-            # Append force values to history lists
-            for attr_name, current_value in self._get_force_values().items():
-                getattr(self, attr_name).append(current_value)
+        #     # Append force values to history lists
+        #     for attr_name, current_value in self._get_force_values().items():
+        #         getattr(self, attr_name).append(current_value)
 
-            # Append current values to history lists
-            for attr_name, current_value in self._get_state_values().items():
-                getattr(self, attr_name).append(current_value)
+        #     # Append current values to history lists
+        #     for attr_name, current_value in self._get_state_values().items():
+        #         getattr(self, attr_name).append(current_value)
 
-        # # Convert histories to numpy arrays
-        history_names = self._get_state_values().keys()
-        for attr_name in history_names:
-            setattr(self, attr_name, np.array(getattr(self, attr_name)))
+        # # # Convert histories to numpy arrays
+        # history_names = self._get_state_values().keys()
+        # for attr_name in history_names:
+        #     setattr(self, attr_name, np.array(getattr(self, attr_name)))
         
-        history_names = self._get_force_values().keys()
-        for attr_name in history_names:
-            setattr(self, attr_name, np.array(getattr(self, attr_name)))
+        # history_names = self._get_force_values().keys()
+        # for attr_name in history_names:
+        #     setattr(self, attr_name, np.array(getattr(self, attr_name)))
 
     # ==================== Coordinate Transformations ====================
     def _to_euler_angle_rate(self) -> np.ndarray:
@@ -711,7 +711,7 @@ class Robot:
 
         self.mass = self.get_mass()
 
-        return np.linalg.inv(self.mass) @ (self.jet_force + self.drag_force + self.added_mass_force + self.coriolis_force + self.noise_force)
+        return (self.jet_force + self.drag_force + self.added_mass_force + self.coriolis_force + self.noise_force) / np.diagonal(self.mass)
 
     def _euler_equations(self) -> np.ndarray:
         """Compute angular accelerations using Euler's equations.
@@ -734,7 +734,7 @@ class Robot:
 
         I = self.get_inertia_matrix()
 
-        return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + self.coriolis_torque + self.asymmetry_torque + self.deform_torque + self.added_mass_torque + self.noise_torque)
+        return (self.jet_torque + self.drag_torque + self.coriolis_torque + self.asymmetry_torque + self.deform_torque + self.added_mass_torque + self.noise_torque) / np.diagonal(I)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""

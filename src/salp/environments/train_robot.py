@@ -1,8 +1,9 @@
 from stable_baselines3 import SAC
 from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.type_aliases import TrainFreq, TrainFrequencyUnit
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 import numpy as np
@@ -14,9 +15,13 @@ def make_env():
                     max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
     robot.set_environment(density=1000)  # water density in kg/m^3
-    # robot.enable_domain_randomization()  # enable domain randomization
+    robot.enable_dynamic_randomization()  # enable domain randomization
+    robot.enable_disturbances()
 
     env = SalpRobotEnv(render_mode=None, robot=robot)
+    # env.enable_action_randomization()
+    # env.enable_latency()
+    # env.enable_observation_randomization()
 
     return env
 
@@ -24,6 +29,7 @@ if __name__ == "__main__":
 
     num_cpu = 8
     vec_env = make_vec_env(make_env, n_envs=num_cpu, vec_env_cls=SubprocVecEnv)
+    # vec_env = make_vec_env(make_env, n_envs=4, vec_env_cls=DummyVecEnv)
 
     # 2. Sanity Check (CRITICAL)
     # This checks if your observation/action spaces match what the step() function returns.
@@ -48,26 +54,28 @@ if __name__ == "__main__":
     #     tau=0.005,             # Polyak averaging (Soft update)
     #     device="cuda" 
     # )
-    model = SAC.load("./salp_robot_final_dm_multiple_baselinev4", env=vec_env)
+    model = SAC.load("./salp_robot_final_dm_robot", env=vec_env)
+    model.train_freq = TrainFreq(frequency=10, unit=TrainFrequencyUnit.STEP)
+    model.gradient_steps = 1
     # model.learning_rate = 1e-3  # Reset learning rate when loading
 
     # 4. Setup Saving (Checkpoints)
     # Save the model every 10,000 steps so you don't lose progress if it crashes.
     checkpoint_callback = CheckpointCallback(
-        save_freq= 10000,
+        save_freq= 25000,
         save_path='./logs/',
-        name_prefix='salp_robot_dm_multiple_baseline'
+        name_prefix='salp_robot_dm_robot'
     )
     
     # 5. Train
     print("Starting training...")
     model.learn(
-        total_timesteps=400000, # Run for 400k steps
+        total_timesteps=1000000, # Run for 400k steps
         callback=checkpoint_callback,
         reset_num_timesteps=False,
-        tb_log_name="salp_robot_run_dm_multiple_baseline"
+        tb_log_name="salp_robot_run_dm_robot"
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_final_dm_multiple_baselinev5")
+    model.save("salp_robot_final_dm_robotv2")
     print("Training finished.")
