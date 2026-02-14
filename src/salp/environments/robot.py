@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sympy import false
 import dynamics
+import geometry
 
 class Nozzle:
     """Represents a steerable nozzle for jet propulsion.
@@ -352,7 +353,7 @@ class Robot:
         trans_y = [1.2, 0.7]
         trans_z = [1.2, 0.7]
 
-        return [trans_x, trans_y, trans_z]
+        return np.array([trans_x, trans_y, trans_z])
 
     def _get_rot_drag_coefficient_range(self):
 
@@ -363,7 +364,7 @@ class Robot:
         rot_y = [1.2, 0.5]
         rot_z = [1.2, 0.5]
 
-        return [rot_x, rot_y, rot_z]
+        return np.array([rot_x, rot_y, rot_z])
 
     def enable_domain_randomization(self):
         """Enable domain randomization."""
@@ -718,23 +719,11 @@ class Robot:
 
     # ==================== Inertia Methods ====================
     def get_inertia_matrix(self) -> np.ndarray:
-        """Calculate moment of inertia matrix.
-        
-        Note: Currently only considers water inertia.
-        
-        Returns:
-            3x3 inertia matrix
-        """
-        r = self._get_jet_moment_arm()
-        I_nozzle = self.nozzle.mass * np.linalg.norm(r) ** 2 * np.diag(np.array([0, 1, 1]))
-
-        I_xx = 0.2 * self.mass[0][0] * ((self.width / 2) ** 2 + (self.width / 2) ** 2)
-        I_yy = 0.2 * self.mass[0][0] * ((self.length / 2) ** 2 + (self.width / 2) ** 2)
-        I_zz = 0.2 * self.mass[0][0] * ((self.width / 2) ** 2 + (self.length / 2) ** 2)
-
-        I_robot = np.diag([I_xx, I_yy, I_zz])
-
-        return I_robot + I_nozzle
+        mass_scalar = self.mass[0, 0] # Extract raw float to pass to Numba
+        jet_moment_arm = self._get_jet_moment_arm()
+        return geometry.compute_inertia_matrix_jit(
+            mass_scalar, self.length, self.width, self.nozzle.mass, jet_moment_arm
+        )
     
     def get_inertia_matrix_rate(self) -> np.ndarray:
         """Calculate rate of change of inertia matrix.
@@ -748,15 +737,8 @@ class Robot:
 
     # ==================== Jet Force Methods ====================
     def _get_jet_moment_arm(self) -> np.ndarray:
-        """Calculate moment arm for jet force.
-        
-        Returns:
-            3D moment arm vector
-        """
-        r_nozzle = self.nozzle.get_middle_position()
-        r_robot = np.array([-self.length / 2, 0.0, 0.0])
-        return r_nozzle + r_robot
-    
+        return geometry.compute_jet_moment_arm_jit(self.nozzle.get_middle_position(), self.length)
+
     def _get_jet_torque(self) -> np.ndarray:
         return dynamics.compute_jet_torque_jit(self._get_jet_moment_arm(), self.jet_force)
     
@@ -771,45 +753,16 @@ class Robot:
         return dynamics.compute_jet_force_jit(self.discharge_coefficient, mass_rate, self.jet_velocity)
     
     def _get_jet_velocity(self) -> np.ndarray:
-        """Calculate jet velocity vector.
-        
-        Returns:
-            3D velocity vector in robot frame
-        """
-        if self.state != self.phase[1]:  # only produce jet velocity during release phase
-            return np.zeros(3)      
-
-        volume_rate = (self.volume - self.prev_water_volume) / self.dt
-        jet_speed = volume_rate / self.nozzle.area
-        direction = self.nozzle.get_nozzle_direction()
-
-        return direction * jet_speed
+        return dynamics.compute_jet_velocity_jit(
+            self.state.value, self.volume, self.prev_water_volume, self.dt, 
+            self.nozzle.area, self.nozzle.get_nozzle_direction()
+        )
 
     # ==================== Drag Force and Torque Methods ====================
-    def _get_drag_coefficient(self, ranges) -> float:
-        """Calculate drag coefficient based on body shape.
-        
-        More elongated (contracted) = lower drag, more spherical = higher drag.
-        
-        Returns:
-            Drag coefficient
-        """
-        aspect_ratio = self.length / self.width
-        
-        init_aspect_ratio = self.init_length / self.init_width  # most elongated
-        contracted_length = self.init_length - self.max_contraction
-        contracted_width = self._length_width_relation(contracted_length)
-        end_aspect_ratio = contracted_length / contracted_width  # most spherical
-        
-        # Normalize to [0, 1]: 0 = most spherical, 1 = most elongated
-        normalized_ratio = (aspect_ratio - end_aspect_ratio) / (init_aspect_ratio - end_aspect_ratio)
-        normalized_ratio = np.clip(normalized_ratio, 0, 1)
-        
-        drag_coefficient = []
-        for range_val in ranges:
-            drag_coefficient.append(range_val[1] - normalized_ratio * (range_val[1] - range_val[0]))
-    
-        return np.array(drag_coefficient)
+    def _get_drag_coefficient(self, ranges) -> np.ndarray:
+        return geometry.compute_drag_coefficient_jit(
+            self.length, self.width, self.init_length, self.init_width, self.max_contraction, ranges
+        )
     
     def _get_rot_drag_coefficient(self) -> float:
         return self._get_drag_coefficient(self.rot_drag_coefficient_range)
@@ -877,41 +830,18 @@ class Robot:
         return dynamics.compute_asymmetry_torque_jit(self.velocity)
 
     # ==================== Geometry and Body Shape Methods ====================
+
     def get_current_length(self) -> float:
-        """Calculate current body length based on phase.
-        
-        Returns:
-            Current length in meters
-        """
-        if self.state == self.phase[0]:  # inhale
-            if self.cycle_time < self.refill_time:
-                length = self.init_length - self.cycle_time * self._contract_rate
-            else:
-                length = self.init_length - self.contraction
-        elif self.state == self.phase[1]:  # exhale
-            length = self.init_length - self.contraction + (self.cycle_time - max(self.refill_time, self.nozzle.turn_time)) * self._release_rate
-        else:
-            length = self.init_length
+        return geometry.compute_length_jit(
+            self.state.value, self.cycle_time, self.refill_time, self.nozzle.turn_time, 
+            self.init_length, self.contraction, self._contract_rate, self._release_rate
+        )
 
-        return length
-    
     def get_current_width(self) -> float:
-        """Calculate current body width based on phase.
-        
-        Returns:
-            Current width in meters
-        """
-        if self.state == self.phase[0]:  # inhale
-            if self.cycle_time < self.refill_time:
-                width = self.init_width + self.cycle_time * self._contract_rate
-            else:
-                width = self.init_width + self.contraction
-        elif self.state == self.phase[1]:  # exhale
-            width = self.init_width + self.contraction - (self.cycle_time - max(self.refill_time, self.nozzle.turn_time)) * self._release_rate
-        else:
-            width = self.init_width
-
-        return width
+        return geometry.compute_width_jit(
+            self.state.value, self.cycle_time, self.refill_time, self.nozzle.turn_time, 
+            self.init_width, self.contraction, self._contract_rate, self._release_rate
+        )
 
     def _length_width_relation(self, length: float) -> float:
         """Calculate width based on length (volume conservation).
@@ -924,61 +854,22 @@ class Robot:
         """
         return self.init_length - length + self.init_width
 
-    def _get_cross_sectional_area(self) -> float:
-        """Calculate cross-sectional areas in three directions.
-        
-        Returns:
-            List of areas [A_yz, A_xz, A_xy]
-        """
-
-        A_yz = np.pi * (self.width / 2) * (self.width / 2)
-        A_xz = np.pi * (self.length / 2) * (self.width / 2)
-        A_xy = np.pi * (self.length / 2) * (self.width / 2)
-
-        return np.array([A_yz, A_xz, A_xy])
+    def _get_cross_sectional_area(self) -> np.ndarray:
+        return geometry.compute_cross_sectional_area_jit(self.length, self.width)
 
     # ==================== Mass and Volume Methods ====================
     def _get_water_volume(self) -> float:
-        """Calculate water volume inside the robot.
-        
-        Returns:
-            Volume in cubic meters
-        """
-        volume = 4 / 3 * np.pi * (self.length / 2) * (self.width / 2) ** 2
-
-        return volume
+        return geometry.compute_water_volume_jit(self.length, self.width)
 
     def _get_water_mass(self) -> float:
-        """Calculate mass of water inside the robot.
-        
-        Returns:
-            Mass in kg
-        """
-        water_mass = self.density * self._get_water_volume()   
-        return water_mass
+        return geometry.compute_water_mass_jit(self.density, self._get_water_volume())
 
-    def get_mass(self) -> float:
-        """Calculate total mass including water.
-        
-        Returns:
-            Mass matrix (diagonal 3x3)
-        """
+    def get_mass(self) -> np.ndarray:
         self.water_mass = self._get_water_mass()
-        mass = self.dry_mass + self.water_mass + self.nozzle.mass
-        mass = mass * np.diag(np.ones(3))
+        return geometry.compute_mass_matrix_jit(self.dry_mass, self.water_mass, self.nozzle.mass)
 
-        return mass
-
-    def get_mass_rate(self) -> float:
-        """Calculate rate of change of mass.
-        
-        Returns:
-            Mass rate matrix (diagonal 3x3)
-        """
-        mass_rate = (self.water_mass - self.prev_water_mass) / self.dt
-        mass_rate *= np.diag(np.ones(3))
-
-        return mass_rate
+    def get_mass_rate(self) -> np.ndarray:
+        return geometry.compute_mass_rate_jit(self.water_mass, self.prev_water_mass, self.dt)
 
     # ==================== Timing Methods ====================
     def _contract_model(self) -> float:
@@ -1058,7 +949,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle=np.pi/2)
+        robot.nozzle.set_yaw_angle(yaw_angle= 0 )
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.06, coast_time=3, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
