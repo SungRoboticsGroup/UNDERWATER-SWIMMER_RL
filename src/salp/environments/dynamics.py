@@ -3,17 +3,17 @@ import numpy as np
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force):
+def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force, noise_force):
     """Fast compiled computation of Newton's equations."""
-    total_force = jet_force + drag_force + added_mass_force + coriolis_force
+    total_force = jet_force + drag_force + added_mass_force + coriolis_force + noise_force
     # np.linalg.solve is faster and more stable than inv() @ vector
     return np.linalg.solve(mass_matrix, total_force)
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_angular_acceleration_jit(inertia_matrix, jet_torque, drag_torque, coriolis_torque, asymmetry_torque, deform_torque, added_mass_torque):
+def compute_angular_acceleration_jit(inertia_matrix, jet_torque, drag_torque, coriolis_torque, asymmetry_torque, deform_torque, added_mass_torque, noise_torque):
     """Fast compiled computation of Euler's equations."""
-    total_torque = jet_torque + drag_torque + coriolis_torque + asymmetry_torque + deform_torque + added_mass_torque
+    total_torque = jet_torque + drag_torque + coriolis_torque + asymmetry_torque + deform_torque + added_mass_torque + noise_torque
     return np.linalg.solve(inertia_matrix, total_torque)
 
 # checked

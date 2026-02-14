@@ -244,7 +244,7 @@ class Robot:
         self.init_width = init_width
         self.max_contraction = max_contraction
         self.density = 1000  # kg/m^3, density of water
-        self.dt = 0.02  # time step
+        self.dt = 0.01  # time step
         self.nozzle = nozzle
         
         # ==================== Coefficient Parameters ====================
@@ -488,20 +488,14 @@ class Robot:
         
         # Randomize discharge coefficient
         uncertainty = 0.5
-        upper_bound = self.discharge_coefficient_mean * (1 + uncertainty)
-        lower_bound = self.discharge_coefficient_mean * (1 - uncertainty)
-        self.discharge_coefficient = np.clip(np.random.uniform(lower_bound, upper_bound), 0, 1)
+        self.discharge_coefficient = geometry.randomize_scalar_jit(self.discharge_coefficient_mean, uncertainty, 0, 1)
 
         # Randomize drag ratios
         uncertainty = 0.5
-        upper_bound = self.drag_force_ratio_mean * (1 + uncertainty)
-        lower_bound = self.drag_force_ratio_mean * (1 - uncertainty)
-        self.drag_force_ratio = np.random.uniform(lower_bound, upper_bound)
+        self.drag_force_ratio = geometry.randomize_scalar_jit(self.drag_force_ratio_mean, uncertainty)
         
         uncertainty = 0.5
-        upper_bound = self.drag_torque_ratio_mean * (1 + uncertainty)
-        lower_bound = self.drag_torque_ratio_mean * (1 - uncertainty)
-        self.drag_torque_ratio = np.random.uniform(lower_bound, upper_bound)
+        self.drag_torque_ratio = geometry.randomize_scalar_jit(self.drag_torque_ratio_mean, uncertainty)
         
         # Randomize added mass coefficients (force)
         uncertainty = 0.5
@@ -674,6 +668,11 @@ class Robot:
         self.jet_force = self._get_jet_force()
         self.added_mass_force = self._get_added_mass_force()
 
+        if self.disturbances:
+            self.noise_force = np.random.uniform(-0.05, 0.05, size=(3,))
+        else:
+            self.noise_force = np.zeros(3)
+
         self.mass = self.get_mass()
 
         return dynamics.compute_linear_acceleration_jit(
@@ -681,7 +680,8 @@ class Robot:
             self.jet_force, 
             self.drag_force, 
             self.added_mass_force, 
-            self.coriolis_force
+            self.coriolis_force,
+            self.noise_force
         )
 
     def _euler_equations(self) -> np.ndarray:
@@ -693,6 +693,11 @@ class Robot:
         self.deform_torque = self._get_deform_torque()
         self.added_mass_torque = self._get_added_mass_torque()
 
+        if self.disturbances:
+            self.noise_torque = np.random.uniform(-0.05, 0.05, size=(3,))
+        else:
+            self.noise_torque = np.zeros(3)
+
         I = self.get_inertia_matrix()
 
         return dynamics.compute_angular_acceleration_jit(
@@ -702,7 +707,8 @@ class Robot:
             self.coriolis_torque, 
             self.asymmetry_torque, 
             self.deform_torque, 
-            self.added_mass_torque
+            self.added_mass_torque,
+            self.noise_torque
         )
 
     # ==================== Dynamics Update Methods ====================
@@ -959,7 +965,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle= 0 )
+        robot.nozzle.set_yaw_angle(yaw_angle= np.pi/2 )
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.06, coast_time=3, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1048,7 +1054,6 @@ if __name__ == "__main__":
     # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
 
     ## Translational Dynamics
-    # plot_jet_velocity(all_time_data, all_jet_velocity_data, all_state_data)
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
     #                 all_coriolis_force_data, all_added_mass_force_data, all_state_data)
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)

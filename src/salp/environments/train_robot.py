@@ -16,7 +16,7 @@ def make_env():
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.enable_dynamic_randomization()  # enable domain randomization
-    robot.enable_disturbances()
+    # robot.enable_disturbances()
 
     env = SalpRobotEnv(render_mode=None, robot=robot)
     # env.enable_action_randomization()
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     #     device="cuda" 
 
     # )    
-    model = SAC.load("./salp_robot_final_dm_multiple_baselinev6", env=vec_env)   
+    model = SAC.load("./salp_robot_final_dm_multiple_baselinev5", env=vec_env)   
 
 
     # model.learning_rate = 1e-3  # Reset learning rate when loading
@@ -77,6 +77,6 @@ if __name__ == "__main__":
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_final_dm_multiple_baselinev7")
+    model.save("salp_robot_final_dm_multiple_baselinev6")
 
     print("Training finished.")

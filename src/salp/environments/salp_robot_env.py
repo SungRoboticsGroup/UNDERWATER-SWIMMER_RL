@@ -16,6 +16,7 @@ import os
 from datetime import datetime
 from robot import Robot, Nozzle
 import time
+import geometry
 
 
 class SalpRobotEnv(gym.Env):
@@ -164,39 +165,39 @@ class SalpRobotEnv(gym.Env):
     def _randomize_actions(self, action):
             
         uncertainty = 0.1
-        contraction = self._randomize_number(action[0], uncertainty, 0, 1)
+        contraction = geometry.randomize_scalar_jit(action[0], uncertainty, 0, 1)
 
         uncertainty = 0.1
-        coast_time = self._randomize_number(action[1], uncertainty, 0, 20)
+        coast_time = geometry.randomize_scalar_jit(action[1], uncertainty, 0, 20)
 
         uncertainty = 0.1
-        yaw_angle = self._randomize_number(action[2], uncertainty, -np.pi/2, np.pi/2)
+        yaw_angle = geometry.randomize_scalar_jit(action[2], uncertainty, -np.pi/2, np.pi/2)
 
         randomized_action = [contraction, coast_time, yaw_angle]
 
         return randomized_action
 
-    def _randomize_number(self, value, uncertainty=0.1, lower_bound=None, upper_bound=None):
+    # def _randomize_number(self, value, uncertainty=0.1, lower_bound=None, upper_bound=None):
 
-        lower_sample_bound = value * (1 - uncertainty)
-        upper_sample_bound = value * (1 + uncertainty)
+    #     lower_sample_bound = value * (1 - uncertainty)
+    #     upper_sample_bound = value * (1 + uncertainty)
 
-        if lower_bound is None:
-            lower_bound = lower_sample_bound
-        if upper_bound is None:
-            upper_bound = upper_sample_bound
+    #     if lower_bound is None:
+    #         lower_bound = lower_sample_bound
+    #     if upper_bound is None:
+    #         upper_bound = upper_sample_bound
 
-        return np.clip(np.random.uniform(lower_sample_bound, upper_sample_bound), lower_bound, upper_bound)
+    #     return np.clip(np.random.uniform(lower_sample_bound, upper_sample_bound), lower_bound, upper_bound)
 
     def _randomize_observations(self, observation):
 
-        pos_x = self._randomize_number(observation[0], 0.02)
-        pos_y = self._randomize_number(observation[1], 0.02)
-        v_x = self._randomize_number(observation[2], 0.02)
-        v_y = self._randomize_number(observation[3], 0.02)
-        euler_angle = self._randomize_number(observation[4], 0.1)
-        angular_velocity = self._randomize_number(observation[5], 0.02)
-        heading_error = self._randomize_number(observation[6], 0.1)
+        pos_x = geometry.randomize_scalar_jit(observation[0], 0.02)
+        pos_y = geometry.randomize_scalar_jit(observation[1], 0.02)
+        v_x = geometry.randomize_scalar_jit(observation[2], 0.02)
+        v_y = geometry.randomize_scalar_jit(observation[3], 0.02)
+        euler_angle = geometry.randomize_scalar_jit(observation[4], 0.1)
+        angular_velocity = geometry.randomize_scalar_jit(observation[5], 0.02)
+        heading_error = geometry.randomize_scalar_jit(observation[6], 0.1)
 
         randomized_observation = np.array([
             pos_x,
@@ -293,7 +294,7 @@ class SalpRobotEnv(gym.Env):
         # pure drifting from the previous state
         if self.latency:
             latency = 0.05
-            latency = self._randomize_number(latency, 0.5)
+            latency = geometry.randomize_scalar_jit(latency, 0.5)
             # print(f"Applying latency: {latency:.3f} seconds")
             self.robot.set_control(contraction=0, coast_time=latency, nozzle_angles=[self.robot.nozzle.angle1, self.robot.nozzle.angle2])
 
