@@ -1,139 +1,8 @@
 from enum import Enum
 import numpy as np
 import matplotlib.pyplot as plt
-from numba import jit
-
-# ==================== Numba Compiled Physics Engine ====================
-
-@jit(nopython=True, cache=True)
-def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force):
-    """Fast compiled computation of Newton's equations."""
-    total_force = jet_force + drag_force + added_mass_force + coriolis_force
-    # np.linalg.solve is faster and more stable than inv() @ vector
-    return np.linalg.solve(mass_matrix, total_force)
-
-@jit(nopython=True, cache=True)
-def compute_angular_acceleration_jit(inertia_matrix, jet_torque, drag_torque, coriolis_torque, asymmetry_torque, deform_torque, added_mass_torque):
-    """Fast compiled computation of Euler's equations."""
-    total_torque = jet_torque + drag_torque + coriolis_torque + asymmetry_torque + deform_torque + added_mass_torque
-    return np.linalg.solve(inertia_matrix, total_torque)
-
-@jit(nopython=True, cache=True)
-def to_euler_angle_rate_jit(euler_angle, angular_velocity):
-    """Fast compiled conversion to Euler angle rates."""
-    phi, theta, psi = euler_angle
-    
-    # Pre-allocate array for speed
-    T = np.array([
-        [1.0, np.sin(phi) * np.tan(theta), np.cos(phi) * np.tan(theta)],
-        [0.0, np.cos(phi), -np.sin(phi)],
-        [0.0, np.sin(phi) / np.cos(theta), np.cos(phi) / np.cos(theta)]
-    ])
-    return T @ angular_velocity
-
-@jit(nopython=True, cache=True)
-def to_world_frame_jit(euler_angle, vector):
-    """Fast compiled rotation from body frame to world frame."""
-    phi, theta, psi = euler_angle
-    
-    R_x = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, np.cos(phi), -np.sin(phi)],
-        [0.0, np.sin(phi), np.cos(phi)]
-    ])
-    
-    R_y = np.array([
-        [np.cos(theta), 0.0, np.sin(theta)],
-        [0.0, 1.0, 0.0],
-        [-np.sin(theta), 0.0, np.cos(theta)]
-    ])
-    
-    R_z = np.array([
-        [np.cos(psi), -np.sin(psi), 0.0],
-        [np.sin(psi), np.cos(psi), 0.0],
-        [0.0, 0.0, 1.0]
-    ])
-    
-    R = R_z @ R_y @ R_x
-    return R @ vector
-# ==================== Numba Force & Torque Calculations ====================
-
-@jit(nopython=True, cache=True)
-def compute_jet_force_jit(discharge_coeff, mass_rate, jet_velocity):
-    """Fast compiled calculation of jet propulsion force."""
-    # mass_rate is a 3x3 diagonal matrix, jet_velocity is a 1D array (3,)
-    return -discharge_coeff * (mass_rate @ jet_velocity)
-
-@jit(nopython=True, cache=True)
-def compute_jet_torque_jit(moment_arm, jet_force):
-    """Fast compiled calculation of torque from jet force."""
-    return np.cross(moment_arm, jet_force)
-
-@jit(nopython=True, cache=True)
-def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force_ratio):
-    """Fast compiled calculation of translational drag force."""
-    v_norm = np.linalg.norm(velocity)
-    F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
-    F_linear = -0.5 * density * area * trans_drag_coeff * velocity
-    return F_quadratic + drag_force_ratio * F_linear
-
-@jit(nopython=True, cache=True)
-def compute_drag_torque_jit(density, rot_drag_coeff, area, angular_velocity, width, length, drag_torque_ratio):
-    """Fast compiled calculation of rotational drag torque."""
-    w_norm = np.linalg.norm(angular_velocity)
-    # Dimensions array for the quadratic drag term
-    dims = np.array([width**3, length**3, length**3])
-    
-    T_quadratic = -0.5 * density * rot_drag_coeff * area * w_norm * angular_velocity * dims
-    T_linear = -0.5 * density * rot_drag_coeff * area * angular_velocity * width
-    return T_quadratic + drag_torque_ratio * T_linear
-
-@jit(nopython=True, cache=True)
-def compute_added_mass_force_jit(mass, added_mass_coeff, mass_rate, added_mass_rate_coeff, acceleration, angular_velocity, velocity):
-    """Fast compiled calculation of added mass force."""
-    added_mass = mass @ added_mass_coeff
-    added_mass_rate = mass_rate @ added_mass_rate_coeff
-    
-    term1 = added_mass @ acceleration
-    term2 = np.cross(angular_velocity, added_mass @ velocity)
-    term3 = added_mass_rate @ velocity
-    
-    return -(term1 + term2 + term3)
-
-@jit(nopython=True, cache=True)
-def compute_added_mass_torque_jit(I, added_mass_coeff_torque, I_rate, added_mass_rate_coeff_torque, mass, added_mass_coeff_force, angular_acceleration, angular_velocity, velocity):
-    """Fast compiled calculation of added mass torque."""
-    added_mass = I @ added_mass_coeff_torque
-    added_mass_rate = I_rate @ added_mass_rate_coeff_torque
-    added_mass_force_matrix = mass @ added_mass_coeff_force
-    
-    term1 = added_mass @ angular_acceleration
-    term2 = np.cross(angular_velocity, added_mass @ angular_velocity)
-    term3 = added_mass_rate @ angular_acceleration
-    term4 = np.cross(velocity, added_mass_force_matrix @ velocity)
-    
-    return -(term1 + term2 + term3 + term4)
-
-@jit(nopython=True, cache=True)
-def compute_coriolis_force_jit(angular_velocity, mass, velocity):
-    """Fast compiled calculation of Coriolis force."""
-    return -np.cross(angular_velocity, mass @ velocity)
-
-@jit(nopython=True, cache=True)
-def compute_coriolis_torque_jit(angular_velocity, I):
-    """Fast compiled calculation of Coriolis torque."""
-    return -np.cross(angular_velocity, I @ angular_velocity)
-
-@jit(nopython=True, cache=True)
-def compute_deform_torque_jit(I_rate, angular_velocity):
-    """Fast compiled calculation of deformation torque."""
-    return -(I_rate @ angular_velocity)
-
-@jit(nopython=True, cache=True)
-def compute_asymmetry_torque_jit(velocity):
-    """Fast compiled calculation of asymmetry torque."""
-    v_norm = np.linalg.norm(velocity)
-    return np.array([0.0, 0.0, 0.00 * v_norm])
+from sympy import false
+import dynamics
 
 class Nozzle:
     """Represents a steerable nozzle for jet propulsion.
@@ -374,7 +243,7 @@ class Robot:
         self.init_width = init_width
         self.max_contraction = max_contraction
         self.density = 1000  # kg/m^3, density of water
-        self.dt = 0.02  # time step
+        self.dt = 0.01  # time step
         self.nozzle = nozzle
         
         # ==================== Coefficient Parameters ====================
@@ -442,6 +311,7 @@ class Robot:
         self.angular_acceleration = np.zeros(3)
         
         # ==================== History Buffers ====================
+        self.record = False
         self.state_history = []
         self.position_world_history = []
         self.velocity_history = []
@@ -696,6 +566,12 @@ class Robot:
         self.update_properties()
 
     # ==================== History and Cycle Methods ====================
+    def enable_history_recording(self):
+        self.record = True
+
+    def disable_history_recording(self):
+        self.record = False
+
     def _get_state_values(self):
         """Get dictionary of current state values for history tracking.
         
@@ -704,7 +580,7 @@ class Robot:
         """
         return {
             'state_history': self.state,
-            'position_history': self.position_world.copy(),
+            'position_world_history': self.position_world.copy(),
             'velocity_history': self.velocity.copy(),
             'acceleration_history': self.acceleration.copy(),
             'euler_angle_history': self.euler_angle.copy(),
@@ -747,80 +623,42 @@ class Robot:
         """Step through an entire breathing cycle and collect state history."""
         total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time
 
-        # # Initialize history lists with current values
-        # for attr_name, initial_value in self._get_state_values().items():
-        #     setattr(self, attr_name, [initial_value])
+        if self.record:
+            # Initialize history lists with current values
+            for attr_name, initial_value in self._get_state_values().items():
+                setattr(self, attr_name, [initial_value])
 
         while self.cycle_time < total_cycle_time:
             self.step()
+            if not self.record:
+                continue
+            # Append force values to history lists
+            for attr_name, current_value in self._get_force_values().items():
+                getattr(self, attr_name).append(current_value)
+
+            # Append current values to history lists
+            for attr_name, current_value in self._get_state_values().items():
+                getattr(self, attr_name).append(current_value)
+
+        # # Convert histories to numpy arrays
+        if self.record:
+            history_names = self._get_state_values().keys()
+            for attr_name in history_names:
+                setattr(self, attr_name, np.array(getattr(self, attr_name)))
             
-        #     # Append force values to history lists
-        #     for attr_name, current_value in self._get_force_values().items():
-        #         getattr(self, attr_name).append(current_value)
+            history_names = self._get_force_values().keys()
+            for attr_name in history_names:
+                setattr(self, attr_name, np.array(getattr(self, attr_name)))
 
-        #     # Append current values to history lists
-        #     for attr_name, current_value in self._get_state_values().items():
-        #         getattr(self, attr_name).append(current_value)
-
-        # # # Convert histories to numpy arrays
-        # history_names = self._get_state_values().keys()
-        # for attr_name in history_names:
-        #     setattr(self, attr_name, np.array(getattr(self, attr_name)))
-        
-        # history_names = self._get_force_values().keys()
-        # for attr_name in history_names:
-        #     setattr(self, attr_name, np.array(getattr(self, attr_name)))
-
-    # ==================== Coordinate Transformations ====================
-    # def _to_euler_angle_rate(self) -> np.ndarray:
-    #     """Convert angular velocity to Euler angle rates.
-        
-    #     Returns:
-    #         Euler angle rate vector
-    #     """
-    #     phi, theta, psi = self.euler_angle
-
-    #     T = np.array([[1, np.sin(phi) * np.tan(theta), np.cos(phi) * np.tan(theta)],
-    #                   [0, np.cos(phi), -np.sin(phi)],
-    #                   [0, np.sin(phi) / np.cos(theta), np.cos(phi) / np.cos(theta)]])
-
-    #     return T @ self.angular_velocity
-
-    # def _to_world_frame(self, vector: np.ndarray) -> np.ndarray:
-    #     """Convert a vector from body frame to world frame.
-        
-    #     Args:
-    #         vector: 3D vector in body frame
-            
-    #     Returns:
-    #         3D vector in world frame
-    #     """
-    #     phi, theta, psi = self.euler_angle
-
-    #     R_x = np.array([[1, 0, 0],
-    #                     [0, np.cos(phi), -np.sin(phi)],
-    #                     [0, np.sin(phi), np.cos(phi)]])
-        
-    #     R_y = np.array([[np.cos(theta), 0, np.sin(theta)],
-    #                     [0, 1, 0],
-    #                     [-np.sin(theta), 0, np.cos(theta)]])
-        
-    #     R_z = np.array([[np.cos(psi), -np.sin(psi), 0],
-    #                     [np.sin(psi), np.cos(psi), 0],
-    #                     [0, 0, 1]])
-        
-    #     R = R_z @ R_y @ R_x
-
-    #     return R @ vector
     # ==================== Coordinate Transformations ====================
     def _to_euler_angle_rate(self) -> np.ndarray:
         """Convert angular velocity to Euler angle rates using Numba."""
-        return to_euler_angle_rate_jit(self.euler_angle, self.angular_velocity)
+        return dynamics.to_euler_angle_rate_jit(self.euler_angle, self.angular_velocity)
 
     def _to_world_frame(self, vector: np.ndarray) -> np.ndarray:
         """Convert a vector from body frame to world frame using Numba."""
-        return to_world_frame_jit(self.euler_angle, vector)
-
+        return dynamics.to_world_frame_jit(self.euler_angle, vector)
+    
     # ==================== Dynamics Update Methods ====================
     def _newton_equations(self) -> np.ndarray:
         """Compute translational accelerations using Numba."""
@@ -830,7 +668,7 @@ class Robot:
         self.added_mass_force = self._get_added_mass_force()
         self.mass = self.get_mass()
 
-        return compute_linear_acceleration_jit(
+        return dynamics.compute_linear_acceleration_jit(
             self.mass, 
             self.jet_force, 
             self.drag_force, 
@@ -848,7 +686,7 @@ class Robot:
         self.added_mass_torque = self._get_added_mass_torque()
         I = self.get_inertia_matrix()
 
-        return compute_angular_acceleration_jit(
+        return dynamics.compute_angular_acceleration_jit(
             I, 
             self.jet_torque, 
             self.drag_torque, 
@@ -864,38 +702,6 @@ class Robot:
         self.acceleration = self._newton_equations()
         self.angular_acceleration = self._euler_equations()
         self._update_motion_states()
-
-    # def _newton_equations(self) -> np.ndarray:
-    #     """Compute translational accelerations using Newton's equations.
-        
-    #     Returns:
-    #         3D acceleration vector
-    #     """
-    #     self.coriolis_force = self._get_coriolis_force()
-    #     self.drag_force = self._get_drag_force()
-    #     self.jet_force = self._get_jet_force()
-    #     self.added_mass_force = self._get_added_mass_force()
-
-    #     self.mass = self.get_mass()
-
-    #     return np.linalg.inv(self.mass) @ (self.jet_force + self.drag_force + self.added_mass_force + self.coriolis_force)
-
-    # def _euler_equations(self) -> np.ndarray:
-    #     """Compute angular accelerations using Euler's equations.
-        
-    #     Returns:
-    #         3D angular acceleration vector
-    #     """
-    #     self.asymmetry_torque = self._asymmetry_torque_model()
-    #     self.coriolis_torque = self._get_coriolis_torque()
-    #     self.drag_torque = self._get_drag_torque()
-    #     self.jet_torque = self._get_jet_torque()
-    #     self.deform_torque = self._get_deform_torque()
-    #     self.added_mass_torque = self._get_added_mass_torque()
-
-    #     I = self.get_inertia_matrix()
-
-    #     return np.linalg.inv(I) @ (self.jet_torque + self.drag_torque + self.coriolis_torque + self.asymmetry_torque + self.deform_torque + self.added_mass_torque)
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -951,37 +757,18 @@ class Robot:
         r_robot = np.array([-self.length / 2, 0.0, 0.0])
         return r_nozzle + r_robot
     
-    # def _get_jet_torque(self) -> np.ndarray:
-    #     """Calculate torque from jet force.
-        
-    #     Returns:
-    #         3D torque vector
-    #     """
-    #     return np.cross(self._get_jet_moment_arm(), self.jet_force)
-    
-    # def _get_jet_force(self) -> np.ndarray:
-    #     """Calculate jet propulsion force.
-        
-    #     Returns:
-    #         3D force vector
-    #     """
-    #     self.jet_velocity = self._get_jet_velocity()
-
-    #     if self.state != self.phase[1]:  # only produce jet force during release phase
-    #         return np.zeros(3)
-    
-    #     mass_rate = self.get_mass_rate()
-
-    #     return -self.discharge_coefficient * mass_rate @ self.jet_velocity
     def _get_jet_torque(self) -> np.ndarray:
-        return compute_jet_torque_jit(self._get_jet_moment_arm(), self.jet_force)
+        return dynamics.compute_jet_torque_jit(self._get_jet_moment_arm(), self.jet_force)
     
     def _get_jet_force(self) -> np.ndarray:
+
         self.jet_velocity = self._get_jet_velocity()
         if self.state != self.phase[1]:  # only produce jet force during release phase
             return np.zeros(3)
+        
+        mass_rate = self.get_mass_rate()
             
-        return compute_jet_force_jit(self.discharge_coefficient, self.get_mass_rate(), self.jet_velocity)
+        return dynamics.compute_jet_force_jit(self.discharge_coefficient, mass_rate, self.jet_velocity)
     
     def _get_jet_velocity(self) -> np.ndarray:
         """Calculate jet velocity vector.
@@ -1030,32 +817,8 @@ class Robot:
     def _get_trans_drag_coefficient(self) -> float:
         return self._get_drag_coefficient(self.trans_drag_coefficient_range)
 
-    # def _get_drag_torque(self) -> np.ndarray:
-    #     """Calculate drag torque on the robot.
-        
-    #     Returns:
-    #         3D torque vector
-    #     """
-        
-    #     T_quadratic = -0.5 * self.density * self.rot_drag_coefficient * self.area * \
-    #         np.linalg.norm(self.angular_velocity) * self.angular_velocity * np.array([self.width ** 3, self.length ** 3, self.length ** 3])
-        
-    #     T_linear = -0.5 * self.density * self.rot_drag_coefficient * self.area * self.angular_velocity * self.width 
-            
-    #     return T_quadratic + self.drag_torque_ratio * T_linear
-    
-    # def _get_drag_force(self) -> np.ndarray:
-    #     """Calculate drag force on the robot.
-        
-    #     Returns:
-    #         3D force vector
-    #     """
-    #     F_quadratic = -0.5 * self.density * self.area * self.trans_drag_coefficient * np.linalg.norm(self.velocity) * self.velocity
-    #     F_linear = -0.5 * self.density * self.area * self.trans_drag_coefficient * self.velocity
-
-    #     return F_quadratic + self.drag_force_ratio * F_linear
     def _get_drag_torque(self) -> np.ndarray:
-        return compute_drag_torque_jit(
+        return dynamics.compute_drag_torque_jit(
             self.density, 
             self.rot_drag_coefficient, 
             self.area, 
@@ -1066,7 +829,7 @@ class Robot:
         )
     
     def _get_drag_force(self) -> np.ndarray:
-        return compute_drag_force_jit(
+        return dynamics.compute_drag_force_jit(
             self.density, 
             self.area, 
             self.trans_drag_coefficient, 
@@ -1075,76 +838,8 @@ class Robot:
         )
 
     # # ==================== Added Mass Methods ====================
-    # def _get_added_mass_force(self) -> float:
-    #     """Calculate added mass from surrounding fluid.
-        
-    #     Returns:
-    #         Added mass force vector
-    #     """
-    #     added_mass = self.mass @ self.added_mass_coefficient_force
-    #     added_mass_rate = self.mass_rate @ self.added_mass_rate_coefficient_force
-    #     added_mass_force = added_mass @ self.acceleration + \
-    #                        np.cross(self.angular_velocity, added_mass @ self.velocity) + \
-    #                        added_mass_rate @ self.velocity
-        
-    #     return -added_mass_force
-    #     # return np.zeros(3)
-    
-    # def _get_added_mass_torque(self) -> np.ndarray:
-    #     """Calculate added mass torque on the robot.
-        
-    #     Returns:
-    #         3D torque vector
-    #     """
-    #     I = self.get_inertia_matrix()
-    #     I_rate = self.get_inertia_matrix_rate()
-    #     mass = self.get_mass()
-
-    #     added_mass = I @ self.added_mass_coefficient_torque
-    #     added_mass_rate = I_rate @ self.added_mass_rate_coefficient_torque
-    #     added_mass_force = mass @ self.added_mass_coefficient_force
-    #     added_mass_torque = added_mass @ self.angular_acceleration + \
-    #                         np.cross(self.angular_velocity, added_mass @ self.angular_velocity) + \
-    #                         added_mass_rate @ self.angular_acceleration + \
-    #                         np.cross(self.velocity, added_mass_force @ self.velocity)
-
-    #     return -added_mass_torque
-
-    # # ==================== Coriolis Force and Torque Methods ====================
-    # def _get_coriolis_force(self) -> np.ndarray:
-    #     """Calculate Coriolis force.
-        
-    #     Returns:
-    #         3D force vector
-    #     """
-    #     return -np.cross(self.angular_velocity, self.get_mass() @ self.velocity)
-
-    # def _get_coriolis_torque(self) -> np.ndarray:
-    #     """Calculate Coriolis torque.
-        
-    #     Returns:
-    #         3D torque vector
-    #     """
-    #     return -np.cross(self.angular_velocity, self.get_inertia_matrix() @ self.angular_velocity)
-
-    # # ==================== Deformation Methods ====================
-    # def _get_deform_torque(self) -> np.ndarray:
-    #     """Calculate torque due to deformation of the robot.
-        
-    #     Returns:
-    #         3D torque vector
-    #     """
-    #     return -self.get_inertia_matrix_rate() @ self.angular_velocity
-
-    # def _asymmetry_torque_model(self) -> np.ndarray:
-    #     """Calculate asymmetry torque based on current velocity.
-        
-    #     Returns:
-    #         3D torque vector
-    #     """
-    #     return np.array([0.0, 0.0, 0.00 * np.linalg.norm(self.velocity)])
     def _get_added_mass_force(self) -> np.ndarray:
-        return compute_added_mass_force_jit(
+        return dynamics.compute_added_mass_force_jit(
             self.mass, 
             self.added_mass_coefficient_force, 
             self.mass_rate, 
@@ -1155,7 +850,7 @@ class Robot:
         )
     
     def _get_added_mass_torque(self) -> np.ndarray:
-        return compute_added_mass_torque_jit(
+        return dynamics.compute_added_mass_torque_jit(
             self.get_inertia_matrix(), 
             self.added_mass_coefficient_torque, 
             self.get_inertia_matrix_rate(), 
@@ -1169,17 +864,17 @@ class Robot:
 
     # ==================== Coriolis Force and Torque Methods ====================
     def _get_coriolis_force(self) -> np.ndarray:
-        return compute_coriolis_force_jit(self.angular_velocity, self.get_mass(), self.velocity)
+        return dynamics.compute_coriolis_force_jit(self.angular_velocity, self.get_mass(), self.velocity)
 
     def _get_coriolis_torque(self) -> np.ndarray:
-        return compute_coriolis_torque_jit(self.angular_velocity, self.get_inertia_matrix())
+        return dynamics.compute_coriolis_torque_jit(self.angular_velocity, self.get_inertia_matrix())
 
     # ==================== Deformation Methods ====================
     def _get_deform_torque(self) -> np.ndarray:
-        return compute_deform_torque_jit(self.get_inertia_matrix_rate(), self.angular_velocity)
-
+        return dynamics.compute_deform_torque_jit(self.get_inertia_matrix_rate(), self.angular_velocity)
+    
     def _asymmetry_torque_model(self) -> np.ndarray:
-        return compute_asymmetry_torque_jit(self.velocity)
+        return dynamics.compute_asymmetry_torque_jit(self.velocity)
 
     # ==================== Geometry and Body Shape Methods ====================
     def get_current_length(self) -> float:
@@ -1323,12 +1018,13 @@ if __name__ == "__main__":
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
-    robot.enable_domain_randomization()
+    # robot.enable_domain_randomization()
     robot.set_environment(density=1000)
+    robot.enable_history_recording()
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 8
+    n_cycles = 1
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1362,7 +1058,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle= np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle=np.pi/2)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.06, coast_time=3, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1385,7 +1081,7 @@ if __name__ == "__main__":
         # Accumulate data from each cycle
         all_time_data.extend(time_array)
         all_state_data.extend(robot.state_history[0:-1])
-        all_position_data.extend(robot.position_history[0:-1])
+        all_position_data.extend(robot.position_world_history[0:-1])
         all_velocity_data.extend(robot.velocity_history[0:-1])
         all_acceleration_data.extend(robot.acceleration_history[0:-1])
         all_euler_angle_data.extend(robot.euler_angle_history[0:-1])
@@ -1458,11 +1154,10 @@ if __name__ == "__main__":
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
-
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
+
     # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
-    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
@@ -1478,7 +1173,7 @@ if __name__ == "__main__":
     # plot_asymmetry_torque(all_time_data, all_asymmetry_torque_data, all_state_data)
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
-    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
 
     plt.show(block=True)
     
