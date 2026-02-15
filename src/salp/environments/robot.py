@@ -471,6 +471,17 @@ class Robot:
             self.added_mass_coefficient_torque = self.added_mass_coefficient_torque_mean
             self.added_mass_rate_coefficient_torque = self.added_mass_rate_coefficient_torque_mean
 
+        
+        if self.disturbances:
+            self.noise_force = np.random.uniform(-0.04, 0.04, size=(3,))
+        else:
+            self.noise_force = np.zeros(3)
+
+        if self.disturbances:
+            self.noise_torque = np.random.uniform(-0.01, 0.01, size=(3,))
+        else:
+            self.noise_torque = np.zeros(3)
+
         self.clear_history()
         self.contraction = contraction
         self.coast_time = coast_time
@@ -668,11 +679,6 @@ class Robot:
         self.jet_force = self._get_jet_force()
         self.added_mass_force = self._get_added_mass_force()
 
-        if self.disturbances:
-            self.noise_force = np.random.uniform(-0.05, 0.05, size=(3,))
-        else:
-            self.noise_force = np.zeros(3)
-
         self.mass = self.get_mass()
 
         return dynamics.compute_linear_acceleration_jit(
@@ -692,11 +698,6 @@ class Robot:
         self.jet_torque = self._get_jet_torque()
         self.deform_torque = self._get_deform_torque()
         self.added_mass_torque = self._get_added_mass_torque()
-
-        if self.disturbances:
-            self.noise_torque = np.random.uniform(-0.05, 0.05, size=(3,))
-        else:
-            self.noise_torque = np.zeros(3)
 
         I = self.get_inertia_matrix()
 
@@ -1071,7 +1072,7 @@ if __name__ == "__main__":
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
     # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
-    # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
+    plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
     # plot_coriolis_torque(all_time_data, all_coriolis_torque_data, all_state_data)
     # plot_deform_torque(all_time_data, all_deform_torque_data, all_state_data)

@@ -229,7 +229,7 @@ class SalpRobotEnv(gym.Env):
         if self.render_mode == "human":
             try:
                 # convert to Python lists for easier use in render
-                self.cycle_positions = [np.array(p) for p in self.robot.position_history]
+                self.cycle_positions = [np.array(p) for p in self.robot.position_world_history]
                 self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
                 self.cycle_lengths = [float(l) for l in self.robot.length_history]
                 self.cycle_widths = [float(w) for w in self.robot.width_history]
@@ -307,7 +307,7 @@ class SalpRobotEnv(gym.Env):
         current_dist = np.linalg.norm(current_diff)
         dist_improvement = - current_dist + self.prev_dist   # Negative distance as improvement
         # print(f"Distance to target: {current_dist:.3f} m, Improvement: {dist_improvement:.3f} m")
-        r_track = dist_improvement * 50
+        r_track = dist_improvement * 100
         self.prev_dist = current_dist
         # print(r_track)
         
@@ -334,7 +334,7 @@ class SalpRobotEnv(gym.Env):
         r_cross_track = 0.0
 
         on_track_weight = np.clip(1.0 - (cross_track_error / 0.3), 0.0, 1.0)  # full reward within 0.3m, none beyond that
-        r_heading = 50 * np.dot(self.robot.velocity_world[0:-1], diff_dir) * on_track_weight
+        r_heading = 50 * np.dot(self.robot.velocity_world[0:-1], path_dir) * on_track_weight
         # print(r_heading)
         
         # 3. Energy (Thrust + Coasting) I don't care about this for now
@@ -347,7 +347,7 @@ class SalpRobotEnv(gym.Env):
         # 4. Smoothness (Action Jerk)
         # Only penalize the nozzle angle change, not the thrust change
         angle_change = abs(nozzle_yaw - self.prev_action[2])
-        r_smooth = - 10.0 * (angle_change ** 2)
+        r_smooth = - 5.0 * (angle_change ** 2)
         # print(r_smooth)
 
         # 5. yaw Stability (Penalize large yaw changes)
@@ -357,7 +357,7 @@ class SalpRobotEnv(gym.Env):
         r_time = -0.1  # small penalty to encourage faster completion
         
         # 8. penalize on large nozzle angle
-        r_nozzle = -10.0 * (abs(nozzle_yaw) ** 2)
+        r_nozzle = 0
 
         # Total
         # Note: Weights are critical. Tracking is usually the most important.
@@ -1517,11 +1517,11 @@ if __name__ == "__main__":
                   max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
-
+    robot.enable_history_recording()
     robot.enable_dynamic_randomization()
     robot.enable_disturbances()
-    # env = SalpRobotEnv(render_mode="human", robot=robot)
-    env = SalpRobotEnv(render_mode=None, robot=robot)
+    env = SalpRobotEnv(render_mode="human", robot=robot)
+    # env = SalpRobotEnv(render_mode=None, robot=robot)
     env.enable_action_randomization()
     env.enable_observation_randomization()
     env.enable_latency()
@@ -1547,7 +1547,7 @@ if __name__ == "__main__":
         # print(reward)
         cnt += 1
         # Wait for the animation to complete before next step
-        # env.wait_for_animation()
+        env.wait_for_animation()
         # env.render()
     # gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()

@@ -451,6 +451,9 @@ if __name__ == "__main__":
     robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
                       max_contraction=0.06, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot.enable_history_recording()
+
+    robot.set_environment(density=1000)
     env = SalpRobotEnv(render_mode="human", robot=robot)
     
     # Load the trained model
