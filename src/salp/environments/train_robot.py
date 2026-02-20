@@ -1,6 +1,6 @@
 from stable_baselines3 import SAC
 from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecFrameStack
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.type_aliases import TrainFreq, TrainFrequencyUnit
@@ -20,8 +20,8 @@ def make_env():
 
     env = SalpRobotEnv(render_mode=None, robot=robot)
     # env.enable_action_randomization()
-    # env.enable_latency()
-    # env.enable_observation_randomization()
+    env.enable_latency()
+    env.enable_observation_randomization()
 
     return env
 
@@ -29,6 +29,7 @@ if __name__ == "__main__":
 
     num_cpu = 8
     vec_env = make_vec_env(make_env, n_envs=num_cpu, vec_env_cls=SubprocVecEnv)
+    # vec_env = VecFrameStack(vec_env, n_stack=4)  # Stack 4 frames for better temporal understanding
 
     # 2. Sanity Check (CRITICAL)
     # This checks if your observation/action spaces match what the step() function returns.
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     #     device="cuda" 
 
     # )    
-    model = SAC.load("./salp_robot_final_dm_multiple_baselinev6", env=vec_env)   
+    model = SAC.load("./logs/salp_robot_dm_robot_200000_steps", env=vec_env)   
 
 
     # model.learning_rate = 1e-3  # Reset learning rate when loading
@@ -64,7 +65,7 @@ if __name__ == "__main__":
     checkpoint_callback = CheckpointCallback(
         save_freq= 25000,
         save_path='./logs/',
-        name_prefix='salp_robot_dm_robot'
+        name_prefix='salp_robot_full_model_erro'
     )
     
     # 5. Train
@@ -73,10 +74,9 @@ if __name__ == "__main__":
         total_timesteps=1000000, # Run for 1M steps
         callback=checkpoint_callback,
         reset_num_timesteps=True,
-        tb_log_name="salp_robot_run_dm_robot"
+        tb_log_name="salp_robot_run_full_model_erro"
     )
 
     # 6. Save Final Model
-    model.save("salp_robot_final_dm_multiple_baselinev7")
-
+    model.save("salp_robot_final_full_model_erro")
     print("Training finished.")

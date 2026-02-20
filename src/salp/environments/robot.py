@@ -209,6 +209,40 @@ class Nozzle:
         self.R_nm = R_theta_fixed @ R_nozzle
         self.R_mb = R_middle
         self.R_br = R_base
+
+class OUDisturbance:
+    """
+    Ornstein-Uhlenbeck process for generating temporally correlated physical disturbances.
+    Uses the Euler-Maruyama method for accurate time-step integration.
+    """
+    def __init__(self, size=3, mu=0.0, theta=2.0, sigma=0.1, dt=0.01):
+        """
+        Args:
+            size: Dimension of the vector (3 for 3D force/torque).
+            mu: The mean value the noise returns to (0.0 for calm water).
+            theta: The stiffness/pull-back force (higher = snaps back to mu faster).
+            sigma: The volatility/randomness (higher = larger maximum disturbances).
+            dt: The physics time step of your simulation.
+        """
+        self.size = size
+        self.mu = np.full(size, mu)
+        self.theta = theta
+        self.sigma = sigma
+        self.dt = dt
+        self.state = np.copy(self.mu)
+
+    def reset(self):
+        """Resets the disturbance back to the calm equilibrium state."""
+        self.state = np.copy(self.mu)
+
+    def sample(self) -> np.ndarray:
+        """Calculates and returns the disturbance vector for the current time step."""
+        # dx = theta * (mu - x) * dt + sigma * sqrt(dt) * random_noise
+        dx = self.theta * (self.mu - self.state) * self.dt + \
+             self.sigma * np.sqrt(self.dt) * np.random.randn(self.size)
+        
+        self.state = self.state + dx
+        return self.state
         
          
 class Robot:
@@ -238,6 +272,13 @@ class Robot:
             max_contraction: Maximum contraction distance (m)
             nozzle: Nozzle object for jet propulsion
         """
+
+        # noise
+        self.force_disturbance = OUDisturbance(size=3, mu=0.0, theta=2.0, sigma=0.05, dt=0.01)
+        self.torque_disturbance = OUDisturbance(size=3, mu=0.0, theta=2.0, sigma=0.01, dt=0.01)
+        self.force_noise = np.zeros(3)
+        self.torque_noise = np.zeros(3)
+
         # ==================== Physical Parameters ====================
         self.dry_mass = dry_mass
         self.init_length = init_length
@@ -300,6 +341,8 @@ class Robot:
         self.deform_torque = np.zeros(3)
         self.trans_drag_coefficient = self._get_trans_drag_coefficient()
         self.rot_drag_coefficient = self._get_rot_drag_coefficient()
+
+
         
         # ==================== State Variables ====================
         self.position_world = np.zeros(3)
@@ -384,6 +427,12 @@ class Robot:
 
     # ==================== Reset and Initialization ====================
     def reset(self):
+
+        self.force_disturbance.reset()
+        self.torque_disturbance.reset()
+        self.force_noise = np.zeros(3)
+        self.torque_noise = np.zeros(3)
+
         """Reset the robot to initial state."""
         self.time = 0.0
         self.cycle_time = 0.0
@@ -470,17 +519,20 @@ class Robot:
             self.added_mass_rate_coefficient_force = self.added_mass_rate_coefficient_force_mean
             self.added_mass_coefficient_torque = self.added_mass_coefficient_torque_mean
             self.added_mass_rate_coefficient_torque = self.added_mass_rate_coefficient_torque_mean
-
         
-        if self.disturbances:
-            self.noise_force = np.random.uniform(-0.04, 0.04, size=(3,))
-        else:
-            self.noise_force = np.zeros(3)
-
-        if self.disturbances:
-            self.noise_torque = np.random.uniform(-0.01, 0.01, size=(3,))
-        else:
-            self.noise_torque = np.zeros(3)
+        # if self.disturbances: 
+        #     if self.cycle % 10 == 0:  # inject disturbances every 50 cycles
+        #         self.force_noise = np.random.uniform(-0.04, 0.04, size=3)
+        #         self.torque_noise = np.random.uniform(-0.01, 0.01, size=3)
+        #         self.force_noise[-1] = 0  # no vertical force disturbance
+        #         self.torque_noise[0:2] = 0  # no roll disturbance
+        #         # print(f"Cycle {self.cycle}: Injecting disturbances - Force Noise: {self.force_noise}, Torque Noise: {self.torque_noise}")
+        #     else:
+        #         self.force_noise = np.zeros(3)
+        #         self.torque_noise = np.zeros(3)
+        # else:
+        #     self.force_noise = np.zeros(3)
+        #     self.torque_noise = np.zeros(3)
 
         self.clear_history()
         self.contraction = contraction
@@ -489,6 +541,7 @@ class Robot:
 
         # Proceed to next cycle
         self.cycle += 1
+        # print(f"cycle number: {self.cycle}")
         self.cycle_time = 0.0
 
         self.refill_time = self._contract_model()
@@ -679,6 +732,12 @@ class Robot:
         self.jet_force = self._get_jet_force()
         self.added_mass_force = self._get_added_mass_force()
 
+        if self.disturbances:
+            self.force_noise = self.force_disturbance.sample()
+            self.force_noise[-1] = 0  # no vertical force disturbance
+        else:
+            self.force_noise = np.zeros(3)
+
         self.mass = self.get_mass()
 
         return dynamics.compute_linear_acceleration_jit(
@@ -687,7 +746,7 @@ class Robot:
             self.drag_force, 
             self.added_mass_force, 
             self.coriolis_force,
-            self.noise_force
+            self.force_noise
         )
 
     def _euler_equations(self) -> np.ndarray:
@@ -699,6 +758,12 @@ class Robot:
         self.deform_torque = self._get_deform_torque()
         self.added_mass_torque = self._get_added_mass_torque()
 
+        if self.disturbances:
+            self.torque_noise = self.torque_disturbance.sample()
+            self.torque_noise[0:2] = 0  # no roll disturbance
+        else:
+            self.torque_noise = np.zeros(3)
+
         I = self.get_inertia_matrix()
 
         return dynamics.compute_angular_acceleration_jit(
@@ -709,7 +774,7 @@ class Robot:
             self.asymmetry_torque, 
             self.deform_torque, 
             self.added_mass_torque,
-            self.noise_torque
+            self.torque_noise
         )
 
     # ==================== Dynamics Update Methods ====================

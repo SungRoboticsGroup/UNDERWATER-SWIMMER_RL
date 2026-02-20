@@ -191,12 +191,12 @@ class SalpRobotEnv(gym.Env):
 
     def _randomize_observations(self, observation):
 
-        pos_x = geometry.randomize_scalar_jit(observation[0], 0.02)
-        pos_y = geometry.randomize_scalar_jit(observation[1], 0.02)
-        v_x = geometry.randomize_scalar_jit(observation[2], 0.02)
-        v_y = geometry.randomize_scalar_jit(observation[3], 0.02)
+        pos_x = geometry.randomize_scalar_jit(observation[0], 0.05)
+        pos_y = geometry.randomize_scalar_jit(observation[1], 0.05)
+        v_x = geometry.randomize_scalar_jit(observation[2], 0.2)
+        v_y = geometry.randomize_scalar_jit(observation[3], 0.2)
         euler_angle = geometry.randomize_scalar_jit(observation[4], 0.1)
-        angular_velocity = geometry.randomize_scalar_jit(observation[5], 0.02)
+        angular_velocity = geometry.randomize_scalar_jit(observation[5], 0.2)
         heading_error = geometry.randomize_scalar_jit(observation[6], 0.1)
 
         randomized_observation = np.array([
@@ -294,7 +294,7 @@ class SalpRobotEnv(gym.Env):
         # pure drifting from the previous state
         if self.latency:
             latency = 0.05
-            latency = geometry.randomize_scalar_jit(latency, 0.5)
+            latency = geometry.randomize_scalar_jit(latency, 1.0)
             # print(f"Applying latency: {latency:.3f} seconds")
             self.robot.set_control(contraction=0, coast_time=latency, nozzle_angles=[self.robot.nozzle.angle1, self.robot.nozzle.angle2])
 
@@ -1518,13 +1518,13 @@ if __name__ == "__main__":
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.enable_history_recording()
-    robot.enable_dynamic_randomization()
+    # robot.enable_dynamic_randomization()
     robot.enable_disturbances()
     env = SalpRobotEnv(render_mode="human", robot=robot)
     # env = SalpRobotEnv(render_mode=None, robot=robot)
-    env.enable_action_randomization()
-    env.enable_observation_randomization()
-    env.enable_latency()
+    # env.enable_action_randomization()
+    # env.enable_observation_randomization()
+    # env.enable_latency()
     
 
     obs, info = env.reset()
@@ -1536,18 +1536,19 @@ if __name__ == "__main__":
     while not done:
 
         start_time = time.perf_counter()
-        action = [1, 0.3, 1]  # inhale with no nozzle steering
+        action = [0, 1, 0]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
         end_time = time.perf_counter()
-        print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
+        # print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
         # print(env.target_point, env.prev_target_point)
         # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
         # print(reward)
         cnt += 1
         # Wait for the animation to complete before next step
         env.wait_for_animation()
+        print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
         # env.render()
     # gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()
