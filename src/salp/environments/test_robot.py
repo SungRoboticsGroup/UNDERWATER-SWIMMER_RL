@@ -579,7 +579,7 @@ if __name__ == "__main__":
     # env.norm_reward = False
     
     # Load the trained model
-    model = SAC.load("./logs/salp_robot_reward_shaping_2reward2_100000_steps", env=env)   
+    model = SAC.load("./logs/salp_robot_body_frame_sideslip_100000_steps", env=env)   
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])

@@ -337,7 +337,7 @@ class SalpRobotEnv(gym.Env):
 
         # on_track_weight = np.clip(1.0 - (cross_track_error / 0.3), 0.0, 1.0)  # full reward within 0.3m, none beyond that
         current_diff = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
-        r_heading = -10 * abs(np.arctan2(-current_diff[1], -current_diff[0]))  # Reward forward velocity towards target
+        r_heading = -0.5 * abs(np.arctan2(-current_diff[1], -current_diff[0]))  # Reward forward velocity towards target
         # r_heading = 0.0
         # print(r_heading)
         # instead of pointing the velocity towards the target, we can reward pointing the nose of the robot 
@@ -356,7 +356,7 @@ class SalpRobotEnv(gym.Env):
         # 4. Smoothness (Action Jerk)
         # Only penalize the nozzle angle change, not the thrust change
         angle_change = nozzle_yaw - self.prev_action[2]
-        r_smooth = - 2.0 * (angle_change ** 2)
+        r_smooth = - 1.0 * (angle_change ** 2)
         # r_smooth = 0.0
         # print(r_smooth)
 
@@ -376,8 +376,8 @@ class SalpRobotEnv(gym.Env):
         # self.robot.velocity[1] is the local sideways velocity (body frame)
         # this end of cylce velocity so penalty is not high
         sideways_velocity = abs(self.robot.avg_cycle_velocity[1])
-        # r_sideslip = -10.0 * (sideways_velocity)
-        r_sideslip = 0.0
+        r_sideslip = -100.0 * (sideways_velocity)
+        # r_sideslip = 0.0
         # print(f"Sideslip velocity: {sideways_velocity:.3f}, Sideslip reward: {r_sideslip:.3f}")
 
         # --- 10. Body Orientation Alignment ---

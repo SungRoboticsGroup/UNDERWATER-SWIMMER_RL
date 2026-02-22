@@ -133,23 +133,23 @@ if __name__ == "__main__":
     print("Environment is valid!")
 
     # 3. Define the model (SAC)
-    model = SAC(
-        "MlpPolicy",           # Use standard Dense Neural Network
-        vec_env,
-        verbose=1,
-        tensorboard_log="./sac_salp_robot_tensorboard/",
+    # model = SAC(
+    #     "MlpPolicy",           # Use standard Dense Neural Network
+    #     vec_env,
+    #     verbose=1,
+    #     tensorboard_log="./sac_salp_robot_tensorboard/",
         
-        # --- Tuning for Robotics ---
-        learning_rate=3e-4,
-        buffer_size=100000,    # Big memory for off-policy
-        batch_size=512,        # Mini-batch size
-        ent_coef='auto',       # Automatically adjust exploration (Temperature)
-        gamma=0.99,            # Discount factor
-        tau=0.005,             # Polyak averaging (Soft update)
-        device="cuda" 
+    #     # --- Tuning for Robotics ---
+    #     learning_rate=3e-4,
+    #     buffer_size=100000,    # Big memory for off-policy
+    #     batch_size=512,        # Mini-batch size
+    #     ent_coef='auto',       # Automatically adjust exploration (Temperature)
+    #     gamma=0.99,            # Discount factor
+    #     tau=0.005,             # Polyak averaging (Soft update)
+    #     device="cuda" 
 
-    )    
-    # model = SAC.load("./logs/salp_robot_reward_shaping_1reward_100000_steps", env=vec_env)   
+    # )    
+    model = SAC.load("./logs/salp_robot_body_frame_1400000_steps", env=vec_env)   
 
 
     # model.learning_rate = 1e-3  # Reset learning rate when loading
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     # 4. Setup Saving (Checkpoints)
     save_freq = 12500
     save_dir = './logs/'
-    prefix = 'salp_robot_body_frame'
+    prefix = 'salp_robot_body_frame_sideslip'
 
     checkpoint_callback = CheckpointCallback(
         save_freq= save_freq,
@@ -182,11 +182,11 @@ if __name__ == "__main__":
         total_timesteps=2000000, # Run for 2M steps
         callback=[checkpoint_callback, callback],
         reset_num_timesteps=True,
-        tb_log_name="salp_robot_body_frame"
+        tb_log_name="salp_robot_body_frame_sideslip"
     )
     
     # 6. Save Final Model
-    model.save("salp_robot_final_body_frame")
+    model.save("salp_robot_final_body_frame_sideslip")
     # vec_env.save("vec_final_vecnormalizev2.pkl")
 
     print("Training finished.")
