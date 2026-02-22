@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3 import SAC
+from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 
@@ -351,8 +352,8 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     elif len(trajectory) == 1:
         # Only one waypoint, just position at it
         start_pos = trajectory[0]
-        env.robot.position[0] = start_pos[0]
-        env.robot.position[1] = start_pos[1]
+        env.robot.position_world[0] = start_pos[0]
+        env.robot.position_world[1] = start_pos[1]
         print(f"Robot initialized at waypoint 0: ({start_pos[0]:.2f}, {start_pos[1]:.2f})")
     
     total_steps = 0
@@ -398,7 +399,7 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
                 print(f"  ✓ Reached in {step+1} steps (distance: {distance:.3f}m)")
                 break
             
-            if truncated or terminated:
+            if terminated:
                 obs, _ = env.reset()
                 # Re-set the trajectory after reset
                 env.set_trajectory(trajectory)
@@ -570,10 +571,15 @@ if __name__ == "__main__":
     robot.enable_history_recording()
 
     robot.set_environment(density=1000)
-    env = SalpRobotEnv(render_mode='human', robot=robot)
+    env = SalpRobotEnv(render_mode="human", robot=robot)
+    # env = DummyVecEnv([lambda: env])
+    # env = VecNormalize.load("vec_final_vecnormalizev2.pkl", env)
+    
+    # env.training = False
+    # env.norm_reward = False
     
     # Load the trained model
-    model = SAC.load("./logs/salp_robot_reward_shaping_6state_nose3_1600000_steps", env=env)   
+    model = SAC.load("./logs/salp_robot_reward_shaping_2reward2_100000_steps", env=env)   
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])

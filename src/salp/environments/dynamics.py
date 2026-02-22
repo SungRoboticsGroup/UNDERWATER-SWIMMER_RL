@@ -57,6 +57,32 @@ def to_world_frame_jit(euler_angle, vector):
     R = R_z @ R_y @ R_x
     return R @ vector
 
+@jit(nopython=True, cache=True)
+def to_body_frame_jit(euler_angle, vector):
+    """Fast compiled rotation from body frame to world frame."""
+    phi, theta, psi = euler_angle
+    
+    R_x = np.array([
+        [1.0, 0.0, 0.0],
+        [0.0, np.cos(phi), -np.sin(phi)],
+        [0.0, np.sin(phi), np.cos(phi)]
+    ])
+    
+    R_y = np.array([
+        [np.cos(theta), 0.0, np.sin(theta)],
+        [0.0, 1.0, 0.0],
+        [-np.sin(theta), 0.0, np.cos(theta)]
+    ])
+    
+    R_z = np.array([
+        [np.cos(psi), -np.sin(psi), 0.0],
+        [np.sin(psi), np.cos(psi), 0.0],
+        [0.0, 0.0, 1.0]
+    ])
+    
+    R = R_z @ R_y @ R_x
+    return R.T @ vector
+
 # ==================== Numba Force & Torque Calculations ====================
 @jit(nopython=True, cache=True)
 def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_area, nozzle_direction):

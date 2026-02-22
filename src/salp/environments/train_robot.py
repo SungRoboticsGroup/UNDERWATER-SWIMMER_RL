@@ -117,7 +117,13 @@ if __name__ == "__main__":
 
     num_cpu = 8
     vec_env = make_vec_env(make_env, n_envs=num_cpu, vec_env_cls=SubprocVecEnv)
-    vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+    # vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+    # vec_env = VecNormalize.load("vec_final_vecnormalize.pkl", vec_env)
+
+    # 3. CRITICAL: Turn training mode ON. 
+    # Unlike your test script, we WANT the running averages to keep updating as it learns new things.
+    # vec_env.training = True
+    # vec_env.norm_reward = True
 
     # 2. Sanity Check (CRITICAL)
     # This checks if your observation/action spaces match what the step() function returns.
@@ -127,23 +133,23 @@ if __name__ == "__main__":
     print("Environment is valid!")
 
     # 3. Define the model (SAC)
-    # model = SAC(
-    #     "MlpPolicy",           # Use standard Dense Neural Network
-    #     vec_env,
-    #     verbose=1,
-    #     tensorboard_log="./sac_salp_robot_tensorboard/",
+    model = SAC(
+        "MlpPolicy",           # Use standard Dense Neural Network
+        vec_env,
+        verbose=1,
+        tensorboard_log="./sac_salp_robot_tensorboard/",
         
-    #     # --- Tuning for Robotics ---
-    #     learning_rate=3e-4,
-    #     buffer_size=100000,    # Big memory for off-policy
-    #     batch_size=512,        # Mini-batch size
-    #     ent_coef='auto',       # Automatically adjust exploration (Temperature)
-    #     gamma=0.99,            # Discount factor
-    #     tau=0.005,             # Polyak averaging (Soft update)
-    #     device="cuda" 
+        # --- Tuning for Robotics ---
+        learning_rate=3e-4,
+        buffer_size=100000,    # Big memory for off-policy
+        batch_size=512,        # Mini-batch size
+        ent_coef='auto',       # Automatically adjust exploration (Temperature)
+        gamma=0.99,            # Discount factor
+        tau=0.005,             # Polyak averaging (Soft update)
+        device="cuda" 
 
-    # )    
-    model = SAC.load("./logs/salp_robot_reward_shaping_6state_nose3_1600000_steps", env=vec_env)   
+    )    
+    # model = SAC.load("./logs/salp_robot_reward_shaping_1reward_100000_steps", env=vec_env)   
 
 
     # model.learning_rate = 1e-3  # Reset learning rate when loading
@@ -151,9 +157,9 @@ if __name__ == "__main__":
     # 4. Setup Saving (Checkpoints)
     # Save the model every 10,000 steps so you don't lose progress if it crashes.
     # 4. Setup Saving (Checkpoints)
-    save_freq = 25000
+    save_freq = 12500
     save_dir = './logs/'
-    prefix = 'salp_robot_reward_shaping_6state_nose4'
+    prefix = 'salp_robot_body_frame'
 
     checkpoint_callback = CheckpointCallback(
         save_freq= save_freq,
@@ -162,25 +168,25 @@ if __name__ == "__main__":
     )
 
 # Save the normalization stats (.pkl)
-    vec_norm_callback = SaveVecNormalizeCallback(
-        save_freq=save_freq,
-        save_path=save_dir,
-        name_prefix=f"{prefix}_vecnormalize",
-        verbose=1
-    )
+    # vec_norm_callback = SaveVecNormalizeCallback(
+    #     save_freq=save_freq,
+    #     save_path=save_dir,
+    #     name_prefix=f"{prefix}_vecnormalize",
+    #     verbose=1
+    # )
     callback = EpisodeComponentCallback()
     
     # 5. Train
     print("Starting training...")
     model.learn(
         total_timesteps=2000000, # Run for 2M steps
-        callback=[checkpoint_callback,  vec_norm_callback, callback],
+        callback=[checkpoint_callback, callback],
         reset_num_timesteps=True,
-        tb_log_name="salp_robot_run_reward_shaping_6state_nose4"
+        tb_log_name="salp_robot_body_frame"
     )
     
     # 6. Save Final Model
-    model.save("salp_robot_final_reward_shaping_6state_nose4")
-    vec_env.save("vec_final_vecnormalize.pkl")
+    model.save("salp_robot_final_body_frame")
+    # vec_env.save("vec_final_vecnormalizev2.pkl")
 
     print("Training finished.")

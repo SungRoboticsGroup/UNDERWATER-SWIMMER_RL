@@ -17,6 +17,7 @@ from datetime import datetime
 from robot import Robot, Nozzle
 import time
 import geometry
+import dynamics
 
 
 class SalpRobotEnv(gym.Env):
@@ -68,15 +69,15 @@ class SalpRobotEnv(gym.Env):
         pos_y_limits = [-np.inf, np.inf]
         vel_x_limits = [-np.inf, np.inf]
         vel_y_limits = [-np.inf, np.inf]
-        yaw_limits = [-np.inf, np.inf]
         angular_vel_limits = [-np.inf, np.inf]
+        heading_error_limits = [-np.pi, np.pi]
         # cross_track_error_limits = [-np.inf, np.inf]
         heading_error_limits = [-np.pi, np.pi]    
         self.observation_space = spaces.Box(
             low=np.array([pos_x_limits[0], pos_y_limits[0], vel_x_limits[0], \
-                          vel_y_limits[0], yaw_limits[0], angular_vel_limits[0]]),
+                          vel_y_limits[0], angular_vel_limits[0], heading_error_limits[0]]),
             high=np.array([pos_x_limits[1], pos_y_limits[1], vel_x_limits[1], \
-                            vel_y_limits[1], yaw_limits[1], angular_vel_limits[1]]),
+                            vel_y_limits[1], angular_vel_limits[1], heading_error_limits[1]]),
             dtype=np.float32
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
@@ -252,13 +253,13 @@ class SalpRobotEnv(gym.Env):
                 self.cycle_nozzle_yaws = []
                 self._animation_complete = True
 
-        # Calculate reward
-        reward, reward_details = self._calculate_reward()
-        
         observation = self._get_observation()
         if self.observation_randomization:
             observation = self._randomize_observations(observation)
             # print(f"randomized Obs: {observation}")
+
+        # Calculate reward
+        reward, reward_details = self._calculate_reward()
 
         # Check termination
         done = False
@@ -335,7 +336,9 @@ class SalpRobotEnv(gym.Env):
         r_cross_track = 0.0
 
         # on_track_weight = np.clip(1.0 - (cross_track_error / 0.3), 0.0, 1.0)  # full reward within 0.3m, none beyond that
-        r_heading = 10 * np.dot(self.robot.velocity_world[0:-1], -current_diff / (current_dist + 1e-6))  # Reward forward velocity towards target
+        current_diff = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
+        r_heading = -10 * abs(np.arctan2(-current_diff[1], -current_diff[0]))  # Reward forward velocity towards target
+        # r_heading = 0.0
         # print(r_heading)
         # instead of pointing the velocity towards the target, we can reward pointing the nose of the robot 
         # yaw = self.robot.euler_angle[2] 
@@ -354,23 +357,27 @@ class SalpRobotEnv(gym.Env):
         # Only penalize the nozzle angle change, not the thrust change
         angle_change = nozzle_yaw - self.prev_action[2]
         r_smooth = - 2.0 * (angle_change ** 2)
+        # r_smooth = 0.0
         # print(r_smooth)
 
         # 5. yaw Stability (Penalize large yaw changes)
         # this is the end of cycle velocity so penalty is not high
-        r_yaw = -50.0 * abs(self.robot.avg_cycle_angular_velocity[2])
+        r_yaw = -10.0 * abs(self.robot.avg_cycle_angular_velocity[2])
+        # r_yaw = 0.0
 
         # 7. time penalty
         r_time = -0.1  # small penalty to encourage faster completion
         
         # 8. penalize on large nozzle angle
-        r_nozzle = -1.0 * abs(nozzle_yaw)
+        # r_nozzle = -1.0 * abs(nozzle_yaw)
+        r_nozzle = 0.0
 
         # --- 9. Sideslip / Sway Penalty ---
         # self.robot.velocity[1] is the local sideways velocity (body frame)
         # this end of cylce velocity so penalty is not high
         sideways_velocity = abs(self.robot.avg_cycle_velocity[1])
-        r_sideslip = -100.0 * (sideways_velocity)
+        # r_sideslip = -10.0 * (sideways_velocity)
+        r_sideslip = 0.0
         # print(f"Sideslip velocity: {sideways_velocity:.3f}, Sideslip reward: {r_sideslip:.3f}")
 
         # --- 10. Body Orientation Alignment ---
@@ -379,14 +386,10 @@ class SalpRobotEnv(gym.Env):
         robot_forward_2d = np.array([np.cos(yaw), np.sin(yaw)])
         body_alignment = np.dot(robot_forward_2d, path_dir)
         # print(f"robot_forward_2d: {robot_forward_2d}, path_dir: {path_dir}, body_alignment: {body_alignment}")
-        r_orientation = 5.0 * (body_alignment - 1.0)
+        # r_orientation = 2.0 * (body_alignment - 1.0)
+        r_orientation = 0.0
 
-        GATE_THRESHOLD = 0.8
-        if body_alignment > GATE_THRESHOLD:
-            aligment_gate = 1.0
-        else:
-            aligment_gate = 0.0
-        r_track *= aligment_gate
+
         # print(f"Body alignment: {body_alignment:.3f}, Orientation reward: {r_orientation:.3f}")
 
         # Total
@@ -703,25 +706,30 @@ class SalpRobotEnv(gym.Env):
         #     self.robot.angular_velocity[2],  # Normalized angular velocity
         # ], dtype=np.float32))
 
-        path_vec = self.target_point - self.prev_target_point
-        path_length = np.linalg.norm(path_vec) + 1e-6   
-        path_dir = path_vec / path_length
-        robot_vec = self.robot.position_world[0:-1] - self.prev_target_point
-        cross_track_error = np.cross(path_dir, robot_vec)
+        # path_vec = self.target_point - self.prev_target_point
+        # path_length = np.linalg.norm(path_vec) + 1e-6   
+        # path_dir = path_vec / path_length
+        # robot_vec = self.robot.position_world[0:-1] - self.prev_target_point
+        # cross_track_error = np.cross(path_dir, robot_vec)
 
-        path_yaw = np.arctan2(path_dir[1], path_dir[0])
-        raw_error = self.robot.euler_angle[2] - path_yaw
-        heading_error = (raw_error + np.pi) % (2 * np.pi) - np.pi  # Wrap to [-pi, pi]
+        # path_yaw = np.arctan2(path_dir[1], path_dir[0])
+        # raw_error = self.robot.euler_angle[2] - path_yaw
+        # heading_error = (raw_error + np.pi) % (2 * np.pi) - np.pi  # Wrap to [-pi, pi]
+
+        dist = self.target_point - self.robot.position_world[0:2]
+        dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
+        heading_error = np.arctan2(dist_body[1], dist_body[0])
+        
 
         return np.array([
-            self.robot.position_world[0] - self.target_point[0],  # Normalized position
-            self.robot.position_world[1] - self.target_point[1],
+            dist_body[0],  # Normalized position
+            dist_body[1],  # Normalized position
             self.robot.velocity[0],  # Normalized velocity
             self.robot.velocity[1],  # Normalized velocity
-            self.robot.euler_angle[2],  # Normalized body angle
+            # self.robot.euler_angle[2],  # Normalized body angle
             self.robot.angular_velocity[2],  # Normalized angular velocity
             # cross_track_error,
-            # heading_error             
+            heading_error             
         ], dtype=np.float32)
     
     def _get_info(self) -> Dict:
