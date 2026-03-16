@@ -3,31 +3,28 @@ import numpy as np
 
 # ==================== Numba Geometry & Property Calculations ====================
 # data-driven refill time 
-@jit(nopython=True, cache=True)
 def fit_compression_refill_time_relation_jit():
-    compression = np.array([0.1, 0.2, 0.3, 0.4])  # Example lengths during contraction
+    compression = np.array([0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
     refill_time = np.array([0.4, 1.0, 1.8, 2.2])   # Corresponding widths to maintain constant volume
     coefficients = np.polyfit(compression, refill_time, 2)  # Fit a polynomial of degree 2
     return coefficients
 
 @jit(nopython=True, cache=True)
 def refill_time_from_compression_jit(compression, coefficients):
-    return np.polyval(coefficients, compression)  # Evaluate the polynomial at the given length
+    return coefficients[0] * compression**2 + coefficients[1] * compression + coefficients[2]  # Evaluate the polynomial at the given length
 
 # data-driven propulsion time
-@jit(nopython=True, cache=True)
 def fit_compression_propulsion_time_relation_jit():
-    compression = np.array([0.1, 0.2, 0.3, 0.4])  # Example lengths during contraction
+    compression = np.array([0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
     propulsion_time = np.array([0.1, 0.3, 0.4, 0.5])   # Corresponding widths to maintain constant volume
     coefficients = np.polyfit(compression, propulsion_time, 2)  # Fit a polynomial of degree 2
     return coefficients
 
 @jit(nopython=True, cache=True)
 def propulsion_time_from_compression_jit(compression, coefficients):
-    return np.polyval(coefficients, compression)  # Evaluate the polynomial at the given length
+    return coefficients[0] * compression**2 + coefficients[1] * compression + coefficients[2]  # Evaluate the polynomial at the given length
 
 # data-driven geometry relation
-@jit(nopython=True, cache=True)
 def fit_length_width_relation_jit():
     lengths = np.array([0.26, 0.25, 0.24, 0.23, 0.22, 0.21, 0.20])  # Example lengths during contraction
     widths = np.array([0.14, 0.16, 0.175, 0.18, 0.20, 0.21, 0.22])   # Corresponding widths to maintain constant volume
@@ -36,7 +33,7 @@ def fit_length_width_relation_jit():
 
 @jit(nopython=True, cache=True)
 def width_from_length_jit(length, coefficients):
-    return np.polyval(coefficients, length)  # Evaluate the polynomial at the given length
+    return coefficients[0] * length**2 + coefficients[1] * length + coefficients[2]  # Evaluate the polynomial at the given length
 
 # checked 
 @jit(nopython=True, cache=True)

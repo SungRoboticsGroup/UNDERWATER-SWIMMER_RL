@@ -273,6 +273,11 @@ class Robot:
             nozzle: Nozzle object for jet propulsion
         """
 
+        # data-driven models
+        self.geometric_coefficients = geometry.fit_length_width_relation_jit()
+        self.refill_time_coefficients = geometry.fit_compression_refill_time_relation_jit()
+        self.propulsion_time_coefficients = geometry.fit_compression_propulsion_time_relation_jit()
+
         # noise
         self.force_disturbance = OUDisturbance(size=3, mu=0.0, theta=2.0, sigma=0.05, dt=0.01)
         self.torque_disturbance = OUDisturbance(size=3, mu=0.0, theta=2.0, sigma=0.01, dt=0.01)
@@ -342,8 +347,6 @@ class Robot:
         self.trans_drag_coefficient = self._get_trans_drag_coefficient()
         self.rot_drag_coefficient = self._get_rot_drag_coefficient()
 
-
-        
         # ==================== State Variables ====================
         self.position_world = np.zeros(3)
         self.position = np.zeros(3)
@@ -555,8 +558,10 @@ class Robot:
         # print(f"cycle number: {self.cycle}")
         self.cycle_time = 0.0
 
-        self.refill_time = self._contract_model()
-        self.jet_time = self._release_model()
+        self.refill_time = geometry.refill_time_from_compression_jit(self.contraction, self.refill_time_coefficients)
+        self.jet_time = geometry.propulsion_time_from_compression_jit(self.contraction, self.propulsion_time_coefficients)
+        self._contract_rate = self.contraction / self.refill_time if self.refill_time > 0 else 0.0
+        self._release_rate = self.contraction / self.jet_time if self.jet_time > 0 else 0.0
 
     def _randomize_parameters(self):
         """Randomize robot parameters for domain randomization."""
@@ -955,7 +960,7 @@ class Robot:
         Returns:
             Corresponding body width
         """
-        return self.init_length - length + self.init_width
+        return geometry.width_from_length_jit(length, self.geometric_coefficients)
 
     def _get_cross_sectional_area(self) -> np.ndarray:
         return geometry.compute_cross_sectional_area_jit(self.length, self.width)
@@ -975,23 +980,23 @@ class Robot:
         return geometry.compute_mass_rate_jit(self.water_mass, self.prev_water_mass, self.dt)
 
     # ==================== Timing Methods ====================
-    def _contract_model(self) -> float:
-        """Calculate contraction time based on contraction distance.
+    # def _contract_model(self) -> float:
+    #     """Calculate contraction time based on contraction distance.
         
-        Returns:
-            Time duration in seconds
-        """
-        self._contract_rate = 0.06 / 3  # m/s
-        return self.contraction / self._contract_rate
+    #     Returns:
+    #         Time duration in seconds
+    #     """
+    #     self._contract_rate = 0.06 / 3  # m/s
+    #     return self.contraction / self._contract_rate
 
-    def _release_model(self) -> float:
-        """Calculate release time based on contraction distance.
+    # def _release_model(self) -> float:
+    #     """Calculate release time based on contraction distance.
         
-        Returns:
-            Time duration in seconds
-        """
-        self._release_rate = 0.06 / 1.5  # m/s
-        return self.contraction / self._release_rate
+    #     Returns:
+    #         Time duration in seconds
+    #     """
+    #     self._release_rate = 0.06 / 1.5  # m/s
+    #     return self.contraction / self._release_rate
 
 
 if __name__ == "__main__":
@@ -1008,9 +1013,9 @@ if __name__ == "__main__":
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                  max_contraction=0.06, nozzle=nozzle)
+    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.1**2, mass=0.440)
+    robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
+                  max_contraction=0.04, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     # robot.enable_domain_randomization()
     robot.set_environment(density=1000)
@@ -1018,7 +1023,7 @@ if __name__ == "__main__":
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 8
+    n_cycles = 6
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1052,9 +1057,9 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle= np.pi/2 )
+        robot.nozzle.set_yaw_angle(yaw_angle= 0 )
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.06, coast_time=3, 
+        robot.set_control(contraction=0.04, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
@@ -1149,8 +1154,8 @@ if __name__ == "__main__":
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
 
-    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
-    plot_robot_position(all_time_data, all_position_data, all_state_data)
+    plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics

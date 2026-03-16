@@ -150,12 +150,12 @@ def simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle):
         
         # Create time array for this cycle
         cycle_start_time = robot.time - robot.cycle_time
-        time_array = np.arange(cycle_start_time, robot.time + robot.dt, robot.dt)[:len(robot.position_history)]
+        time_array = np.arange(cycle_start_time, robot.time + robot.dt, robot.dt)[:len(robot.position_world_history)]
         
         # Accumulate data
         times.extend(time_array)
-        positions.extend(robot.position_history)
-        velocities.extend(robot.velocity_history)
+        positions.extend(robot.position_world_history)
+        velocities.extend(robot.velocity_world_history)
         euler_angles.extend(robot.euler_angle_history)
         states.extend(robot.state_history)
     
@@ -259,17 +259,17 @@ def compare_coast_times():
 def compare_yaw_angles():
     """Compare trajectories with different yaw angles."""
     print("\nComparing different yaw angles...")
-    
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                  max_contraction=0.06, nozzle=nozzle)
+    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.1**2, mass=0.440)
+    robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
+                  max_contraction=0.04, nozzle=nozzle)
     robot.set_environment(density=1000)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot.enable_history_recording()
     
-    yaw_angles = [np.pi/2, np.pi/4, np.pi/8, np.pi/16, np.pi/32, 0.0]  # Different yaw angles
-    n_cycles = 8
-    contraction = 0.06
-    coast_time = 10.0 
+    yaw_angles = [-np.pi/2, np.pi/2, np.pi/6, -np.pi/6, 0.0]  # Different yaw angles
+    n_cycles = 6
+    contraction = 0.03
+    coast_time = 2.0
     
     trajectories = []
     labels = []
