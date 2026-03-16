@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3 import SAC
+from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 
@@ -200,6 +201,119 @@ def generate_sine_wave_trajectory(start, end, amplitude, frequency=2, num_points
     return trajectory
 
 
+def test_single_target(env, model, target, max_steps=200, render=True, threshold=0.05):
+    """
+    Test the robot's ability to reach a single target point.
+    
+    Args:
+        env: The environment
+        model: The trained model
+        target: Target point [x, y] in meters
+        max_steps: Maximum number of steps to attempt reaching the target
+        render: Whether to render the environment
+        threshold: Distance threshold for considering target reached (meters)
+        
+    Returns:
+        Dictionary with test results and statistics
+    """
+    obs, _ = env.reset()
+    
+    # Set target in environment
+    env.set_trajectory([target])
+    env.target_point = target
+    env.current_waypoint_index = 0
+    
+    # Get initial position
+    initial_pos = np.array([env.robot.position_world[0], env.robot.position_world[1]])
+    initial_distance = np.linalg.norm(initial_pos - target)
+    
+    print(f"\n{'='*60}")
+    print(f"SINGLE TARGET REACHING TEST")
+    print(f"{'='*60}")
+    print(f"Initial position: ({initial_pos[0]:.3f}, {initial_pos[1]:.3f})")
+    print(f"Target position:  ({target[0]:.3f}, {target[1]:.3f})")
+    print(f"Initial distance: {initial_distance:.3f}m")
+    print(f"Success threshold: {threshold}m")
+    print(f"{'='*60}\n")
+    
+    # Track trajectory
+    actual_trajectory = [initial_pos.copy()]
+    distances = [initial_distance]
+    min_distance = initial_distance
+    min_distance_step = 0
+    reached = False
+    reached_step = None
+    
+    for step in range(max_steps):
+        # Get action from model
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = env.step(action)
+        
+        # Record current position
+        current_pos = np.array([env.robot.position_world[0], env.robot.position_world[1]])
+        actual_trajectory.append(current_pos.copy())
+        
+        # Calculate distance to target
+        distance = np.linalg.norm(current_pos - target)
+        distances.append(distance)
+        
+        # Update minimum distance
+        if distance < min_distance:
+            min_distance = distance
+            min_distance_step = step + 1
+        
+        # Print progress every 20 steps
+        if (step + 1) % 20 == 0:
+            print(f"Step {step+1:3d}: Distance = {distance:.3f}m, Min = {min_distance:.3f}m")
+        
+        # Check if target reached
+        if distance < threshold and not reached:
+            reached = True
+            reached_step = step + 1
+            print(f"\n✓ TARGET REACHED at step {reached_step}!")
+            print(f"  Final distance: {distance:.3f}m")
+            break
+        
+        # Check for termination
+        if terminated or truncated:
+            print(f"\nEnvironment terminated/truncated at step {step+1}")
+            break
+        
+        if render:
+            env.wait_for_animation()
+    
+    # Final results
+    final_pos = actual_trajectory[-1]
+    final_distance = distances[-1]
+    
+    print(f"\n{'='*60}")
+    print(f"TEST RESULTS")
+    print(f"{'='*60}")
+    print(f"Success: {'YES' if reached else 'NO'}")
+    if reached:
+        print(f"Reached at step: {reached_step}/{max_steps}")
+    print(f"Minimum distance: {min_distance:.3f}m at step {min_distance_step}")
+    print(f"Final distance: {final_distance:.3f}m")
+    print(f"Final position: ({final_pos[0]:.3f}, {final_pos[1]:.3f})")
+    print(f"Total steps: {len(actual_trajectory)-1}")
+    print(f"{'='*60}\n")
+    
+    return {
+        'success': reached,
+        'reached_step': reached_step,
+        'min_distance': min_distance,
+        'min_distance_step': min_distance_step,
+        'final_distance': final_distance,
+        'initial_distance': initial_distance,
+        'initial_position': initial_pos,
+        'final_position': final_pos,
+        'target': target,
+        'actual_trajectory': actual_trajectory,
+        'distances': distances,
+        'total_steps': len(actual_trajectory) - 1
+    }
+
+
 def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render=True):
     """
     Test the robot's ability to track a trajectory.
@@ -238,8 +352,8 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     elif len(trajectory) == 1:
         # Only one waypoint, just position at it
         start_pos = trajectory[0]
-        env.robot.position[0] = start_pos[0]
-        env.robot.position[1] = start_pos[1]
+        env.robot.position_world[0] = start_pos[0]
+        env.robot.position_world[1] = start_pos[1]
         print(f"Robot initialized at waypoint 0: ({start_pos[0]:.2f}, {start_pos[1]:.2f})")
     
     total_steps = 0
@@ -257,12 +371,15 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
         env.current_waypoint_index = target_idx
         # Set the new target in the environment
         env.target_point = target
+        env.prev_target_point = trajectory[target_idx - 1] if target_idx > 0 else trajectory[-1]
+
         print(f"\nTarget {target_idx+1}/{len(trajectory)}: ({target[0]:.2f}, {target[1]:.2f})")
         
         min_distance = float('inf')
         
         for step in range(steps_per_target):
             action, _ = model.predict(obs, deterministic=True)
+            # action = [1, 0.1, 0]
             obs, reward, terminated, truncated, info = env.step(action)
             
             # Record robot position after each step
@@ -277,12 +394,12 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
             
             total_steps += 1
             
-            if distance < 0.05:  # Threshold for "reaching" the target
+            if distance < 0.10:  # Threshold for "reaching" the target
                 targets_reached += 1
                 print(f"  ✓ Reached in {step+1} steps (distance: {distance:.3f}m)")
                 break
             
-            if truncated or terminated:
+            if terminated:
                 obs, _ = env.reset()
                 # Re-set the trajectory after reset
                 env.set_trajectory(trajectory)
@@ -455,9 +572,14 @@ if __name__ == "__main__":
 
     robot.set_environment(density=1000)
     env = SalpRobotEnv(render_mode="human", robot=robot)
+    # env = DummyVecEnv([lambda: env])
+    # env = VecNormalize.load("vec_final_vecnormalizev2.pkl", env)
+    
+    # env.training = False
+    # env.norm_reward = False
     
     # Load the trained model
-    model = SAC.load("./salp_robot_final_dm_multiple_baselinev5", env=env)   
+    model = SAC.load("./logs/salp_robot_body_frame_sideslip_100000_steps", env=env)   
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])

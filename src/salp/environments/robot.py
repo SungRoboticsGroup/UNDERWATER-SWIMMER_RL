@@ -346,15 +346,20 @@ class Robot:
         
         # ==================== State Variables ====================
         self.position_world = np.zeros(3)
+        self.position = np.zeros(3)
+        self.prev_position = np.zeros(3)
         self.velocity = np.zeros(3)
         self.velocity_world = np.zeros(3)
+        self.avg_cycle_velocity = np.zeros(3)
         self.acceleration = np.zeros(3)
         
         self.euler_angle = np.zeros(3)
         self.euler_angle_rate = np.zeros(3)
         self.angular_velocity = np.zeros(3)
+        self.avg_cycle_angular_velocity = np.zeros(3)
         self.angular_acceleration = np.zeros(3)
-        
+        self.angle = np.zeros(3)
+        self.prev_angle = np.zeros(3)
         # ==================== History Buffers ====================
         self.record = False
         self.state_history = []
@@ -441,6 +446,8 @@ class Robot:
 
         # Reset state variables
         self.position_world = np.zeros(3)
+        self.position = np.zeros(3)
+        self.prev_position = np.zeros(3)
         self.velocity = np.zeros(3)
         self.velocity_world = np.zeros(3)
         self.acceleration = np.zeros(3)
@@ -448,6 +455,8 @@ class Robot:
         self.euler_angle_rate = np.zeros(3)
         self.angular_velocity = np.zeros(3)
         self.angular_acceleration = np.zeros(3)
+        self.angle = np.zeros(3)
+        self.prev_angle = np.zeros(3)
 
         # Reset body properties
         self.length = self.init_length
@@ -535,6 +544,8 @@ class Robot:
         #     self.torque_noise = np.zeros(3)
 
         self.clear_history()
+        self.avg_cycle_velocity = np.zeros(3)
+        self.avg_cycle_angular_velocity = np.zeros(3)
         self.contraction = contraction
         self.coast_time = coast_time
         self.nozzle.set_angles(angle1=nozzle_angles[0], angle2=nozzle_angles[1])
@@ -686,6 +697,12 @@ class Robot:
         """Step through an entire breathing cycle and collect state history."""
         total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time
 
+        self.avg_cycle_velocity = (self.position - self.prev_position) / total_cycle_time
+        self.avg_cycle_angular_velocity = (self.angle - self.prev_angle) / total_cycle_time
+
+        self.prev_position = self.position.copy()
+        self.prev_angle = self.angle.copy()
+
 
         if self.record:
             # Initialize history lists with current values
@@ -796,6 +813,10 @@ class Robot:
         self.euler_angle += self.euler_angle_rate * self.dt
         self.velocity_world = self._to_world_frame(self.velocity)
         self.position_world += self.velocity_world * self.dt
+
+        # for average velocity and angular velocity
+        self.position += self.velocity * self.dt
+        self.angle += self.angular_velocity * self.dt
 
     # ==================== Inertia Methods ====================
     def get_inertia_matrix(self) -> np.ndarray:
@@ -997,7 +1018,7 @@ if __name__ == "__main__":
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 1
+    n_cycles = 8
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1129,7 +1150,7 @@ if __name__ == "__main__":
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
 
     # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
-    # plot_robot_position(all_time_data, all_position_data, all_state_data)
+    plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
@@ -1137,7 +1158,7 @@ if __name__ == "__main__":
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
     # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
-    plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
+    # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
     # plot_coriolis_torque(all_time_data, all_coriolis_torque_data, all_state_data)
     # plot_deform_torque(all_time_data, all_deform_torque_data, all_state_data)
