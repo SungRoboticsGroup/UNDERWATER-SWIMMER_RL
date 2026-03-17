@@ -292,11 +292,12 @@ class Robot:
         self.density = 1000  # kg/m^3, density of water
         self.dt = 0.01  # time step
         self.nozzle = nozzle
+        self.tube_volume = np.pi * (0.058 / 2)**2 * 0.15
         
         # ==================== Coefficient Parameters ====================
         self.dynamics_randomization = False
         self.disturbances = False
-        self.discharge_coefficient_mean = 0.8
+        self.discharge_coefficient_mean = 0.1
         self.drag_force_ratio_mean = 0.25 
         self.drag_torque_ratio_mean = 0.1
         self.added_mass_coefficient_force_mean = np.diag([0.5, 0.6, 0.6])
@@ -401,7 +402,7 @@ class Robot:
         """Construct drag coefficient ranges for different body deformations."""
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
-        trans_x = [0.5, 1.2]
+        trans_x = [2.0, 4.0]
         trans_y = [1.2, 0.7]
         trans_z = [1.2, 0.7]
 
@@ -967,7 +968,7 @@ class Robot:
 
     # ==================== Mass and Volume Methods ====================
     def _get_water_volume(self) -> float:
-        return geometry.compute_water_volume_jit(self.length, self.width)
+        return geometry.compute_water_volume_jit(self.length, self.width) - self.tube_volume
 
     def _get_water_mass(self) -> float:
         return geometry.compute_water_mass_jit(self.density, self._get_water_volume())
@@ -1013,7 +1014,7 @@ if __name__ == "__main__":
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.1**2, mass=0.440)
+    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
     robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
                   max_contraction=0.04, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
@@ -1059,7 +1060,7 @@ if __name__ == "__main__":
 
         robot.nozzle.set_yaw_angle(yaw_angle= 0 )
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.04, coast_time=2, 
+        robot.set_control(contraction=0.02, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
