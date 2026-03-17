@@ -403,8 +403,8 @@ class Robot:
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
         trans_x = [1.5, 2.5]
-        trans_y = [1.2, 0.7]
-        trans_z = [1.2, 0.7]
+        trans_y = [2.5, 1.5]
+        trans_z = [2.5, 1.5]
 
         return np.array([trans_x, trans_y, trans_z])
 
@@ -414,8 +414,8 @@ class Robot:
         # Different drag coefficients for rotational x, y, z directions
         # initial and end of deformation drag coefficients
         rot_x = [0.1, 0.3]
-        rot_y = [1.2, 0.5]
-        rot_z = [1.2, 0.5]
+        rot_y = [0.5, 0.2]
+        rot_z = [0.5, 0.2]
 
         return np.array([rot_x, rot_y, rot_z])
 
@@ -1058,9 +1058,9 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle= 0 )
+        robot.nozzle.set_yaw_angle(yaw_angle= np.pi /2 )
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.03, coast_time=3, 
+        robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
@@ -1155,14 +1155,14 @@ if __name__ == "__main__":
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
 
-    plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
-    plot_robot_position(all_time_data, all_position_data, all_state_data)
-    plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
+    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    # plot_robot_position(all_time_data, all_position_data, all_state_data)
+    # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
-    # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
+    plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
@@ -1172,7 +1172,7 @@ if __name__ == "__main__":
     # plot_asymmetry_torque(all_time_data, all_asymmetry_torque_data, all_state_data)
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
-    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
 
     plt.show(block=True)
     
