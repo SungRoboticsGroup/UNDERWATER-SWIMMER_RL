@@ -297,7 +297,7 @@ class Robot:
         # ==================== Coefficient Parameters ====================
         self.dynamics_randomization = False
         self.disturbances = False
-        self.discharge_coefficient_mean = 0.1
+        self.discharge_coefficient_mean = 0.3 # should definite be lower than 0.6 maybe around 0.4 - 0.5
         self.drag_force_ratio_mean = 0.25 
         self.drag_torque_ratio_mean = 0.1
         self.added_mass_coefficient_force_mean = np.diag([0.5, 0.6, 0.6])
@@ -402,7 +402,7 @@ class Robot:
         """Construct drag coefficient ranges for different body deformations."""
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
-        trans_x = [2.0, 4.0]
+        trans_x = [1.5, 2.5]
         trans_y = [1.2, 0.7]
         trans_z = [1.2, 0.7]
 
@@ -1060,7 +1060,7 @@ if __name__ == "__main__":
 
         robot.nozzle.set_yaw_angle(yaw_angle= 0 )
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.02, coast_time=2, 
+        robot.set_control(contraction=0.03, coast_time=3, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         robot.step_through_cycle()
     
@@ -1156,8 +1156,8 @@ if __name__ == "__main__":
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
 
     plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
-    # plot_robot_position(all_time_data, all_position_data, all_state_data)
-    # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
+    plot_robot_position(all_time_data, all_position_data, all_state_data)
+    plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
