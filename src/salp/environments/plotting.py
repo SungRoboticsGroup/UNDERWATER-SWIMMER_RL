@@ -1484,3 +1484,203 @@ def plot_inertia_tensor(time_data, inertia_tensor_data,
     plt.pause(0.001)
     
     return fig
+
+
+def plot_center_of_mass(time_data, center_of_mass_data, 
+                        state_data=None, title="Center of Mass Over Time"):
+    """
+    Plot the center of mass position in X, Y, Z dimensions over time.
+    
+    Args:
+        time_data: Array of time values
+        center_of_mass_data: Array of center of mass positions (Nx3 for X, Y, Z coordinates)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot center of mass component in each direction
+        ax.plot(time_data, center_of_mass_data[:, i], color=color, linewidth=2, 
+                label=f'CoM {direction}', zorder=3)
+        
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Center of Mass {direction} (m)')
+        ax.set_title(f'Center of Mass Position - {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+    
+    return fig
+
+
+def plot_center_of_mass_rate(time_data, center_of_mass_data,
+                             state_data=None, title="Rate of Center of Mass Over Time"):
+    """
+    Plot the rate of center of mass in X, Y, Z dimensions over time.
+
+    Args:
+        time_data: Array of time values
+        center_of_mass_data: Array of center of mass positions (Nx3 for X, Y, Z coordinates)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    # Compute component-wise time derivative d(CoM)/dt
+    com_rate = np.gradient(center_of_mass_data, time_data, axis=0)
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+
+        ax.plot(time_data, com_rate[:, i], color=color, linewidth=2,
+                label=f'dCoM_{direction}/dt', zorder=3)
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'CoM Rate {direction} (m/s)')
+        ax.set_title(f'Rate of Center of Mass - {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+
+    return fig
+
+
+def plot_center_of_mass_acc_rate(time_data, center_of_mass_data,
+                                 state_data=None, title="Acceleration Rate of Center of Mass Over Time"):
+    """
+    Plot the acceleration rate of center of mass in X, Y, Z dimensions over time.
+
+    This computes the second time derivative of center-of-mass position:
+    d²(CoM)/dt².
+
+    Args:
+        time_data: Array of time values
+        center_of_mass_data: Array of center of mass positions (Nx3 for X, Y, Z coordinates)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    # First derivative: d(CoM)/dt
+    com_rate = np.gradient(center_of_mass_data, time_data, axis=0)
+    # Second derivative: d²(CoM)/dt²
+    com_acc_rate = np.gradient(com_rate, time_data, axis=0)
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+
+        ax.plot(time_data, com_acc_rate[:, i], color=color, linewidth=2,
+                label=f'd²CoM_{direction}/dt²', zorder=3)
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'CoM Acc Rate {direction} (m/s²)')
+        ax.set_title(f'Acceleration Rate of Center of Mass - {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+
+    return fig
+
+
+def plot_front_position_body_frame(time_data, front_position_data,
+                                   state_data=None, title="Robot Front Position in Body Frame"):
+    """
+    Plot the robot front position in the body frame over time.
+
+    Args:
+        time_data: Array of time values
+        front_position_data: Array of front positions (Nx3 for X, Y, Z coordinates)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+
+        ax.plot(time_data, front_position_data[:, i], color=color, linewidth=2,
+                label=f'Front Position {direction}', zorder=3)
+
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Front Position {direction} (m)')
+        ax.set_title(f'Front Position in Body Frame - {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+
+    return fig
+
+
+def plot_front_position_world_frame(time_data, front_position_world_data,
+                                    state_data=None, title="Robot Front Position in World Frame"):
+    """
+    Plot the robot front position in the world frame over time.
+
+    Args:
+        time_data: Array of time values
+        front_position_world_data: Array of front positions in world frame (Nx3 for X, Y, Z coordinates)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+
+        ax.plot(time_data, front_position_world_data[:, i], color=color, linewidth=2,
+                label=f'Front World Position {direction}', zorder=3)
+
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Front World Position {direction} (m)')
+        ax.set_title(f'Front Position in World Frame - {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+
+    return fig

@@ -342,7 +342,7 @@ if __name__ == "__main__":
     ]
 
     plot_all_trajectories_xz(file_names, start_time)
-    # plot_velocity_magnitudes(file_names, start_time)
+    plot_velocity_magnitudes(file_names, start_time)
     plot_velocity_components_xz(file_names, start_time)
     compute_average_velocities(file_names, start_time)
     plot_yaw_rate(file_names, start_time)

@@ -3,9 +3,9 @@ import numpy as np
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force, noise_force):
+def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force, noise_force, acceleraiton_force):
     """Fast compiled computation of Newton's equations."""
-    total_force = jet_force + drag_force + added_mass_force + coriolis_force + noise_force
+    total_force = jet_force + drag_force + added_mass_force + coriolis_force + noise_force + acceleraiton_force
     # np.linalg.solve is faster and more stable than inv() @ vector
     return np.linalg.solve(mass_matrix, total_force)
 

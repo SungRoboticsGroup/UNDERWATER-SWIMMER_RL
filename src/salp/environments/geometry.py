@@ -143,7 +143,30 @@ def compute_inertia_matrix_jit(mass_scalar, length, width, nozzle_mass, jet_mome
     I_zz = 0.2 * mass_scalar * (w_half**2 + l_half**2)
 
     I_robot = np.diag(np.array([I_xx, I_yy, I_zz]))
+
     return I_robot + I_nozzle
+
+
+@jit(nopython=True, cache=True)
+def compute_center_of_mass_jit(length, width, tube_volume, nozzle_mass, buoy_mass, skin_mass, tube_mass, water_mass):
+    """Fast compiled center of mass calculation."""
+
+    # body frame is mounted on center of geometry
+    pos_buoy = np.array([length / 2, 0.0, 0.0])
+    pos_skin = np.array([0.0, 0.0, 0.0])
+    pos_tube = np.array([length / 2 -0.08, 0.0, 0.0])
+    pos_nozzle = np.array([-length / 2 - 0.025 + 0.05, 0.0, 0.0])
+
+    # get water center of mass
+    water_mass_ellipsoid = compute_water_mass_jit(density=1000, volume=compute_water_volume_jit(length, width))
+    pos_water = (water_mass_ellipsoid * np.array([0.0, 0.0, 0.0]) - 1000 * tube_volume * pos_tube)/ (water_mass_ellipsoid - 1000 * tube_volume)
+
+    total_mass = tube_mass + nozzle_mass + buoy_mass + skin_mass + water_mass
+    center_of_mass = (tube_mass * pos_tube + nozzle_mass * pos_nozzle + buoy_mass * pos_buoy + skin_mass * pos_skin + water_mass * pos_water) / total_mass
+    
+    return center_of_mass
+
+
 
 @jit(nopython=True, cache=True)
 def randomize_scalar_jit(value, uncertainty=0.1, lower_bound=np.nan, upper_bound=np.nan):
