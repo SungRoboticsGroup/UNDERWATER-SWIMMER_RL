@@ -133,18 +133,62 @@ def compute_jet_moment_arm_jit(nozzle_middle_pos, length):
 @jit(nopython=True, cache=True)
 def compute_inertia_matrix_jit(mass_scalar, length, width, nozzle_mass, jet_moment_arm):
     """Fast compiled inertia matrix calculation."""
-    r_norm = np.linalg.norm(jet_moment_arm)
-    I_nozzle = nozzle_mass * (r_norm ** 2) * np.diag(np.array([0.0, 1.0, 1.0]))
+    # r_norm = np.linalg.norm(jet_moment_arm)
+    # I_nozzle = nozzle_mass * (r_norm ** 2) * np.diag(np.array([0.0, 1.0, 1.0]))
 
-    w_half = width / 2.0
-    l_half = length / 2.0
-    I_xx = 0.2 * mass_scalar * (w_half**2 + w_half**2)
-    I_yy = 0.2 * mass_scalar * (l_half**2 + w_half**2)
-    I_zz = 0.2 * mass_scalar * (w_half**2 + l_half**2)
+    # w_half = width / 2.0
+    # l_half = length / 2.0
+    # I_xx = 0.2 * mass_scalar * (w_half**2 + w_half**2)
+    # I_yy = 0.2 * mass_scalar * (l_half**2 + w_half**2)
+    # I_zz = 0.2 * mass_scalar * (w_half**2 + l_half**2)
 
-    I_robot = np.diag(np.array([I_xx, I_yy, I_zz]))
+    # I_robot = np.diag(np.array([I_xx, I_yy, I_zz]))
 
-    return I_robot + I_nozzle
+    # buoy inertia tensor
+    w_buoy = 0.0
+    d_buoy = 0.0
+    h_buoy = 0.0
+
+    I_xx_buoy = 1/12 * mass_buoy * (l_buoy**2 + h_buoy**2)
+    I_yy_buoy = 1/12 * mass_buoy * (w_buoy**2 + h_buoy**2)
+    I_zz_buoy = 1/12 * mass_buoy * (l_buoy**2 + w_buoy**2)
+
+    I_buoy = np.diag(np.array([I_xx_buoy, I_yy_buoy, I_zz_buoy])) + mass_buoy * np.diag(np.array([0.0, (length/2)**2, (length/2)**2]) )
+
+    # tube inertia tensor
+    l_tube = 0.0
+    r_tube = 0.0
+
+    I_xx_tube = 1/2 * (tube_mass - tube_volume * density) * r_tube**2
+    I_yy_tube = 1/12 * (tube_mass - tube_volume * density) * (3*r_tube**2 + l_tube**2)
+    I_zz_tube = 1/12 * (tube_mass - tube_volume * density) * (3*r_tube**2 + l_tube**2)
+
+    I_tube = np.diag(np.array([I_xx_tube, I_yy_tube, I_zz_tube])) + (mass_tube - tube_volume * density) * np.diag(np.array([0.0, (length/2 - 0.08)**2, (length/2 - 0.08)**2])) # skin inertia tensor 
+    I_xx_skin = 1/3 * mass_skin * ((width/2)**2 + (width/2)**2)
+    I_yy_skin = 1/3 * mass_skin * ((length/2)**2 + (width/2)**2)
+    I_zz_skin = 1/3 * mass_skin * ((length/2)**2 + (width/2)**2)
+
+    I_skin = np.diag(np.array([I_xx_skin, I_yy_skin, I_zz_skin]))
+
+    # water inertia tensor
+    water_mass_ellipsoid = compute_water_mass_jit(density=1000, volume=compute_water_volume_jit(length, width))
+    I_xx_water = 1/5 * water_mass_ellipsoid * ((width/2)**2 + (width/2)**2)
+    I_yy_water = 1/5 * water_mass_ellipsoid * ((length/2)**2 + (width/2)**2)
+    I_zz_water = 1/5 * water_mass_ellipsoid * ((length/2)**2 + (width/2)**2)
+
+    I_water = np.diag(np.array([I_xx_water, I_yy_water, I_zz_water]))
+
+    # nozzle inertia tensor
+    w_nozzle = 0.0
+    d_nozzle = 0.0
+    h_nozzle = 0.0
+
+    I_xx_nozzle = 1/12 * mass_nozzle * (l_nozzle**2 + h_nozzle**2)
+    I_yy_nozzle = 1/12 * mass_nozzle * (w_nozzle**2 + h_nozzle**2)
+    I_zz_nozzle = 1/12 * mass_nozzle * (l_nozzle**2 + w_nozzle**2)
+
+    I_buoy = np.diag(np.array([I_xx_nozzle, I_yy_nozzle, I_zz_nozzle])) + mass_nozzle * np.diag(np.array([0.0, (length/2+0.025)**2, (length/2+0.025)**2]) )
+    return I_buoy + I_tube + I_skin + I_water + I_nozzle
 
 
 @jit(nopython=True, cache=True)
