@@ -1205,6 +1205,55 @@ def plot_coriolis_force(time_data, coriolis_force_data,
     return fig
 
 
+def plot_acceleration_force(time_data, acceleration_force_data, 
+                            state_data=None, title="Acceleration Force Over Time"):
+    """
+    Plot acceleration force (fictitious forces due to moving center of mass) in X, Y, Z dimensions.
+    
+    The acceleration force includes contributions from:
+    - Centripetal acceleration
+    - Coriolis acceleration (from rotating frame)
+    - Tangential acceleration
+    - Recoil acceleration (from center of mass movement)
+    
+    Args:
+        time_data: Array of time values
+        acceleration_force_data: Array of acceleration force values (3D vectors in Newtons)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+        
+    Returns:
+        Matplotlib figure object
+    """
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    
+    directions = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    
+    for i, (ax, direction, color) in enumerate(zip(axes, directions, colors)):
+        # Add phase backgrounds if state_data provided
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+        
+        # Plot acceleration force in each direction
+        ax.plot(time_data, acceleration_force_data[:, i], color=color, linewidth=2, 
+                label=f'Acceleration Force {direction}', zorder=3)
+        
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'Acceleration Force {direction} (N)')
+        ax.set_title(f'Acceleration Force in {direction} Direction')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+    
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+    
+    return fig
+
+
 def plot_added_mass_force(time_data, added_mass_force_data, 
                           state_data=None, title="Added Mass Force Over Time"):
     """
@@ -1525,20 +1574,17 @@ def plot_center_of_mass(time_data, center_of_mass_data,
     return fig
 
 
-def plot_center_of_mass_rate(time_data, center_of_mass_data,
+def plot_center_of_mass_rate(time_data, center_of_mass_rate_data,
                              state_data=None, title="Rate of Center of Mass Over Time"):
     """
     Plot the rate of center of mass in X, Y, Z dimensions over time.
 
     Args:
         time_data: Array of time values
-        center_of_mass_data: Array of center of mass positions (Nx3 for X, Y, Z coordinates)
+        center_of_mass_rate_data: Array of center of mass rate values (Nx3 for X, Y, Z coordinates)
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    # Compute component-wise time derivative d(CoM)/dt
-    com_rate = np.gradient(center_of_mass_data, time_data, axis=0)
-
     fig, axes = plt.subplots(3, 1, figsize=(12, 10))
 
     directions = ['X', 'Y', 'Z']
@@ -1548,7 +1594,7 @@ def plot_center_of_mass_rate(time_data, center_of_mass_data,
         if state_data is not None:
             _add_phase_backgrounds(ax, time_data, state_data)
 
-        ax.plot(time_data, com_rate[:, i], color=color, linewidth=2,
+        ax.plot(time_data, center_of_mass_rate_data[:, i], color=color, linewidth=2,
                 label=f'dCoM_{direction}/dt', zorder=3)
         ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
@@ -1566,7 +1612,7 @@ def plot_center_of_mass_rate(time_data, center_of_mass_data,
     return fig
 
 
-def plot_center_of_mass_acc_rate(time_data, center_of_mass_data,
+def plot_center_of_mass_acc_rate(time_data, center_of_mass_acc_rate_data,
                                  state_data=None, title="Acceleration Rate of Center of Mass Over Time"):
     """
     Plot the acceleration rate of center of mass in X, Y, Z dimensions over time.
@@ -1576,14 +1622,10 @@ def plot_center_of_mass_acc_rate(time_data, center_of_mass_data,
 
     Args:
         time_data: Array of time values
-        center_of_mass_data: Array of center of mass positions (Nx3 for X, Y, Z coordinates)
+        center_of_mass_acc_rate_data: Array of center of mass acceleration rate values (Nx3 for X, Y, Z coordinates)
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    # First derivative: d(CoM)/dt
-    com_rate = np.gradient(center_of_mass_data, time_data, axis=0)
-    # Second derivative: d²(CoM)/dt²
-    com_acc_rate = np.gradient(com_rate, time_data, axis=0)
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 10))
 
@@ -1594,7 +1636,7 @@ def plot_center_of_mass_acc_rate(time_data, center_of_mass_data,
         if state_data is not None:
             _add_phase_backgrounds(ax, time_data, state_data)
 
-        ax.plot(time_data, com_acc_rate[:, i], color=color, linewidth=2,
+        ax.plot(time_data, center_of_mass_acc_rate_data[:, i], color=color, linewidth=2,
                 label=f'd²CoM_{direction}/dt²', zorder=3)
         ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
 

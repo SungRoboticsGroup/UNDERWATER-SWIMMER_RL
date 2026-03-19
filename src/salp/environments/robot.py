@@ -353,6 +353,7 @@ class Robot:
         self.added_mass_torque = np.zeros(3)
         self.asymmetry_torque = np.zeros(3)
         self.deform_torque = np.zeros(3)
+        self.acceleration_force = np.zeros(3)
         self.trans_drag_coefficient = self._get_trans_drag_coefficient()
         self.rot_drag_coefficient = self._get_rot_drag_coefficient()
 
@@ -403,11 +404,13 @@ class Robot:
         self.rot_drag_coefficient_history = []
         self.drag_force_history = []
         self.drag_torque_history = []
+        self.acceleration_force_history = []
         self.nozzle_yaw_history = []
         self.inertia_tensor_history = []
         self.debug_buffer = []
         self.center_of_mass_history = []
         self.center_of_mass_rate_history = []
+        self.center_of_mass_acc_rate_history = []
         self.position_front_history = []
         self.position_front_world_history = []
 
@@ -530,12 +533,15 @@ class Robot:
         self.rot_drag_coefficient_history = []
         self.drag_force_history = []
         self.drag_torque_history = []
+        self.acceleration_force_history = []
         self.nozzle_yaw_history = []
         self.inertia_tensor_history = []
         self.center_of_mass_history = []
         self.position_front_history = []
         self.position_front_world_history = []
         self.center_of_mass_rate_history = []
+        self.center_of_mass_acc_rate_history = []
+
 
     # ==================== Control Methods ====================
     def set_control(self, contraction: float, coast_time: float, nozzle_angles: np.ndarray):
@@ -707,6 +713,8 @@ class Robot:
             'trans_drag_coefficient_history': self.trans_drag_coefficient,
             'rot_drag_coefficient_history': self.rot_drag_coefficient,
             "center_of_mass_history": self.center_of_mass.copy(),
+            "center_of_mass_rate_history": self.center_of_mass_rate.copy(),
+            "center_of_mass_acc_rate_history": self.center_of_mass_acc_rate.copy(),
             "position_front_history": self.position_front.copy(),
             "position_front_world_history": self.position_front_world.copy(),
         }
@@ -729,6 +737,7 @@ class Robot:
             'added_mass_torque_history': self.added_mass_torque,
             'deform_torque_history': self.deform_torque,
             'asymmetry_torque_history': self.asymmetry_torque,
+            'acceleration_force_history': self.acceleration_force,
         }
 
     def step_through_cycle(self):
@@ -802,7 +811,8 @@ class Robot:
         a_coriolis = 2 * np.cross(self.angular_velocity, self.center_of_mass_rate)
         a_recoil = self.center_of_mass_acc_rate
         self.acceleration_force = self.mass[0,0] * (a_centripetal + a_coriolis + a_tangential + a_recoil)
-        # print(f"Cycle {self.cycle}: a_tangential={a_tangential}, a_centripetal={a_centripetal}, a_coriolis={a_coriolis}, a_recoil={a_recoil}, total_acceleration_force={self.acceleration_force}")
+        # if np.linalg.norm(a_recoil) > 1e-6:
+        #     print(f"a_recoil={a_recoil}")
         # self.acceleration_force = np.zeros(3)  # disable fictitious forces for now
 
         return dynamics.compute_linear_acceleration_jit(
@@ -908,8 +918,9 @@ class Robot:
         Returns:
             3D vector of center of mass acceleration rate
         """
-        com_acc_rate = (self.get_center_of_mass_rate() - self.prev_center_of_mass_rate) / self.dt
-        self.prev_center_of_mass_rate = self.get_center_of_mass_rate()
+        com_acc_rate = (self.center_of_mass_rate - self.prev_center_of_mass_rate) / self.dt
+        # print("Center of Mass Acceleration Rate:", com_acc_rate)
+        self.prev_center_of_mass_rate = self.center_of_mass_rate
 
         return com_acc_rate
 
@@ -1089,7 +1100,7 @@ if __name__ == "__main__":
         plot_deform_torque, plot_added_mass_torque, plot_asymmetry_torque,
         plot_inertia_tensor, plot_robot_acceleration, plot_center_of_mass,
         plot_center_of_mass_rate, plot_center_of_mass_acc_rate,
-        plot_front_position_body_frame, plot_front_position_world_frame
+        plot_front_position_body_frame, plot_front_position_world_frame, plot_acceleration_force
     )
 
     # Test the Robot and Nozzle classes
@@ -1135,8 +1146,11 @@ if __name__ == "__main__":
     all_nozzle_yaw_data = []
     all_inertia_tensor_data = []
     all_center_of_mass_data = []
+    all_center_of_mass_rate_data = []
+    all_center_of_mass_acc_rate_data = []
     all_front_position_data = []
     all_front_position_world_data = []
+    all_acceleration_force_data = []
 
     for i in range(n_cycles):
 
@@ -1190,9 +1204,12 @@ if __name__ == "__main__":
         all_nozzle_yaw_data.extend(robot.nozzle_yaw_history[0:-1])
         all_inertia_tensor_data.extend(robot.inertia_tensor_history[0:-1])
         all_center_of_mass_data.extend(robot.center_of_mass_history[0:-1])
+        all_center_of_mass_rate_data.extend(robot.center_of_mass_rate_history[0:-1])
+        all_center_of_mass_acc_rate_data.extend(robot.center_of_mass_acc_rate_history[0:-1])
         all_front_position_data.extend(robot.position_front_history[0:-1])
         all_front_position_world_data.extend(robot.position_front_world_history[0:-1])
-        
+        all_acceleration_force_data.extend(robot.acceleration_force_history)
+
     # Convert accumulated data to numpy arrays
     all_time_data = np.array(all_time_data)
     all_state_data = np.array(all_state_data)
@@ -1203,6 +1220,7 @@ if __name__ == "__main__":
     all_euler_angle_rate_data = np.array(all_euler_angle_rate_data)
     all_angular_velocity_data = np.array(all_angular_velocity_data)
     all_angular_acceleration_data = np.array(all_angular_acceleration_data)
+    all_acceleration_force_data = np.array(all_acceleration_force_data)
     all_length_data = np.array(all_length_data)
     all_width_data = np.array(all_width_data)
     all_area_data = np.array(all_area_data)
@@ -1225,6 +1243,10 @@ if __name__ == "__main__":
     all_center_of_mass_data = np.array(all_center_of_mass_data)
     all_front_position_data = np.array(all_front_position_data)
     all_front_position_world_data = np.array(all_front_position_world_data)
+    all_center_of_mass_rate_data = np.array(all_center_of_mass_rate_data)
+    all_center_of_mass_acc_rate_data = np.array(all_center_of_mass_acc_rate_data)
+
+
     # Plot results
     # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
     # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
@@ -1232,6 +1254,9 @@ if __name__ == "__main__":
     # plot_volume_rate(all_time_data, all_volume_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_data, all_state_data)
     # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
+    # plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
+    # plot_center_of_mass_rate(all_time_data, all_center_of_mass_rate_data, all_state_data)
+    # plot_center_of_mass_acc_rate(all_time_data, all_center_of_mass_acc_rate_data, all_state_data)
 
     ## Translational Dynamics
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
@@ -1241,10 +1266,8 @@ if __name__ == "__main__":
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
+    # plot_acceleration_force(all_time_data, all_acceleration_force_data, all_state_data)
 
-    plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
-    plot_center_of_mass_rate(all_time_data, all_center_of_mass_data, all_state_data)
-    plot_center_of_mass_acc_rate(all_time_data, all_center_of_mass_data, all_state_data)
     # plot_front_position_body_frame(all_time_data, all_front_position_data, all_state_data)
     # plot_front_position_world_frame(all_time_data, all_front_position_world_data, all_state_data)
     # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
