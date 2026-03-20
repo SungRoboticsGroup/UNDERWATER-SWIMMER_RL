@@ -305,7 +305,7 @@ class Robot:
         self.drag_torque_ratio_mean = 0.1
         self.added_mass_coefficient_force_mean = np.diag([0.5, 0.6, 0.6])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.2, 0.2, 0.2])
-        self.added_mass_coefficient_torque_mean = np.diag([0.3, 0.9, 0.9])
+        self.added_mass_coefficient_torque_mean = np.diag([0.3, 1.5, 1.5])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.2, 0.2, 0.2])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
         self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
@@ -792,7 +792,7 @@ class Robot:
         self.coriolis_force = self._get_coriolis_force()
         self.drag_force = self._get_drag_force()
         self.jet_force = self._get_jet_force()
-        self.added_mass_force = self._get_added_mass_force()
+        mass_add, self.added_mass_force = self._get_added_mass_force()
 
         if self.disturbances:
             self.force_noise = self.force_disturbance.sample()
@@ -814,7 +814,7 @@ class Robot:
         # self.acceleration_force = np.zeros(3)  # disable fictitious forces for now
 
         return dynamics.compute_linear_acceleration_jit(
-            self.mass, 
+            self.mass + mass_add, 
             self.jet_force, 
             self.drag_force, 
             self.added_mass_force, 
@@ -830,7 +830,7 @@ class Robot:
         self.drag_torque = self._get_drag_torque()
         self.jet_torque = self._get_jet_torque()
         self.deform_torque = self._get_deform_torque()
-        self.added_mass_torque = self._get_added_mass_torque()
+        I_add, self.added_mass_torque = self._get_added_mass_torque()
 
         if self.disturbances:
             self.torque_noise = self.torque_disturbance.sample()
@@ -841,7 +841,7 @@ class Robot:
         I = self.get_inertia_matrix()
 
         return dynamics.compute_angular_acceleration_jit(
-            I, 
+            I + I_add, 
             self.jet_torque, 
             self.drag_torque, 
             self.coriolis_torque, 
@@ -857,6 +857,8 @@ class Robot:
         self.acceleration = self._newton_equations()
         self.angular_acceleration = self._euler_equations()
         self._update_motion_states()
+
+        # print(f"Time: {self.time:.2f}s, State: {self.state.name}, Position: {self.position_world}, Velocity: {self.velocity_world}, Acceleration: {self.acceleration}")
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -1064,6 +1066,7 @@ class Robot:
         return geometry.compute_mass_matrix_jit(self.dry_mass, self.water_mass, self.nozzle.mass)
 
     def get_mass_rate(self) -> np.ndarray:
+        # print(f"Water Mass: {self.water_mass:.4f} kg, Previous Water Mass: {self.prev_water_mass:.4f} kg, Mass Rate: {(self.water_mass - self.prev_water_mass) / self.dt:.4f} kg/s")
         return geometry.compute_mass_rate_jit(self.water_mass, self.prev_water_mass, self.dt)
 
     # ==================== Timing Methods ====================

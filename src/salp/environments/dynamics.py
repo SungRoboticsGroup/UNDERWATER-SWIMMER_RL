@@ -7,6 +7,8 @@ def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_ma
     """Fast compiled computation of Newton's equations."""
     total_force = jet_force + drag_force + added_mass_force + coriolis_force + noise_force + acceleraiton_force
     # np.linalg.solve is faster and more stable than inv() @ vector
+    # print("Total force:", total_force)
+    # print(added_mass_force)
     return np.linalg.solve(mass_matrix, total_force)
 
 # checked
@@ -137,25 +139,33 @@ def compute_added_mass_force_jit(mass, added_mass_coeff, mass_rate, added_mass_r
     added_mass_rate = mass_rate @ added_mass_rate_coeff
     
     term1 = added_mass @ acceleration
+    term1 = 0.0
     term2 = np.cross(angular_velocity, added_mass @ velocity)
     term3 = added_mass_rate @ velocity
+
+    # print("Added mass force terms:", term1, term2, term3)
+    # print(added_mass_rate_coeff, added_mass_rate, velocity)
     
-    return -(term1 + term2 + term3)
+    return added_mass, -(term1 + term2 + term3)
 
 # checked
 @jit(nopython=True, cache=True)
 def compute_added_mass_torque_jit(I, added_mass_coeff_torque, I_rate, added_mass_rate_coeff_torque, mass, added_mass_coeff_force, angular_acceleration, angular_velocity, velocity):
     """Fast compiled calculation of added mass torque."""
+    # for numerial stability, the acceleration associated added mass must be taken out 
     added_mass = I @ added_mass_coeff_torque
     added_mass_rate = I_rate @ added_mass_rate_coeff_torque
     added_mass_force_matrix = mass @ added_mass_coeff_force
     
     term1 = added_mass @ angular_acceleration
+    term1 = 0.0
     term2 = np.cross(angular_velocity, added_mass @ angular_velocity)
     term3 = added_mass_rate @ angular_velocity
     term4 = np.cross(velocity, added_mass_force_matrix @ velocity)
+
+    # print("Added mass torque terms:", term1, term2, term3, term4)
     
-    return -(term1 + term2 + term3 + term4)
+    return added_mass, -(term1 + term2 + term3 + term4)
 
 # checked
 @jit(nopython=True, cache=True)
