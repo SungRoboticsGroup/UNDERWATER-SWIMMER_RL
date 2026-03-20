@@ -157,6 +157,7 @@ def plot_all_trajectories_xz(file_names: list, start_time: list, marker_step: in
     ax.set_title('Trajectories (X-Z Plane) with Yaw Direction')
     ax.legend(loc='upper left', fontsize='small')
     ax.set_aspect('equal', adjustable='datalim')
+    ax.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
 

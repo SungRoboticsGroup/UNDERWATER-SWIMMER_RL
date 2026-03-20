@@ -150,11 +150,11 @@ def simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle):
         
         # Create time array for this cycle
         cycle_start_time = robot.time - robot.cycle_time
-        time_array = np.arange(cycle_start_time, robot.time + robot.dt, robot.dt)[:len(robot.position_world_history)]
+        time_array = np.arange(cycle_start_time, robot.time, robot.dt)[:len(robot.length_history)-1]
         
         # Accumulate data
         times.extend(time_array)
-        positions.extend(robot.position_world_history)
+        positions.extend(robot.position_front_world_history)
         velocities.extend(robot.velocity_world_history)
         euler_angles.extend(robot.euler_angle_history)
         states.extend(robot.state_history)
@@ -259,7 +259,9 @@ def compare_coast_times():
 def compare_yaw_angles():
     """Compare trajectories with different yaw angles."""
     print("\nComparing different yaw angles...")
-    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.1**2, mass=0.440)
+    # Keep nozzle geometry consistent with the main robot setup.
+    # NOTE: radius=0.01 m (not 0.1 m) to avoid unrealistically large jet area.
+    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
     robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
                   max_contraction=0.04, nozzle=nozzle)
     robot.set_environment(density=1000)

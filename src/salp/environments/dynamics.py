@@ -121,11 +121,13 @@ def compute_drag_torque_jit(density, rot_drag_coeff, area, angular_velocity, wid
     """Fast compiled calculation of rotational drag torque."""
     w_norm = np.linalg.norm(angular_velocity)
     # Dimensions array for the quadratic drag term
-    dims = np.array([width**3, length**3, length**3])
+    dims = np.array([(width/2)**3, (length/2)**3, (length/2)**3])
     
     T_quadratic = -0.5 * density * rot_drag_coeff * area * w_norm * angular_velocity * dims
-    T_linear = -0.5 * density * rot_drag_coeff * area * angular_velocity * width
-    return T_quadratic + drag_torque_ratio * T_linear
+    # T_linear = -0.5 * density * rot_drag_coeff * area * angular_velocity * np.array([width/2, length/2, length/2])
+    T_linear = -1.0 * angular_velocity
+
+    return (1 - drag_torque_ratio) * T_quadratic + drag_torque_ratio * T_linear
 
 # checked
 @jit(nopython=True, cache=True)
