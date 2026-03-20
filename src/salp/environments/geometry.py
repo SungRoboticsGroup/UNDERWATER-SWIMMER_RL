@@ -28,7 +28,8 @@ def propulsion_time_from_compression_jit(compression, coefficients):
 def fit_length_width_relation_jit():
     lengths = np.array([0.26, 0.25, 0.24, 0.23, 0.22, 0.21, 0.20])  # Example lengths during contraction
     widths = np.array([0.14, 0.16, 0.175, 0.18, 0.20, 0.21, 0.22])   # Corresponding widths to maintain constant volume
-    coefficients = np.polyfit(lengths, widths, 2)  # Fit a polynomial of degree 2
+    weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0, 1.0, 1e10])
+    coefficients = np.polyfit(lengths, widths, deg=2, w=weights)  # Fit a polynomial of degree 2
     return coefficients
 
 @jit(nopython=True, cache=True)
@@ -37,19 +38,28 @@ def width_from_length_jit(length, coefficients):
 
 # checked 
 @jit(nopython=True, cache=True)
-def compute_length_jit(state_val, cycle_time, refill_time, turn_time, init_length, contraction, contract_rate, release_rate):
+def compute_length_jit(state_val, cycle_time, refill_time, propulsion_time, turn_time, init_length, contraction, contract_rate, release_rate, refill_coefficient, propulsion_coefficient):
     """Fast compiled current body length calculation."""
+    # if state_val == 0:  # REFILL phase
+    #     if cycle_time < refill_time:
+    #         return init_length - cycle_time * contract_rate
+    #     else:
+    #         return init_length - contraction
+    # elif state_val == 1:  # JET phase
+    #     return init_length - contraction + (cycle_time - max(refill_time, turn_time)) * release_rate
+    # else:
+    #     return init_length
+
     if state_val == 0:  # REFILL phase
         if cycle_time < refill_time:
-            return init_length - cycle_time * contract_rate
+            return compute_length_from_time_jit(cycle_time, init_length - contraction, refill_time, refill_coefficient)
         else:
             return init_length - contraction
     elif state_val == 1:  # JET phase
-        return init_length - contraction + (cycle_time - max(refill_time, turn_time)) * release_rate
+        return compute_length_from_time_jit(cycle_time - max(refill_time, turn_time), init_length, propulsion_time, propulsion_coefficient)
     else:
         return init_length
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_width_jit(state_val, cycle_time, refill_time, turn_time, init_width, contraction, contract_rate, release_rate):
     """Fast compiled current body width calculation."""
@@ -62,6 +72,17 @@ def compute_width_jit(state_val, cycle_time, refill_time, turn_time, init_width,
         return init_width + contraction - (cycle_time - max(refill_time, turn_time)) * release_rate
     else:
         return init_width
+
+@jit(nopython=True, cache=True)
+def fit_length_time_function_jit(init_length, end_length, time):
+
+    a = (init_length - end_length) / (0 - time)**2
+
+    return a
+
+@jit(nopython=True, cache=True)
+def compute_length_from_time_jit(time, end_length, end_time, a):
+    return a*(time - end_time)**2 + end_length
 
 # checked
 @jit(nopython=True, cache=True)
@@ -202,8 +223,6 @@ def compute_center_of_mass_jit(length, width, tube_volume, nozzle_mass, buoy_mas
     center_of_mass = (tube_mass * pos_tube + nozzle_mass * pos_nozzle + buoy_mass * pos_buoy + skin_mass * pos_skin + water_mass * pos_water) / total_mass
     
     return center_of_mass
-
-
 
 @jit(nopython=True, cache=True)
 def randomize_scalar_jit(value, uncertainty=0.1, lower_bound=np.nan, upper_bound=np.nan):
