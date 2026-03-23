@@ -308,8 +308,8 @@ class Robot:
         self.drag_torque_ratio_mean = 0.1
         self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 1.0])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.2, 0.2, 0.2])
-        self.added_mass_coefficient_torque_mean = np.diag([0.3, 1.0, 1.0])
-        self.added_mass_rate_coefficient_torque_mean = np.diag([0.2, 1.0, 1.0])
+        self.added_mass_coefficient_torque_mean = np.diag([0.1, 0.1, 0.1])
+        self.added_mass_rate_coefficient_torque_mean = np.diag([0.1, 0.1, 0.1])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
         self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
         
@@ -436,8 +436,8 @@ class Robot:
         # Different drag coefficients for rotational x, y, z directions
         # initial and end of deformation drag coefficients
         rot_x = [0.5, 1.0]
-        rot_y = [1.0, 4.0]
-        rot_z = [1.0, 4.0]
+        rot_y = [3.0, 5.0]
+        rot_z = [3.0, 5.0]
 
         return np.array([rot_x, rot_y, rot_z])
 
