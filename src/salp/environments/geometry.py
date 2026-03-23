@@ -116,10 +116,17 @@ def compute_mass_matrix_jit(dry_mass, water_mass, nozzle_mass):
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_mass_rate_jit(water_mass, prev_water_mass, dt):
+def compute_mass_rate_jit(water_volume, prev_water_volume, dt, loss_coeff, density=1000):
     """Fast compiled mass rate matrix calculation."""
-    rate = (water_mass - prev_water_mass) / dt
-    return np.diag(np.array([rate, rate, rate]))
+    rate = compute_volume_rate_jit(water_volume, prev_water_volume, dt, loss_coeff=0.0)
+    mass_rate = rate * density
+    return np.diag(np.array([mass_rate, mass_rate, mass_rate]))
+
+@jit(nopython=True, cache=True)
+def compute_volume_rate_jit(water_volume, prev_water_volume, dt, loss_coeff):
+    """Fast compiled volume rate calculation."""
+    volume_rate = (water_volume - prev_water_volume) / dt
+    return volume_rate * (1 - loss_coeff)
 
 # checked
 @jit(nopython=True, cache=True)

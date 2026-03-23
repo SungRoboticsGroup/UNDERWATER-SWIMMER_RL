@@ -1,5 +1,6 @@
 from numba import jit
 import numpy as np 
+import geometry
 
 # checked
 @jit(nopython=True, cache=True)
@@ -87,11 +88,11 @@ def to_body_frame_jit(euler_angle, vector):
 
 # ==================== Numba Force & Torque Calculations ====================
 @jit(nopython=True, cache=True)
-def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_area, nozzle_direction):
+def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_area, nozzle_direction, loss_coeff):
     """Fast compiled jet velocity calculation."""
     if state_val != 1:  # Only produce jet velocity during JET phase
         return np.zeros(3)
-    volume_rate = (volume - prev_water_volume) / dt
+    volume_rate = geometry.compute_volume_rate_jit(volume, prev_water_volume, dt, loss_coeff)
     jet_speed = volume_rate / nozzle_area
     return nozzle_direction * jet_speed
 
