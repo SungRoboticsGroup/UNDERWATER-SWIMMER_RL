@@ -128,7 +128,7 @@ def compute_drag_torque_jit(density, rot_drag_coeff, area, angular_velocity, wid
     
     T_quadratic = -0.5 * density * rot_drag_coeff * area * w_norm * angular_velocity * dims
     # T_linear = -0.5 * density * rot_drag_coeff * area * angular_velocity * np.array([width/2, length/2, length/2])
-    T_linear = -1.0 * angular_velocity
+    T_linear = -0.1 * angular_velocity
 
     return (1 - drag_torque_ratio) * T_quadratic + drag_torque_ratio * T_linear
 

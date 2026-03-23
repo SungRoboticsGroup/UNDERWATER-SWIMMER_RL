@@ -176,12 +176,15 @@ def compute_inertia_matrix_jit(length, width, tube_volume, mass_buoy, mass_tube,
     density = 1000
     l_tube = 0.15
     r_tube = 0.03
+    
 
-    I_xx_tube = 1/2 * (mass_tube - tube_volume * density) * r_tube**2
-    I_yy_tube = 1/12 * (mass_tube - tube_volume * density) * (3*r_tube**2 + l_tube**2)
-    I_zz_tube = 1/12 * (mass_tube - tube_volume * density) * (3*r_tube**2 + l_tube**2)
+    tube_area_mass = mass_tube - tube_volume * density
 
-    I_tube = np.diag(np.array([I_xx_tube, I_yy_tube, I_zz_tube])) + (mass_tube - tube_volume * density) * np.diag(np.array([0.0, (length/2 - 0.08)**2, (length/2 - 0.08)**2])) # skin inertia tensor 
+    I_xx_tube = 1/2 * tube_area_mass * r_tube**2
+    I_yy_tube = 1/12 * tube_area_mass * (3*r_tube**2 + l_tube**2)
+    I_zz_tube = 1/12 * tube_area_mass * (3*r_tube**2 + l_tube**2)
+
+    I_tube = np.diag(np.array([I_xx_tube, I_yy_tube, I_zz_tube])) + tube_area_mass * np.diag(np.array([0.0, (length/2 - 0.08)**2, (length/2 - 0.08)**2])) # skin inertia tensor 
     
     # skin inertia tensor
     I_xx_skin = 1/3 * mass_skin * ((width/2)**2 + (width/2)**2)
@@ -207,7 +210,7 @@ def compute_inertia_matrix_jit(length, width, tube_volume, mass_buoy, mass_tube,
     I_yy_nozzle = 1/12 * mass_nozzle * (w_nozzle**2 + h_nozzle**2)
     I_zz_nozzle = 1/12 * mass_nozzle * (l_nozzle**2 + w_nozzle**2)
 
-    I_nozzle = np.diag(np.array([I_xx_nozzle, I_yy_nozzle, I_zz_nozzle])) + mass_nozzle * np.diag(np.array([0.0, (length/2+0.025)**2, (length/2+0.025)**2]) )
+    I_nozzle = np.diag(np.array([I_xx_nozzle, I_yy_nozzle, I_zz_nozzle])) + mass_nozzle * np.diag(np.array([0.0, (length/2 + 0.025)**2, (length/2 + 0.025)**2]) )
     
     return I_buoy + I_tube + I_skin + I_water + I_nozzle
 
