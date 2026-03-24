@@ -115,8 +115,9 @@ def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force
     """Fast compiled calculation of translational drag force."""
     v_norm = np.linalg.norm(velocity)
     F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
-    F_linear = -0.5 * density * area * trans_drag_coeff * velocity
-    return F_quadratic + drag_force_ratio * F_linear
+    # F_linear = -0.5 * density * area * trans_drag_coeff * velocity
+    F_linear = -35.0 * velocity
+    return ((1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear) 
 
 # checked
 @jit(nopython=True, cache=True)

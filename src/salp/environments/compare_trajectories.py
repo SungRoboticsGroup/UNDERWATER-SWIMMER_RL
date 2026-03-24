@@ -154,7 +154,7 @@ def simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle):
         
         # Accumulate data
         times.extend(time_array)
-        positions.extend(robot.position_world_history)
+        positions.extend(robot.position_front_world_history)
         velocities.extend(robot.velocity_world_history)
         euler_angles.extend(robot.euler_angle_history)
         states.extend(robot.state_history)

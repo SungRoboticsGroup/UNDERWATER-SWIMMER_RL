@@ -304,7 +304,7 @@ class Robot:
         self.disturbances = False
         self.discharge_coefficient_mean = 0.5 # should definite be lower than 0.6 maybe around 0.4 - 0.5
         self.volume_loss_rate = 0.85
-        self.drag_force_ratio_mean = 0.25 
+        self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.1
         self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 1.0])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.2, 0.2, 0.2])
@@ -425,8 +425,8 @@ class Robot:
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
         trans_x = [1.5, 2.5]
-        trans_y = [2.5, 2.5]
-        trans_z = [2.5, 2.5]
+        trans_y = [3.0, 5.0]
+        trans_z = [3.0, 5.0]
 
         return np.array([trans_x, trans_y, trans_z])
 
@@ -1167,7 +1167,7 @@ if __name__ == "__main__":
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 6
+    n_cycles = 1
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1208,9 +1208,9 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle= np.pi/2 )
+        robot.nozzle.set_yaw_angle(yaw_angle = np.pi / 2)
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.03, coast_time=3, 
+        robot.set_control(contraction=0.04, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         # robot.estimate_jet_velocity()
         robot.step_through_cycle()
@@ -1306,11 +1306,11 @@ if __name__ == "__main__":
 
     # Plot results
     # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
-    # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
+    plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
     # plot_volume_rate(all_time_data, all_volume_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_data, all_state_data)
-    plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
+    # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
     # plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
     # plot_center_of_mass_rate(all_time_data, all_center_of_mass_rate_data, all_state_data)
     # plot_center_of_mass_acc_rate(all_time_data, all_center_of_mass_acc_rate_data, all_state_data)
@@ -1322,8 +1322,8 @@ if __name__ == "__main__":
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
-    # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
-    # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
+    plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
+    plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
     # plot_acceleration_force(all_time_data, all_acceleration_force_data, all_state_data)
 
     # plot_front_position_body_frame(all_time_data, all_front_position_data, all_state_data)
@@ -1333,9 +1333,9 @@ if __name__ == "__main__":
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
-    plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
+    # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
@@ -1345,8 +1345,8 @@ if __name__ == "__main__":
     # plot_asymmetry_torque(all_time_data, all_asymmetry_torque_data, all_state_data)
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
-    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
-    plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data)
+    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data)
+    # plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data)
 
     plt.show(block=True)
     
