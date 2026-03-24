@@ -163,18 +163,16 @@ def plot_robot_mass(time_data, mass_data, state_data=None, title="Robot Total Ma
     return fig
 
 
-def plot_mass_rate(time_data, mass_data, state_data=None, title="Rate of Change of Mass Over Time"):
+def plot_mass_rate(time_data, mass_rate_data, state_data=None, title="Rate of Change of Mass Over Time"):
     """
     Plot the rate of change of mass over time.
     
     Args:
         time_data: Array of time values
-        mass_data: Array of total mass values
+        mass_rate_data: Array of mass rate values
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    # Calculate rate of change of mass (dm/dt)
-    mass_rate = np.gradient(mass_data, time_data)
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -182,7 +180,7 @@ def plot_mass_rate(time_data, mass_data, state_data=None, title="Rate of Change 
     if state_data is not None:
         _add_phase_backgrounds(ax, time_data, state_data)
     
-    ax.plot(time_data, mass_rate, 'purple', linewidth=2, label='Mass Rate (dm/dt)', zorder=3)
+    ax.plot(time_data, mass_rate_data, 'purple', linewidth=2, label='Mass Rate (dm/dt)', zorder=3)
     ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
     
     ax.set_xlabel('Time (s)')
@@ -198,18 +196,17 @@ def plot_mass_rate(time_data, mass_data, state_data=None, title="Rate of Change 
     return fig
 
 
-def plot_volume_rate(time_data, volume_data, state_data=None, title="Rate of Change of Volume Over Time"):
+def plot_volume_rate(time_data, volume_rate_data, state_data=None, title="Rate of Change of Volume Over Time"):
     """
     Plot the rate of change of volume over time.
     
     Args:
         time_data: Array of time values
-        volume_data: Array of volume values
+        volume_rate_data: Array of volume rate values
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
     # Calculate rate of change of volume (dV/dt)
-    volume_rate = np.gradient(volume_data, time_data)
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -217,7 +214,7 @@ def plot_volume_rate(time_data, volume_data, state_data=None, title="Rate of Cha
     if state_data is not None:
         _add_phase_backgrounds(ax, time_data, state_data)
     
-    ax.plot(time_data, volume_rate, 'orange', linewidth=2, label='Volume Rate (dV/dt)', zorder=3)
+    ax.plot(time_data, volume_rate_data, 'orange', linewidth=2, label='Volume Rate (dV/dt)', zorder=3)
     ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
     
     ax.set_xlabel('Time (s)')
