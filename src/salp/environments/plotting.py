@@ -850,13 +850,16 @@ def plot_jet_torque(time_data, jet_torque_data,
     
     return fig
 
-def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None, euler_angle_data: np.ndarray = None):
+def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
+                       euler_angle_data: np.ndarray = None, nozzle_yaw_data: np.ndarray = None):
     """Plot the robot's trajectory in the x-y plane.
     
     Args:
         position_data: Nx3 array of position data [x, y, z]
         state_data: Optional array of phase states for color coding
-        euler_angle_data: Optional Nx3 array of euler angles [roll, pitch, yaw] for orientation visualization
+        euler_angle_data: Optional Nx3 array of euler angles [roll, pitch, yaw] for body orientation visualization
+        nozzle_yaw_data: Optional array of nozzle yaw values (radians). When provided,
+                nozzle orientation is shown along the trajectory.
     """
     import matplotlib.pyplot as plt
     
@@ -916,6 +919,7 @@ def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
     # Scale triangle size to be approximately 2% of the data range
     triangle_size = data_range * 0.02 if data_range > 0 else 0.015
     
+    yaw_angles = None
     if euler_angle_data is not None:
         # Use yaw angle to determine arrow direction
         yaw_angles = euler_angle_data[:, 2]  # Extract yaw (psi) angles
@@ -970,12 +974,39 @@ def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
             poly = Polygon(triangle, facecolor='none', edgecolor='black', 
                           linewidth=1.5, alpha=0.9, zorder=4)
             ax.add_patch(poly)
+
+    # Add nozzle orientation vectors along trajectory
+    if nozzle_yaw_data is not None:
+        if len(nozzle_yaw_data) != len(x_positions):
+            raise ValueError(
+                f"Length mismatch: nozzle_yaw_data has {len(nozzle_yaw_data)} samples, "
+                f"but position_data has {len(x_positions)} samples"
+            )
+
+        if yaw_angles is not None:
+            nozzle_world_angles = yaw_angles + nozzle_yaw_data
+        else:
+            nozzle_world_angles = nozzle_yaw_data
+
+        nozzle_vector_length = triangle_size * 0.9
+        for i in range(0, len(x_positions), arrow_interval):
+            nozzle_end_x = x_positions[i] + nozzle_vector_length * np.cos(nozzle_world_angles[i])
+            nozzle_end_y = y_positions[i] + nozzle_vector_length * np.sin(nozzle_world_angles[i])
+            ax.plot(
+                [x_positions[i], nozzle_end_x],
+                [y_positions[i], nozzle_end_y],
+                color='purple', linewidth=1.4, alpha=0.85, zorder=4
+            )
+
+        ax.plot([], [], color='purple', linewidth=1.8, label='Nozzle orientation')
     
     ax.set_xlabel('X Position (m)', fontsize=12)
     ax.set_ylabel('Y Position (m)', fontsize=12)
     title = 'Robot Trajectory in X-Y Plane'
     if euler_angle_data is not None:
         title += ' (Arrows show yaw orientation)'
+    if nozzle_yaw_data is not None:
+        title += ' + nozzle orientation'
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.axis('equal')

@@ -105,9 +105,9 @@ def compute_jet_force_jit(discharge_coeff, mass_rate, jet_velocity):
 
 # checked 
 @jit(nopython=True, cache=True)
-def compute_jet_torque_jit(moment_arm, jet_force):
+def compute_jet_torque_jit(moment_arm, jet_force, discount_factor):
     """Fast compiled calculation of torque from jet force."""
-    return np.cross(moment_arm, jet_force)
+    return np.cross(moment_arm, jet_force) * discount_factor
 
 # checked
 @jit(nopython=True, cache=True)

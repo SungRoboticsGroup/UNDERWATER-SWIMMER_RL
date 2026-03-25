@@ -82,6 +82,7 @@ class SalpRobotEnv(gym.Env):
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
         self.cycle_positions = []
+        self.cycle_front_positions = []
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
@@ -112,6 +113,9 @@ class SalpRobotEnv(gym.Env):
         self.prev_target_point = None  # Previous target point
         self.trajectory_waypoints = []  # List of waypoints to visualize
         self.current_waypoint_index = 0  # Index of current target in trajectory
+        # Persistent trail of visited world positions (for live trajectory visualization)
+        self.traversed_positions = []
+        self.traversed_front_positions = []
 
         self.reset()
     
@@ -130,11 +134,12 @@ class SalpRobotEnv(gym.Env):
         self.prev_target_point = self.robot.position_world[0:-1].copy()
        
         # self.body_radius = self.base_radius  # Current body radius
-        self.ellipse_a = self.robot.get_current_length()    # Semi-major axis for ellipse
-        self.ellipse_b = self.robot.get_current_width()    # Semi-minor axis for ellipse
+        self.ellipse_a = self.robot.init_length    # Semi-major axis for ellipse
+        self.ellipse_b = self.robot._length_width_relation(self.ellipse_a)    # Semi-minor axis for ellipse
 
         # clear any previously recorded cycle history
         self.cycle_positions = []
+        self.cycle_front_positions = []
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
@@ -142,6 +147,8 @@ class SalpRobotEnv(gym.Env):
         self._history_draw_index = 0
         self._history_loop = True
         self._history_step = 1
+        self.traversed_positions = []
+        self.traversed_front_positions = []
 
         return self._get_observation(), {}
 
@@ -233,8 +240,19 @@ class SalpRobotEnv(gym.Env):
         # store the most recent breathing-cycle histories (meters)
         if self.render_mode == "human":
             try:
+                # Persist previously completed cycle so trajectory remains visible across actions
+                if len(self.cycle_positions) > 0:
+                    if len(self.traversed_positions) == 0:
+                        self.traversed_positions.append(np.array(self.cycle_positions[0], dtype=float))
+                    self.traversed_positions.extend(np.array(p, dtype=float) for p in self.cycle_positions[1:])
+                if len(self.cycle_front_positions) > 0:
+                    if len(self.traversed_front_positions) == 0:
+                        self.traversed_front_positions.append(np.array(self.cycle_front_positions[0], dtype=float))
+                    self.traversed_front_positions.extend(np.array(p, dtype=float) for p in self.cycle_front_positions[1:])
+
                 # convert to Python lists for easier use in render
                 self.cycle_positions = [np.array(p) for p in self.robot.position_world_history]
+                self.cycle_front_positions = [np.array(p) for p in self.robot.position_front_world_history]
                 self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
                 self.cycle_lengths = [float(l) for l in self.robot.length_history]
                 self.cycle_widths = [float(w) for w in self.robot.width_history]
@@ -249,6 +267,7 @@ class SalpRobotEnv(gym.Env):
                 self._animation_total_duration_ms = actual_cycle_time / 2 * 1000
             except Exception:
                 self.cycle_positions = []
+                self.cycle_front_positions = []
                 self.cycle_euler_angles = []
                 self.cycle_lengths = []
                 self.cycle_widths = []
@@ -829,6 +848,56 @@ class SalpRobotEnv(gym.Env):
         if current_frame_idx >= len(pts):
             self._animation_complete = True
             current_frame_idx = len(pts) - 1  # Show last frame
+
+        # Draw live trajectory trail: completed cycles + current in-progress cycle
+        trajectory_points = []
+        if len(self.traversed_positions) > 0:
+            trajectory_points.extend(self.traversed_positions)
+
+        for j in range(current_frame_idx + 1):
+            sample_idx = pts[j][2]
+            if sample_idx < len(self.cycle_positions):
+                trajectory_points.append(self.cycle_positions[sample_idx])
+
+        if len(trajectory_points) > 1:
+            max_points = 1200
+            if len(trajectory_points) > max_points:
+                step = max(1, len(trajectory_points) // max_points)
+                trajectory_points = trajectory_points[::step]
+
+            screen_points = []
+            for pos in trajectory_points:
+                sx = int(float(pos[0]) * scale) + self.pos_init[0]
+                sy = int(float(pos[1]) * scale) + self.pos_init[1]
+                screen_points.append((sx, sy))
+
+            if len(screen_points) > 1:
+                pygame.draw.lines(self.screen, (80, 220, 255), False, screen_points, 2)
+
+        # Draw live front-point trajectory trail
+        front_trajectory_points = []
+        if len(self.traversed_front_positions) > 0:
+            front_trajectory_points.extend(self.traversed_front_positions)
+
+        for j in range(current_frame_idx + 1):
+            sample_idx = pts[j][2]
+            if sample_idx < len(self.cycle_front_positions):
+                front_trajectory_points.append(self.cycle_front_positions[sample_idx])
+
+        if len(front_trajectory_points) > 1:
+            max_points = 1200
+            if len(front_trajectory_points) > max_points:
+                step = max(1, len(front_trajectory_points) // max_points)
+                front_trajectory_points = front_trajectory_points[::step]
+
+            front_screen_points = []
+            for pos in front_trajectory_points:
+                fx = int(float(pos[0]) * scale) + self.pos_init[0]
+                fy = int(float(pos[1]) * scale) + self.pos_init[1]
+                front_screen_points.append((fx, fy))
+
+            if len(front_screen_points) > 1:
+                pygame.draw.lines(self.screen, (255, 120, 80), False, front_screen_points, 2)
 
         # Draw only the current frame
         px, py, idx = pts[current_frame_idx]
@@ -1647,7 +1716,7 @@ if __name__ == "__main__":
     while not done:
 
         start_time = time.perf_counter()
-        action = [0.5, 0.2, 1]  # inhale with no nozzle steering
+        action = [0.5, 0.2, 1/1.5]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
