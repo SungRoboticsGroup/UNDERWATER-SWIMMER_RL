@@ -130,13 +130,11 @@ def compute_volume_rate_jit(water_volume, prev_water_volume, dt, loss_coeff):
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_drag_coefficient_jit(length, width, init_length, init_width, max_contraction, ranges):
+def compute_drag_coefficient_jit(length, width, init_length, init_width, end_length, end_width, ranges):
     """Fast compiled drag coefficient interpolation."""
     aspect_ratio = length / width
     init_aspect_ratio = init_length / init_width
-    contracted_length = init_length - max_contraction
-    contracted_width = init_length - contracted_length + init_width
-    end_aspect_ratio = contracted_length / contracted_width
+    end_aspect_ratio = end_length / end_width
     
     normalized_ratio = (aspect_ratio - end_aspect_ratio) / (init_aspect_ratio - end_aspect_ratio)
     

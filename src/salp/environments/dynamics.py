@@ -156,6 +156,7 @@ def compute_added_mass_torque_jit(I, added_mass_coeff_torque, I_rate, added_mass
     """Fast compiled calculation of added mass torque."""
     # for numerial stability, the acceleration associated added mass must be taken out 
     added_mass = I @ added_mass_coeff_torque
+    # print(added_mass_coeff_torque)
     added_mass_rate = I_rate @ added_mass_rate_coeff_torque
     added_mass_force_matrix = mass @ added_mass_coeff_force
     
