@@ -16,7 +16,8 @@ def refill_time_from_compression_jit(compression, coefficients):
 # data-driven propulsion time
 def fit_compression_propulsion_time_relation_jit():
     compression = np.array([0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
-    propulsion_time = np.array([0.1, 0.3, 0.4, 0.5])   # Corresponding widths to maintain constant volume
+    # propulsion_time = np.array([0.1, 0.3, 0.4, 0.5])   # Corresponding widths to maintain constant volume
+    propulsion_time = np.array([0.4, 1.2, 1.6, 2.0])   # Corresponding widths to maintain constant volume
     coefficients = np.polyfit(compression, propulsion_time, 2)  # Fit a polynomial of degree 2
     return coefficients
 

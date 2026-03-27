@@ -1716,7 +1716,7 @@ if __name__ == "__main__":
     while not done:
 
         start_time = time.perf_counter()
-        action = [0.5, 0.2, 1/24]  # inhale with no nozzle steering
+        action = [0.5, 0.2, 1/1]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)

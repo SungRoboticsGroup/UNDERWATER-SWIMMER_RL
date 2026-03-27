@@ -308,7 +308,7 @@ class Robot:
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
         self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 1.0])
-        self.added_mass_rate_coefficient_force_mean = np.diag([0.4, 0.4, 0.4])
+        self.added_mass_rate_coefficient_force_mean = np.diag([0.0, 0.1, 0.1])
         self.added_mass_coefficient_torque_mean = np.diag([0.5, 1.0, 1.5])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.5, 0.5, 0.5])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
@@ -715,6 +715,7 @@ class Robot:
             'state_history': self.state,
             'position_world_history': self.position_world.copy(),
             'velocity_history': self.velocity.copy(),
+            'velocity_world_history': self.velocity_world.copy(),
             'acceleration_history': self.acceleration.copy(),
             'euler_angle_history': self.euler_angle.copy(),
             'euler_angle_rate_history': self.euler_angle_rate.copy(),
@@ -1168,6 +1169,7 @@ if __name__ == "__main__":
     all_state_data = []
     all_position_data = []
     all_velocity_data = []
+    all_velocity_world_data = []
     all_acceleration_data = []
     all_euler_angle_data = []
     all_euler_angle_rate_data = []
@@ -1204,7 +1206,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 6)
+        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1230,6 +1232,7 @@ if __name__ == "__main__":
         all_state_data.extend(robot.state_history[0:-1])
         all_position_data.extend(robot.position_world_history[0:-1])
         all_velocity_data.extend(robot.velocity_history[0:-1])
+        all_velocity_world_data.extend(robot.velocity_world_history[0:-1])
         all_acceleration_data.extend(robot.acceleration_history[0:-1])
         all_euler_angle_data.extend(robot.euler_angle_history[0:-1])
         all_euler_angle_rate_data.extend(robot.euler_angle_rate_history[0:-1])
@@ -1269,6 +1272,7 @@ if __name__ == "__main__":
     all_state_data = np.array(all_state_data)
     all_position_data = np.array(all_position_data)
     all_velocity_data = np.array(all_velocity_data)
+    all_velocity_world_data = np.array(all_velocity_world_data)
     all_acceleration_data = np.array(all_acceleration_data)
     all_euler_angle_data = np.array(all_euler_angle_data)
     all_euler_angle_rate_data = np.array(all_euler_angle_rate_data)
@@ -1315,26 +1319,27 @@ if __name__ == "__main__":
 
 
     ## Translational Dynamics
-    # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
-    #                 all_coriolis_force_data, all_added_mass_force_data, all_state_data)
+    plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
+                    all_coriolis_force_data, all_added_mass_force_data, all_state_data)
     # plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
-    # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
+    plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
     # plot_acceleration_force(all_time_data, all_acceleration_force_data, all_state_data)
 
     # plot_front_position_body_frame(all_time_data, all_front_position_data, all_state_data)
     # plot_front_position_world_frame(all_time_data, all_front_position_world_data, all_state_data)
-    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)  
+    # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)
+    plot_robot_velocity(all_time_data, all_velocity_world_data, all_state_data)  
     # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
-    plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
+    # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
