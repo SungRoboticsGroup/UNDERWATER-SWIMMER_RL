@@ -303,14 +303,14 @@ class Robot:
         self.dynamics_randomization = False
         self.disturbances = False
         self.discharge_coefficient_mean = 0.9 # should definite be lower than 0.6 maybe around 0.4 - 0.5
-        self.discount_factor_torque = 0.1
+        self.discount_factor_torque = 0.2
         self.volume_loss_rate = 0.75
         self.drag_force_ratio_mean = 0.1
-        self.drag_torque_ratio_mean = 0.1
-        self.added_mass_coefficient_force_mean = np.diag([0.0, 0.0, 0.0])
-        self.added_mass_rate_coefficient_force_mean = np.diag([0.0, 0.0, 0.0])
-        self.added_mass_coefficient_torque_mean = np.diag([1.0, 0.0, 0.0])
-        self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.0])
+        self.drag_torque_ratio_mean = 0.7
+        self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 1.0])
+        self.added_mass_rate_coefficient_force_mean = np.diag([0.4, 0.4, 0.4])
+        self.added_mass_coefficient_torque_mean = np.diag([0.5, 1.0, 1.5])
+        self.added_mass_rate_coefficient_torque_mean = np.diag([0.5, 0.5, 0.5])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
         self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
         
@@ -429,8 +429,8 @@ class Robot:
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
         trans_x = [0.5, 1.0]
-        trans_y = [2.0, 3.0]
-        trans_z = [2.0, 2.5]
+        trans_y = [10.0, 20.0]
+        trans_z = [0.1, 0.2]
 
         return np.array([trans_x, trans_y, trans_z])
 
@@ -440,8 +440,8 @@ class Robot:
         # Different drag coefficients for rotational x, y, z directions
         # initial and end of deformation drag coefficients
         rot_x = [0.1, 0.2]
-        rot_y = [1.5, 2.0]
-        rot_z = [1.0, 1.5]
+        rot_y = [0.5, 1.0]
+        rot_z = [3.0, 3.5]
 
         return np.array([rot_x, rot_y, rot_z])
 
@@ -1204,9 +1204,9 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 6)
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.03, coast_time=3, 
+        robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         # robot.estimate_jet_velocity()
         robot.step_through_cycle()

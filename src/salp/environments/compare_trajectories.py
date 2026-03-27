@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrow
 
 from robot import Robot, Nozzle
+from experiment import read_file as read_experiment_file
 
 
 def compare_actions_with_states(actions, expected_states, robot=None, verbose=True):
@@ -159,6 +160,8 @@ def simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle):
         euler_angles.extend(robot.euler_angle_history)
         states.extend(robot.state_history)
     
+    positions = np.array(positions)
+    positions -= positions[0, :]  # Normalize to start at origin
     return {
         'times': np.array(times),
         'positions': np.array(positions),
@@ -200,6 +203,71 @@ def plot_trajectory_comparison(trajectories, labels, title="Trajectory Compariso
     plt.suptitle(title, fontsize=16, fontweight='bold')
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+
+
+def plot_trajectory_comparison_with_experiment(sim_trajectories, sim_labels, 
+                                                exp_trajectories, exp_labels,
+                                                title="Simulation vs Experiment"):
+    """Plot simulation and experimental trajectories together.
+    
+    Args:
+        sim_trajectories: List of simulation trajectory dictionaries
+        sim_labels: List of labels for simulation trajectories
+        exp_trajectories: List of experimental trajectory dictionaries
+        exp_labels: List of labels for experimental trajectories
+        title: Plot title
+    """
+    fig, ax = plt.subplots(figsize=(12, 9))
+    
+    # Use distinct colors from tab10 - enough contrast between different angles
+    distinct_colors = [
+        '#1f77b4',  # blue
+        '#ff7f0e',  # orange
+        '#2ca02c',  # green
+        '#d62728',  # red
+        '#9467bd',  # purple
+        '#8c564b',  # brown
+        '#e377c2',  # pink
+        '#7f7f7f',  # gray
+        '#bcbd22',  # olive
+        '#17becf',  # cyan
+    ]
+    
+    # Plot simulation trajectories (solid thick lines)
+    for i, (traj, label) in enumerate(zip(sim_trajectories, sim_labels)):
+        positions = traj['positions']
+        color = distinct_colors[i % len(distinct_colors)]
+        ax.plot(positions[:, 0], positions[:, 1], '-', color=color, 
+                label=label, linewidth=3, alpha=0.9)
+        # Mark start and end
+        ax.plot(positions[0, 0], positions[0, 1], 'o', color=color, 
+                markersize=12, markeredgecolor='black', markeredgewidth=1.5)
+        ax.plot(positions[-1, 0], positions[-1, 1], 's', color=color, 
+                markersize=12, markeredgecolor='black', markeredgewidth=1.5)
+    
+    # Plot experimental trajectories (dashed lines, offset colors)
+    n_sim = len(sim_trajectories)
+    for i, (traj, label) in enumerate(zip(exp_trajectories, exp_labels)):
+        positions = traj['positions']
+        # Use colors offset from simulation colors for clear distinction
+        color = distinct_colors[(i + n_sim) % len(distinct_colors)]
+        ax.plot(positions[:, 0], positions[:, 1], '--', color=color, 
+                label=label, linewidth=2.5, alpha=0.85)
+        # Mark start and end
+        ax.plot(positions[0, 0], positions[0, 1], 'o', color=color, 
+                markersize=9, markeredgecolor='black', markeredgewidth=1)
+        ax.plot(positions[-1, 0], positions[-1, 1], 's', color=color, 
+                markersize=9, markeredgecolor='black', markeredgewidth=1)
+    
+    ax.set_xlabel('X Position (m)', fontsize=12)
+    ax.set_ylabel('Y Position (m)', fontsize=12)
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, loc='best', ncol=2)
+    ax.axis('equal')
+    plt.tight_layout()
+    plt.show()
+
 
 def compare_contraction_levels():
     """Compare trajectories with different contraction levels."""
@@ -257,7 +325,7 @@ def compare_coast_times():
     plot_trajectory_comparison(trajectories, labels, "Comparison: Different Coast Times")
 
 def compare_yaw_angles():
-    """Compare trajectories with different yaw angles."""
+    """Compare trajectories with different yaw angles (simulation + experiment)."""
     print("\nComparing different yaw angles...")
     # Keep nozzle geometry consistent with the main robot setup.
     # NOTE: radius=0.01 m (not 0.1 m) to avoid unrealistically large jet area.
@@ -268,23 +336,66 @@ def compare_yaw_angles():
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.enable_history_recording()
     
-    yaw_angles = [np.pi/2, np.pi/3, np.pi/6]  # Different yaw angles
+    yaw_angles = [np.pi/2, np.pi/6, -np.pi/2, -np.pi/6, 0]  # Different yaw angles
     n_cycles = 6
     contraction = 0.03
     coast_time = 2.0
     
-    trajectories = []
-    labels = []
+    sim_trajectories = []
+    sim_labels = []
     
     for yaw_angle in yaw_angles:
         traj = simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle)
-        trajectories.append(traj)
-        labels.append(f'Yaw = {np.degrees(yaw_angle):.0f}°')  
+        sim_trajectories.append(traj)
+        sim_labels.append(f'Sim: Yaw = {np.degrees(yaw_angle):.0f}°')  
         final_pos = traj['positions'][-1]
         final_dist = np.linalg.norm(final_pos)
         print(f"  Yaw {np.degrees(yaw_angle):.0f}°: Final position = ({final_pos[0]:.3f}, {final_pos[1]:.3f}, {final_pos[2]:.3f}) m, Distance = {final_dist:.3f} m")
     
-    plot_trajectory_comparison(trajectories, labels, "Comparison: Different Yaw Angles")
+    # Load experimental data
+    exp_start_times = [22, 165, 118, 22, 55]
+    exp_file_names = [
+        'compression_3cm_coast_2s_nozzle_0deg.csv',
+        'compression_3cm_coast_2s_nozzle_-30deg.csv',
+        'compression_3cm_coast_2s_nozzle_30deg.csv',
+        'compression_3cm_coast_2s_nozzle_90deg.csv',
+        'compression_3cm_coast_2s_nozzle_-90deg.csv',
+    ]
+    
+    exp_trajectories = []
+    exp_labels = []
+    
+    # Compute rotation angle from first experiment trajectory to align with x-axis
+    time_ref, positions_ref, _, _ = read_experiment_file(exp_file_names[0], start_time=exp_start_times[0])
+    x_ref, z_ref = positions_ref[:, 0], positions_ref[:, 2]
+    dx = x_ref[-1] - x_ref[0]
+    dz = z_ref[-1] - z_ref[0]
+    rotation_angle = -np.arctan2(dz, dx)  # Rotate to align with x-axis
+    
+    for file_name, start in zip(exp_file_names, exp_start_times):
+        time, positions, velocities, euler_angles = read_experiment_file(file_name, start_time=start)
+        x, z = positions[:, 0], positions[:, 2]
+        
+        # Apply rotation to align first trajectory with x-axis
+        c, s = np.cos(rotation_angle), np.sin(rotation_angle)
+        x_rot = c * x - s * z
+        z_rot = s * x + c * z
+        
+        # Create trajectory dict compatible with simulation format
+        # Note: experimental data is in X-Z plane, simulation is in X-Y plane
+        exp_positions = np.column_stack([x_rot, z_rot, np.zeros_like(x_rot)])
+        exp_trajectories.append({'positions': exp_positions})
+        
+        # Extract nozzle angle from filename
+        import os
+        label = os.path.splitext(file_name)[0]
+        exp_labels.append(f'Exp: {label}')
+    
+    plot_trajectory_comparison_with_experiment(
+        sim_trajectories, sim_labels,
+        exp_trajectories, exp_labels,
+        "Comparison: Simulation vs Experiment (Different Yaw Angles)"
+    )
 
 def compare_action_combinations():
     """Compare trajectories with different combinations of actions."""

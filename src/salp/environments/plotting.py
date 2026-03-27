@@ -983,10 +983,12 @@ def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
                 f"but position_data has {len(x_positions)} samples"
             )
 
+        # Nozzle is at the rear of the robot, so we add π to get the rear-facing direction
+        # then add the nozzle yaw angle (relative to body)
         if yaw_angles is not None:
-            nozzle_world_angles = yaw_angles + nozzle_yaw_data
+            nozzle_world_angles = yaw_angles + np.pi + nozzle_yaw_data
         else:
-            nozzle_world_angles = nozzle_yaw_data
+            nozzle_world_angles = np.pi + nozzle_yaw_data
 
         nozzle_vector_length = triangle_size * 0.9
         for i in range(0, len(x_positions), arrow_interval):

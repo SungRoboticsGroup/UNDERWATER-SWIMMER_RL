@@ -116,15 +116,42 @@ def read_file(file_name: str = "", start_time: int = 0) -> tuple:
     return time, positions, velocities, euler_angles
 
 
-def plot_all_trajectories_xz(file_names: list, start_time: list, marker_step: int = 200, marker_size: float = 0.02) -> None:
-    """Plot all trajectory positions in the X-Z plane with yaw direction triangles."""
+def plot_all_trajectories_xz(file_names: list, start_time: list, marker_step: int = 200, marker_size: float = 0.02, align_to_x: bool = False) -> None:
+    """Plot all trajectory positions in the X-Z plane with yaw direction triangles.
+    
+    Args:
+        file_names: List of CSV file names to plot.
+        start_time: List of start times for each file.
+        marker_step: Step interval for drawing yaw direction triangles.
+        marker_size: Size of the direction triangles.
+        align_to_x: If True, rotate all trajectories so the first trajectory
+                    aligns as closely as possible to the x-axis.
+    """
     fig, ax = plt.subplots(figsize=(12, 9))
+
+    # Compute rotation angle from first trajectory if align_to_x is True
+    rotation_angle = 0.0
+    if align_to_x and len(file_names) > 0:
+        time_ref, positions_ref, _, _ = read_file(file_names[0], start_time=start_time[0])
+        x_ref, z_ref = positions_ref[:, 0], positions_ref[:, 2]
+        # Compute angle from start to end point
+        dx = x_ref[-1] - x_ref[0]
+        dz = z_ref[-1] - z_ref[0]
+        rotation_angle = -np.arctan2(dz, dx)  # Negative to rotate towards x-axis
 
     for file_name, start in zip(file_names, start_time):
         time, positions, velocities, euler_angles = read_file(file_name, start_time=start)
 
         x, z = positions[:, 0], positions[:, 2]
         yaw = euler_angles[:, 1]  # yaw is the third column (rotation about z)
+
+        # Apply rotation if align_to_x is True
+        if align_to_x:
+            c, s = np.cos(rotation_angle), np.sin(rotation_angle)
+            x_rot = c * x - s * z
+            z_rot = s * x + c * z
+            x, z = x_rot, z_rot
+            yaw = yaw + rotation_angle  # Adjust yaw angles as well
 
         # Use filename (without extension) as label
         label = os.path.splitext(file_name)[0]
@@ -324,6 +351,20 @@ def plot_yaw_angle(file_names: list, start_time: list) -> None:
     plt.tight_layout()
     plt.show()
 
+def plot_nozzle_angle_comparison():
+
+    start_time = [22, 165, 118, 22, 55]
+
+    file_names = [
+        'compression_3cm_coast_2s_nozzle_0deg.csv',
+        'compression_3cm_coast_2s_nozzle_-30deg.csv',
+        'compression_3cm_coast_2s_nozzle_30deg.csv',
+        'compression_3cm_coast_2s_nozzle_90deg.csv',
+        'compression_3cm_coast_2s_nozzle_-90deg.csv',
+    ]
+
+    plot_all_trajectories_xz(file_names, start_time, align_to_x=True)
+
 
 if __name__ == "__main__":
 
@@ -342,9 +383,11 @@ if __name__ == "__main__":
         'compression_3cm_coast_2s_nozzle_-90deg.csv',
     ]
 
-    plot_all_trajectories_xz(file_names, start_time)
-    plot_velocity_magnitudes(file_names, start_time)
-    plot_velocity_components_xz(file_names, start_time)
-    compute_average_velocities(file_names, start_time)
-    plot_yaw_rate(file_names, start_time)
+    # plot_all_trajectories_xz(file_names, start_time)
+    # plot_velocity_magnitudes(file_names, start_time)
+    # plot_velocity_components_xz(file_names, start_time)
+    # compute_average_velocities(file_names, start_time)
+    # plot_yaw_rate(file_names, start_time)
     plot_yaw_angle(file_names, start_time)
+
+    # plot_nozzle_angle_comparison()
