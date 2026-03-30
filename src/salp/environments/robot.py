@@ -304,7 +304,7 @@ class Robot:
         self.disturbances = False
         self.discharge_coefficient_mean = 0.9 # should definite be lower than 0.6 maybe around 0.4 - 0.5
         self.discount_factor_torque = 0.2
-        self.volume_loss_rate = 0.75
+        self.volume_loss_rate = 0.5
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
         self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 1.0])
@@ -441,7 +441,7 @@ class Robot:
         # initial and end of deformation drag coefficients
         rot_x = [0.1, 0.2]
         rot_y = [0.5, 1.0]
-        rot_z = [3.0, 3.5]
+        rot_z = [20.0, 20.5]
 
         return np.array([rot_x, rot_y, rot_z])
 
