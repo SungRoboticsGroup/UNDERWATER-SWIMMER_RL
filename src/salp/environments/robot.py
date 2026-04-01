@@ -287,9 +287,15 @@ class Robot:
 
         # ==================== Physical Parameters ====================
         self.dry_mass = dry_mass
-        self.buoy_mass = 0.195
-        self.skin_mass = 0.145
-        self.tube_mass = 0.414
+        self.buoy_mass = 0.180
+        self.skin_mass = 0.143
+        self.tube_mass = 0.415
+        self.buoy_length = 0.35
+        self.buoy_width = 0.155
+        self.buoy_height = 0.025
+        self.tube_radius = 0.026
+        self.tube_length = 0.175
+
         self.dry_mass = self.buoy_mass + self.skin_mass + self.tube_mass
         self.init_length = init_length
         self.init_width = init_width
@@ -297,7 +303,7 @@ class Robot:
         self.density = 1000  # kg/m^3, density of water
         self.dt = 0.01  # time step
         self.nozzle = nozzle
-        self.tube_volume = np.pi * (0.058 / 2)**2 * 0.15
+        self.tube_volume = np.pi * (self.tube_radius**2) * self.tube_length
         
         # ==================== Coefficient Parameters ====================
         self.dynamics_randomization = False
@@ -307,6 +313,7 @@ class Robot:
         self.volume_loss_rate = 0.5
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
+        self.deformation_bias = -0.01 # towards the end of the robot
         self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 1.0])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.0, 0.1, 0.1])
         self.added_mass_coefficient_torque_mean = np.diag([0.5, 1.0, 1.5])
@@ -909,8 +916,11 @@ class Robot:
     def get_inertia_matrix(self) -> np.ndarray:
         # mass_scalar = self.mass[0, 0] # Extract raw float to pass to Numba
         # jet_moment_arm = self._get_jet_moment_arm()
-        return geometry.compute_inertia_matrix_jit(
-            self.length, self.width, self.tube_volume, self.buoy_mass, self.tube_mass, self.skin_mass, self.nozzle.mass)
+        return geometry.compute_inertia_matrix_jit(self.length, self.width, 
+                                                   self.buoy_length, self.buoy_width, self.buoy_height,
+                                                   self.tube_radius, self.tube_length, 
+                                                   self.nozzle.length, self.nozzle.radius, self.nozzle.inner_radius, self.com,
+                                                   self.water_mass, self.buoy_mass, self.tube_mass, self.skin_mass, self.nozzle.mass, self.nozzle.water_mass)
         
     
     def get_inertia_matrix_rate(self) -> np.ndarray:
@@ -924,7 +934,22 @@ class Robot:
         return I_rate
     
     def get_center_of_mass(self) -> np.ndarray:
-        return geometry.compute_center_of_mass_jit(self.length, self.width, self.tube_volume, self.nozzle.mass, self.buoy_mass, self.skin_mass, self.tube_mass, self.water_mass)
+        
+        pos_buoy = np.array([self.length / 2, 0.0, 0.0])
+        pos_skin = np.array([self.deformation_bias, 0.0, 0.0])
+        pos_tube = np.array([self.length / 2 - self.tube_length/2, 0.0, 0.0])
+        pos_water = pos_skin
+        pos_nozzle = np.array([-self.length / 2 - self.nozzle.position / 2, 0.0, 0.0])
+        pos_nozzle_water = pos_nozzle
+
+        tube_mass = self.tube_mass - self.tube_volume * self.density
+        water_mass = self.density * geometry.compute_water_volume_jit(self.length, self.width)
+        nozzle_water_mass = self.density * self.nozzle.volume
+        
+        return geometry.compute_center_of_mass_jit(pos_buoy, pos_skin, pos_tube, 
+                                                   pos_water, pos_nozzle, pos_nozzle_water, 
+                                                   self.buoy_mass, self.skin_mass, 
+                                                   tube_mass, self.nozzle.mass, water_mass, nozzle_water_mass)
     
     def get_center_of_mass_rate(self) -> np.ndarray:
         """Calculate rate of change of center of mass.
@@ -1152,8 +1177,21 @@ if __name__ == "__main__":
     )
 
     # Test the Robot and Nozzle classes
-    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
-    robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
+    
+    # robot parameters (DO NOT CHANGE THESE)
+    nozzle_length1 = 0.052
+    nozzle_length2 = 0.038
+    nozzle_length3 = 0.050
+    nozzle_area = np.pi * 0.01**2
+    nozzle_mass = 0.428
+
+    robot_mass = 0.738
+    robot_init_length = 0.26
+    robot_init_width = 0.135
+    # robot parameters (DO NOT CHANGE THESE)
+
+    nozzle = Nozzle(length1=nozzle_length1, length2=nozzle_length2, length3=nozzle_length3, area=nozzle_area, mass=nozzle_mass)
+    robot = Robot(dry_mass=robot_mass, init_length=robot_init_length, init_width=robot_init_width, 
                   max_contraction=0.04, nozzle=nozzle)
     robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     # robot.enable_domain_randomization()
