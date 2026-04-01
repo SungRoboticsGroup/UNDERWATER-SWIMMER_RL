@@ -315,7 +315,7 @@ class Robot:
         self.disturbances = False
         self.discharge_coefficient_mean = 0.9 # should definite be lower than 0.6 maybe around 0.4 - 0.5
         self.discount_factor_torque = 0.2
-        self.volume_loss_rate = 0.5
+        self.volume_loss_rate = 0.0
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
         self.deformation_bias = -0.01 # towards the end of the robot
@@ -829,6 +829,10 @@ class Robot:
         self.jet_force = self._get_jet_force()
         mass_add, self.added_mass_force = self._get_added_mass_force()
 
+        self.added_mass_force = np.zeros(3)  # disable added mass for now
+        # self.coriolis_force = np.zeros(3)  # disable coriolis for now
+        
+
         if self.disturbances:
             self.force_noise = self.force_disturbance.sample()
             self.force_noise[-1] = 0  # no vertical force disturbance
@@ -846,7 +850,7 @@ class Robot:
         self.acceleration_force = self.mass[0,0] * (a_centripetal + a_coriolis + a_tangential + a_recoil)
         # if np.linalg.norm(a_recoil) > 1e-6:
         #     print(f"a_recoil={a_recoil}")
-        # self.acceleration_force = np.zeros(3)  # disable fictitious forces for now
+        self.acceleration_force = np.zeros(3)  # disable fictitious forces for now
 
         return dynamics.compute_linear_acceleration_jit(
             self.mass + mass_add, 
@@ -895,7 +899,7 @@ class Robot:
         self.angular_acceleration = self._euler_equations()
         self._update_motion_states()
 
-        # print(f"Time: {self.time:.2f}s, State: {self.state.name}, Position: {self.position_world}, Velocity: {self.velocity_world}, Acceleration: {self.acceleration}")
+        # print(f"Time: {self.time:.2f}s, State: {self.state.name}, Acceleration: {self.acceleration}")
 
     def _update_motion_states(self):
         """Update robot state variables based on accelerations."""
@@ -1016,37 +1020,46 @@ class Robot:
 
     def estimate_jet_velocity(self):
 
+
+        compression = np.array([0, 0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.035, 0.040])  # Example lengths during contraction
+        force = np.array([0, 2.4, 5.2, 7.8, 9.5, 10.8, 11.5, 12.6, 14.5])   # Corresponding widths to maintain constant volume
+        weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])  # Higher weight for the first point to anchor the fit at zero compression
+        coefficients = np.polyfit(compression, force, 2, w=weights)  # Fit a polynomial of degree 2
+
         contraction = 0.04
 
-        a = geometry.fit_length_time_function_jit(0, 15, contraction)
         contraction_list = np.linspace(0, contraction, num=100) 
-        force_list = geometry.compute_length_from_time_jit(contraction_list, 15, 0.04, a)
+        force_list = np.polyval(coefficients, contraction_list)  # Use the fitted polynomial to estimate force at each contraction level
 
-        force_list_propulsion = force_list[::-1]  # reverse to get propulsion phase
-        energy_list = cumulative_trapezoid(force_list_propulsion, contraction_list, initial=0)  # approximate energy by integrating force over distance
+        force_list = force_list[::-1]  # reverse to get propulsion phase
+        energy_list = cumulative_trapezoid(force_list, contraction_list, initial=0)  # approximate energy by integrating force over distance
         time_list = geometry.propulsion_time_from_compression_jit(contraction_list, self.propulsion_time_coefficients)
-        power_list = np.gradient(energy_list, time_list)  # approximate power by differentiating energy with respect to time
+        time_list = time_list[::-1]  # reverse to match propulsion phase
+        # print(time_list)
+        power_list = abs(np.gradient(energy_list, time_list))  # approximate power by differentiating energy with respect to time
 
-        length = np.linspace(0.26, 0.24, num=100) 
+        length = np.linspace(0.26, 0.22, num=100) 
         width = self._length_width_relation(length)
-        volume = 4/3 * np.pi * (width / 2)**2 * length
+        # print(width)
+        volume = 4/3 * np.pi * (width / 2)**2 * (length / 2)
+        # print(volume)
         volume = volume[::-1]
 
-        volume_diff = volume[0:-1] - volume[1:]
-        velocity_estimate = power_list[1:] / (self.density * volume_diff)  # estimate velocity using power and change in volume
+        mass_rate = self.density * np.gradient(volume, time_list)
 
+        velocity_estimate = np.sqrt(2*power_list / mass_rate)  # estimate velocity using power and change in volume
 
 
 
         figure, ax = plt.subplots()
-        # ax.plot(contraction_list, force_list_propulsion)  
+        # ax.plot(contraction_list, force_list, label='skin Force')  # plot average force (energy divided by distance)
         # ax.plot(contraction_list, energy_list, label='Energy')  # plot average force (energy divided by distance)
-        ax.plot(contraction_list, power_list, label='Power')  # plot average force (energy divided by distance)
+        # ax.plot(contraction_list, power_list, label='Power')  # plot average force (energy divided by distance)
         # ax.plot(contraction_list[:-1], volume_diff, label='Volume Difference')  # plot average force (energy divided by distance)
-        # ax.plot(contraction_list[:-1], velocity_estimate, label='Velocity Estimate')  # plot average force (energy divided by distance)
-        ax.set_xlabel('Contraction (m)')
-        ax.set_ylabel('Force (N)')
-        ax.set_title('Force vs Contraction')
+        ax.plot(time_list, velocity_estimate, label='Velocity Estimate')  # plot average force (energy divided by distance)
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Velocity (m/s)')
+        ax.set_title('Velocity vs Time')
         ax.legend()
         plt.show()
 
@@ -1362,8 +1375,8 @@ if __name__ == "__main__":
 
 
     # Plot results
-    plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
-    plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
+    # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
+    # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_rate_data, all_state_data)
@@ -1374,7 +1387,7 @@ if __name__ == "__main__":
     ## Translational Dynamics
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
                     # all_coriolis_force_data, all_added_mass_force_data, all_state_data)
-    # plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
+    plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)

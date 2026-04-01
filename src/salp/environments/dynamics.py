@@ -2,14 +2,51 @@ from numba import jit
 import numpy as np 
 import geometry
 
+
+@jit(nopython=True, cache=True)
+def _sanitize_force_vector_jit(force_vec):
+    """Replace non-finite force entries with zero and report validity."""
+    cleaned = np.empty_like(force_vec)
+    is_valid = True
+
+    for i in range(force_vec.shape[0]):
+        val = force_vec[i]
+        if np.isfinite(val):
+            cleaned[i] = val
+        else:
+            cleaned[i] = val
+            is_valid = False
+
+    return cleaned, is_valid
+
 # checked
 @jit(nopython=True, cache=True)
 def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force, noise_force, acceleraiton_force):
     """Fast compiled computation of Newton's equations."""
+    jet_force, jet_ok = _sanitize_force_vector_jit(jet_force)
+    drag_force, drag_ok = _sanitize_force_vector_jit(drag_force)
+    added_mass_force, added_mass_ok = _sanitize_force_vector_jit(added_mass_force)
+    coriolis_force, coriolis_ok = _sanitize_force_vector_jit(coriolis_force)
+    noise_force, noise_ok = _sanitize_force_vector_jit(noise_force)
+    acceleraiton_force, accel_ok = _sanitize_force_vector_jit(acceleraiton_force)
+
+    if not jet_ok:
+        print("Warning: invalid value found in jet_force")
+    if not drag_ok:
+        print("Warning: invalid value found in drag_force")
+    if not added_mass_ok:
+        print("Warning: invalid value found in added_mass_force")
+    if not coriolis_ok:
+        print("Warning: invalid value found in coriolis_force")
+    if not noise_ok:
+        print("Warning: invalid value found in noise_force")
+    if not accel_ok:
+        print("Warning: invalid value found in acceleraiton_force")
+
     total_force = jet_force + drag_force + added_mass_force + coriolis_force + noise_force + acceleraiton_force
     # np.linalg.solve is faster and more stable than inv() @ vector
     # print("Total force:", total_force)
-    # print(added_mass_force)
+    # print(jet_force, drag_force, added_mass_force, coriolis_force, noise_force, acceleraiton_force)
     return np.linalg.solve(mass_matrix, total_force)
 
 # checked
@@ -117,6 +154,7 @@ def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force
     F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
     # F_linear = -0.5 * density * area * trans_drag_coeff * velocity
     F_linear = -35.0 * velocity
+    # print("Drag force terms:", F_quadratic, F_linear)
     return ((1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear) 
 
 # checked
