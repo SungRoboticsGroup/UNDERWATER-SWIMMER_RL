@@ -490,7 +490,9 @@ def compute_center_of_mass_jit(pos_buoy, pos_skin, pos_tube, pos_nozzle, pos_wat
     total_mass = tube_mass + nozzle_mass + buoy_mass + skin_mass + water_mass + nozzle_water_mass
     center_of_mass = (tube_mass * pos_tube + nozzle_mass * pos_nozzle + buoy_mass * pos_buoy + 
                       skin_mass * pos_skin + water_mass * pos_water + nozzle_water_mass * pos_nozzle_water) / total_mass
-    
+
+    # print("Center of mass:", center_of_mass) 
+    # print(total_mass)
     return center_of_mass
 
 @jit(nopython=True, cache=True)
@@ -514,6 +516,6 @@ def randomize_scalar_jit(value, uncertainty=0.1, lower_bound=np.nan, upper_bound
 if __name__ == "__main__":
 
     # Use built-in prototype measurements and fitted relation
-    # fig, ax = visualize_length_width_relation()
+    fig, ax = visualize_length_width_relation()
     # fig, ax = visualize_compression_refill_time_relation()
     # fig, ax = visualize_compression_propulsion_time_relation()
