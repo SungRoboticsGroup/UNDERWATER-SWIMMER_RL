@@ -470,6 +470,14 @@ def compute_inertia_matrix_jit(length, width, l_buoy, w_buoy, h_buoy,
     length_com = length / 2.0 + l_nozzle / 2.0
     I_nozzle_water = compute_nozzle_water_inertia_maxtrix_jit(l_nozzle, r_nozzle_inner, length_com, mass_nozzle_water)
 
+    # print("I_buoy:", I_buoy)
+    # print("I_tube:", I_tube)
+    # print("I_skin:", I_skin)
+    # print("I_water:", I_water)
+    # print("I_nozzle:", I_nozzle)
+    # print("I_nozzle_water:", I_nozzle_water)
+    # print("Total inertia matrix:", I_buoy + I_tube + I_skin + I_water + I_nozzle + I_nozzle_water)
+
     return I_buoy + I_tube + I_skin + I_water + I_nozzle + I_nozzle_water
 
 @jit(nopython=True, cache=True)
