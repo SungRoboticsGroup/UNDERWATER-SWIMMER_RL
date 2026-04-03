@@ -1078,13 +1078,16 @@ class Robot:
         return self._get_drag_coefficient(self.trans_drag_coefficient_range)
 
     def _get_drag_torque(self) -> np.ndarray:
+
+        nozzle_length = abs(self.nozzle.get_nozzle_position()[0])
+
         return dynamics.compute_drag_torque_jit(
             self.density, 
             self.rot_drag_coefficient, 
             self.area, 
             self.angular_velocity, 
             self.width, 
-            self.length, 
+            self.length + nozzle_length, 
             self.drag_torque_ratio
         )
     
@@ -1274,7 +1277,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
