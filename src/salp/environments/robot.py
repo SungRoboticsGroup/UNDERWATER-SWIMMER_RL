@@ -318,7 +318,7 @@ class Robot:
         self.volume_loss_rate = 0.0
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
-        self.deformation_bias = -0.01 # towards the end of the robot
+        self.deformation_bias_limit = -0.01 # towards the end of the robot
         self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 0.0])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0])
         self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 1.0])
@@ -343,6 +343,7 @@ class Robot:
         # ==================== Dynamic Properties ====================
         self.length = self.init_length
         self.width = self.init_width
+        self.deformation_bias = 0.0
         self.width_relation = self.init_width
         self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
@@ -686,9 +687,9 @@ class Robot:
         self.prev_water_mass = self.prev_water_volume * self.density
 
         self.length = self.get_current_length()
-        # self.width = self._length_width_relation(self.length)
         self.width_relation = self._length_width_relation(self.length)
         self.width = self._length_width_relation(self.length)
+        self.deformation_bias = self._get_deformation_bias()
         self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
         self.volume_rate = self.get_volume_rate()
@@ -937,14 +938,22 @@ class Robot:
         self.prev_I = self.get_inertia_matrix()
         return I_rate
     
+    def _get_deformation_bias(self) -> float:
+
+        bias = (self.init_length - self.length)/self.contraction * self.deformation_bias_limit
+
+        return bias
+    
     def get_center_of_mass(self) -> np.ndarray:
         
         pos_buoy = np.array([self.length / 2, 0.0, 0.0])
         pos_skin = np.array([self.deformation_bias, 0.0, 0.0])
+        # print(f"Deformation Bias: {self.deformation_bias}")
         pos_tube = np.array([self.length / 2 - self.tube_length/2, 0.0, 0.0])
         pos_water = pos_skin
         nozzle_length = abs(self.nozzle.get_nozzle_position()[0])
-        pos_nozzle = np.array([-self.length / 2  + nozzle_length, 0.0, 0.0])
+        # print(f"Nozzle Length: {nozzle_length}")
+        pos_nozzle = np.array([-self.length / 2  - nozzle_length / 2, 0.0, 0.0])
         pos_nozzle_water = pos_nozzle
         
 
@@ -953,7 +962,7 @@ class Robot:
         nozzle_water_mass = self.density * np.pi * self.nozzle.inner_radius**2 * nozzle_length
         
         return geometry.compute_center_of_mass_jit(pos_buoy, pos_skin, pos_tube, 
-                                                   pos_water, pos_nozzle, pos_nozzle_water, 
+                                                   pos_nozzle, pos_water, pos_nozzle_water, 
                                                    self.buoy_mass, self.skin_mass, 
                                                    tube_mass, self.nozzle.mass, water_mass, nozzle_water_mass)
     
@@ -1265,7 +1274,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1374,7 +1383,7 @@ if __name__ == "__main__":
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_rate_data, all_state_data)
     # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
-    # plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
+    plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
 
 
     ## Translational Dynamics
