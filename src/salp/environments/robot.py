@@ -315,7 +315,7 @@ class Robot:
         self.disturbances = False
         self.discharge_coefficient_mean = 0.9 # should definite be lower than 0.6 maybe around 0.4 - 0.5
         self.discount_factor_torque = 0.2
-        self.volume_loss_rate = 0.0
+        self.volume_loss_rate = 0.9
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
         self.deformation_bias_limit = -0.01 # towards the end of the robot
@@ -441,7 +441,7 @@ class Robot:
         """Construct drag coefficient ranges for different body deformations."""
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
-        trans_x = [0.5, 1.0]
+        trans_x = [0.5, 0.7]
         trans_y = [0.0, 0.0]
         trans_z = [0.0, 0.0]
 
@@ -1040,16 +1040,17 @@ class Robot:
         # print(time_list)
         power_list = abs(np.gradient(energy_list, time_list))  # approximate power by differentiating energy with respect to time
 
-        length = np.linspace(0.26, 0.22, num=100) 
-        width = self._length_width_relation(length)
-        # print(width)
-        volume = 4/3 * np.pi * (width / 2)**2 * (length / 2)
-        # print(volume)
-        volume = volume[::-1]
+        # length = np.linspace(0.26, 0.22, num=100) 
+        # width = self._length_width_relation(length)
+        # # print(width)
+        # volume = 4/3 * np.pi * (width / 2)**2 * (length / 2)
+        # # print(volume)
+        # volume = volume[::-1]
 
-        mass_rate = self.density * np.gradient(volume, time_list)
+        # mass_rate = self.density * np.gradient(volume, time_list)
+        # print(time_list)
 
-        velocity_estimate = np.sqrt(2*power_list / mass_rate)  # estimate velocity using power and change in volume
+        velocity_estimate = np.power(power_list / self.density / self.nozzle.area, 1/3)  # estimate velocity using power and change in volume
 
 
 
@@ -1277,7 +1278,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1386,14 +1387,14 @@ if __name__ == "__main__":
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_rate_data, all_state_data)
     # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
-    plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
+    # plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
 
 
     ## Translational Dynamics
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
                     # all_coriolis_force_data, all_added_mass_force_data, all_state_data)
-    # plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
-    # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
+    plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
+    plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)

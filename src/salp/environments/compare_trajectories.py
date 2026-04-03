@@ -398,7 +398,7 @@ def compare_coast_times():
 
     plot_trajectory_comparison(trajectories, labels, "Comparison: Different Coast Times")
 
-def compare_yaw_angles(n_trials=20):
+def compare_yaw_angles(n_trials=1):
     """Compare trajectories with different yaw angles (simulation + experiment).
     
     Runs n_trials randomized simulations per yaw angle and computes mean/std.
@@ -425,12 +425,12 @@ def compare_yaw_angles(n_trials=20):
         for trial in range(n_trials):
             # Create fresh robot for each trial to ensure independent randomization
             nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
+            nozzle.set_angles(angle1=0.0, angle2=0.0)
             robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
                           max_contraction=0.04, nozzle=nozzle)
             robot.set_environment(density=1000)
-            robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
             robot.enable_history_recording()
-            robot.enable_dynamic_randomization()
+            # robot.enable_dynamic_randomization()
             
             traj = simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle)
             all_positions.append(traj['positions'])
