@@ -125,20 +125,20 @@ def to_body_frame_jit(euler_angle, vector):
 
 # ==================== Numba Force & Torque Calculations ====================
 @jit(nopython=True, cache=True)
-def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_area, nozzle_direction, loss_coeff):
+def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_area, nozzle_direction, effective_coeff):
     """Fast compiled jet velocity calculation."""
     if state_val != 1:  # Only produce jet velocity during JET phase
         return np.zeros(3)
-    volume_rate = geometry.compute_volume_rate_jit(volume, prev_water_volume, dt, loss_coeff)
+    volume_rate = geometry.compute_effective_volume_rate_jit(volume, prev_water_volume, dt, effective_coeff)
     jet_speed = volume_rate / nozzle_area
     return nozzle_direction * jet_speed
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_jet_force_jit(discharge_coeff, mass_rate, jet_velocity):
+def compute_jet_force_jit(mass_rate, jet_velocity):
     """Fast compiled calculation of jet propulsion force."""
     # mass_rate is a 3x3 diagonal matrix, jet_velocity is a 1D array (3,)
-    return -discharge_coeff * (mass_rate @ jet_velocity)
+    return - (mass_rate @ jet_velocity)
 
 # checked 
 @jit(nopython=True, cache=True)
@@ -153,7 +153,7 @@ def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force
     v_norm = np.linalg.norm(velocity)
     F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
     # F_linear = -0.5 * density * area * trans_drag_coeff * velocity
-    F_linear = -35.0 * velocity
+    F_linear = -2.0 * velocity
     # print("Drag force terms:", F_quadratic, F_linear)
     return ((1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear) 
 
@@ -185,6 +185,7 @@ def compute_added_mass_force_jit(mass, added_mass_coeff, mass_rate, added_mass_r
 
     # print("Added mass force terms:", term1, term2, term3)
     # print(added_mass_rate_coeff, added_mass_rate, velocity)
+    # print(mass_rate)
     
     return added_mass, -(term1 + term2 + term3)
 

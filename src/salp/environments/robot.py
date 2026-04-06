@@ -313,9 +313,10 @@ class Robot:
         # ==================== Coefficient Parameters ====================
         self.dynamics_randomization = False
         self.disturbances = False
-        self.discharge_coefficient_mean = 0.9 # should definite be lower than 0.6 maybe around 0.4 - 0.5
-        self.discount_factor_torque = 0.2
-        self.volume_loss_rate = 0.9
+        self.discharge_coefficient_mean = 0.4 # should definite be lower than 0.6 maybe around 0.4 - 0.5
+        self.discount_factor_torque = 0.3
+        self.volume_keep_ratio = 0.3
+        self.volume_keep_ratio *= self.discharge_coefficient_mean
         self.drag_force_ratio_mean = 0.1
         self.drag_torque_ratio_mean = 0.7
         self.deformation_bias_limit = -0.01 # towards the end of the robot
@@ -346,13 +347,15 @@ class Robot:
         self.deformation_bias = 0.0
         self.width_relation = self.init_width
         self.area = self._get_cross_sectional_area()
-        self.volume = self._get_water_volume()
-        self.water_mass = self._get_water_mass()
+        self.volume = self._get_water_volume() # actual water volume inside the robot
+        self.water_mass = self._get_water_mass() # mass of the water inside the robot
         self.prev_water_volume = self.volume
         self.prev_water_mass = self.water_mass
         self.volume_rate = self.get_volume_rate()
+        self.effective_volume_rate = self.get_effective_volume_rate()
         self.mass = self.get_mass()
         self.mass_rate = self.get_mass_rate()
+        self.effective_mass_rate = self.get_effective_mass_rate()
         self.prev_I = None
         self.center_of_mass = self.get_center_of_mass()
         self.prev_center_of_mass = None
@@ -411,8 +414,10 @@ class Robot:
         self.area_history = []
         self.volume_history = []
         self.volume_rate_history = []
+        self.effective_volume_rate_history = []
         self.mass_history = []
         self.mass_rate_history = []
+        self.effective_mass_rate_history = []
         self.jet_velocity_history = []
         self.jet_force_history = []
         self.jet_torque_history = []
@@ -441,7 +446,7 @@ class Robot:
         """Construct drag coefficient ranges for different body deformations."""
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
-        trans_x = [0.5, 0.7]
+        trans_x = [0.7, 1.0]
         trans_y = [0.0, 0.0]
         trans_z = [0.0, 0.0]
 
@@ -693,8 +698,10 @@ class Robot:
         self.area = self._get_cross_sectional_area()
         self.volume = self._get_water_volume()
         self.volume_rate = self.get_volume_rate()
+        self.effective_volume_rate = self.get_effective_volume_rate()
         self.mass = self.get_mass()
         self.mass_rate = self.get_mass_rate()
+        self.effective_mass_rate = self.get_effective_mass_rate()
         self.center_of_mass = self.get_center_of_mass()
         self.center_of_mass_rate = self.get_center_of_mass_rate()
         self.center_of_mass_acc_rate = self.get_center_of_mass_acc_rate()
@@ -741,7 +748,9 @@ class Robot:
             'volume_history': self.volume,
             'mass_history': self.mass[0, 0],
             'mass_rate_history': self.mass_rate[0, 0],
+            'effective_mass_rate_history': self.effective_mass_rate[0, 0],
             'volume_rate_history': self.volume_rate,
+            'effective_volume_rate_history': self.effective_volume_rate,    
             'nozzle_yaw_history': self.nozzle.current_yaw,
             'inertia_tensor_history': np.diag(self.get_inertia_matrix()).copy(),
             'trans_drag_coefficient_history': self.trans_drag_coefficient,
@@ -940,6 +949,8 @@ class Robot:
     
     def _get_deformation_bias(self) -> float:
 
+        if self.contraction == 0:
+            return 0.0
         bias = (self.init_length - self.length)/self.contraction * self.deformation_bias_limit
 
         return bias
@@ -1010,14 +1021,14 @@ class Robot:
         if self.state != self.phase[1]:  # only produce jet force during release phase
             return np.zeros(3)
         
-        mass_rate = self.get_mass_rate()
+        effective_mass_rate = self.get_effective_mass_rate()
             
-        return dynamics.compute_jet_force_jit(self.discharge_coefficient, mass_rate, self.jet_velocity)
+        return dynamics.compute_jet_force_jit(effective_mass_rate, self.jet_velocity)
     
     def _get_jet_velocity(self) -> np.ndarray:
         return dynamics.compute_jet_velocity_jit(
             self.state.value, self.volume, self.prev_water_volume, self.dt, 
-            self.nozzle.area, self.nozzle.get_nozzle_direction(), self.volume_loss_rate
+            self.nozzle.area, self.nozzle.get_nozzle_direction(), self.volume_keep_ratio
         )
 
     def estimate_jet_velocity(self):
@@ -1182,7 +1193,10 @@ class Robot:
         return geometry.compute_water_mass_jit(self.density, self._get_water_volume())
     
     def get_volume_rate(self) -> float:
-        return geometry.compute_volume_rate_jit(self.volume, self.prev_water_volume, self.dt, self.volume_loss_rate)
+        return geometry.compute_volume_rate_jit(self.volume, self.prev_water_volume, self.dt)
+
+    def get_effective_volume_rate(self) -> float:
+        return geometry.compute_effective_volume_rate_jit(self.volume, self.prev_water_volume, self.dt, self.volume_keep_ratio)
 
     def get_mass(self) -> np.ndarray:
         self.water_mass = self._get_water_mass()
@@ -1190,7 +1204,11 @@ class Robot:
 
     def get_mass_rate(self) -> np.ndarray:
         # print(f"Water Mass: {self.water_mass:.4f} kg, Previous Water Mass: {self.prev_water_mass:.4f} kg, Mass Rate: {(self.water_mass - self.prev_water_mass) / self.dt:.4f} kg/s")
-        return geometry.compute_mass_rate_jit(self.volume, self.prev_water_volume, self.dt, self.volume_loss_rate, self.density)
+        return geometry.compute_mass_rate_jit(self.volume, self.prev_water_volume, self.dt, self.density)
+
+    def get_effective_mass_rate(self) -> np.ndarray:
+        # print(f"Water Mass: {self.water_mass:.4f} kg, Previous Water Mass: {self.prev_water_mass:.4f} kg, Mass Rate: {(self.water_mass - self.prev_water_mass) / self.dt:.4f} kg/s")
+        return geometry.compute_effective_mass_rate_jit(self.volume, self.prev_water_volume, self.dt, self.density, self.volume_keep_ratio)
 
 if __name__ == "__main__":
     from plotting import (
@@ -1253,8 +1271,10 @@ if __name__ == "__main__":
     all_area_data = []
     all_volume_data = []
     all_volume_rate_data = []
+    all_effective_volume_rate_data = []
     all_mass_data = []
     all_mass_rate_data = []
+    all_effective_mass_rate_data = []
     all_jet_velocity_data = []
     all_jet_force_data = []
     all_jet_torque_data = []
@@ -1278,7 +1298,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle = -0.00 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1316,8 +1336,10 @@ if __name__ == "__main__":
         all_area_data.extend(robot.area_history[0:-1])
         all_volume_data.extend(robot.volume_history[0:-1])
         all_volume_rate_data.extend(robot.volume_rate_history[0:-1])
+        all_effective_volume_rate_data.extend(robot.effective_volume_rate_history[0:-1])
         all_mass_data.extend(robot.mass_history[0:-1])
         all_mass_rate_data.extend(robot.mass_rate_history[0:-1])
+        all_effective_mass_rate_data.extend(robot.effective_mass_rate_history[0:-1])
         all_jet_velocity_data.extend(robot.jet_velocity_history)
         all_jet_force_data.extend(robot.jet_force_history)
         all_jet_torque_data.extend(robot.jet_torque_history)
@@ -1375,6 +1397,8 @@ if __name__ == "__main__":
     all_inertia_tensor_data = np.array(all_inertia_tensor_data)
     all_center_of_mass_data = np.array(all_center_of_mass_data)
     all_front_position_data = np.array(all_front_position_data)
+    all_effective_volume_rate_data = np.array(all_effective_volume_rate_data)
+    all_effective_mass_rate_data = np.array(all_effective_mass_rate_data)
     all_front_position_world_data = np.array(all_front_position_world_data)
     all_center_of_mass_rate_data = np.array(all_center_of_mass_rate_data)
     all_center_of_mass_acc_rate_data = np.array(all_center_of_mass_acc_rate_data)
@@ -1386,6 +1410,7 @@ if __name__ == "__main__":
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_rate_data, all_state_data)
+    # plot_mass_rate(all_time_data, all_effective_mass_rate_data, all_state_data)
     # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
     # plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
 
@@ -1393,8 +1418,8 @@ if __name__ == "__main__":
     ## Translational Dynamics
     # plot_all_forces(all_time_data, all_jet_force_data, all_drag_force_data, 
                     # all_coriolis_force_data, all_added_mass_force_data, all_state_data)
-    plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
-    plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
+    # plot_jet_properties(all_time_data, all_jet_velocity_data, all_state_data)
+    # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
     # # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
@@ -1404,7 +1429,7 @@ if __name__ == "__main__":
     # plot_front_position_body_frame(all_time_data, all_front_position_data, all_state_data)
     # plot_front_position_world_frame(all_time_data, all_front_position_world_data, all_state_data)
     # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)
-    # plot_robot_velocity(all_time_data, all_velocity_world_data, all_state_data)  
+    plot_robot_velocity(all_time_data, all_velocity_world_data, all_state_data)  
     plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
@@ -1421,7 +1446,7 @@ if __name__ == "__main__":
     # plot_asymmetry_torque(all_time_data, all_asymmetry_torque_data, all_state_data)
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
-    plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
+    # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
     # plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
 
     plt.show(block=True)

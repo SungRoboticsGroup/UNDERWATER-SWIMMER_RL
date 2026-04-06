@@ -330,17 +330,33 @@ def compute_mass_matrix_jit(dry_mass, water_mass, nozzle_mass):
 
 # checked
 @jit(nopython=True, cache=True)
-def compute_mass_rate_jit(water_volume, prev_water_volume, dt, loss_coeff, density=1000):
+def compute_mass_rate_jit(water_volume, prev_water_volume, dt, density=1000):
     """Fast compiled mass rate matrix calculation."""
-    rate = compute_volume_rate_jit(water_volume, prev_water_volume, dt, loss_coeff)
+    rate = compute_volume_rate_jit(water_volume, prev_water_volume, dt)
+    mass_rate = rate * density
+    return np.diag(np.array([mass_rate, mass_rate, mass_rate]))
+
+# checked
+@jit(nopython=True, cache=True)
+def compute_effective_mass_rate_jit(water_volume, prev_water_volume, dt, effective_coeff, density=1000):
+    """Fast compiled mass rate matrix calculation."""
+    rate = compute_effective_volume_rate_jit(water_volume, prev_water_volume, dt, effective_coeff)
     mass_rate = rate * density
     return np.diag(np.array([mass_rate, mass_rate, mass_rate]))
 
 @jit(nopython=True, cache=True)
-def compute_volume_rate_jit(water_volume, prev_water_volume, dt, loss_coeff):
+def compute_volume_rate_jit(water_volume, prev_water_volume, dt):
+    # print(effective_coeff)
     """Fast compiled volume rate calculation."""
     volume_rate = (water_volume - prev_water_volume) / dt
-    return volume_rate * (1 - loss_coeff)
+    return volume_rate
+
+@jit(nopython=True, cache=True)
+def compute_effective_volume_rate_jit(water_volume, prev_water_volume, dt, effective_coeff):
+    # print(effective_coeff)
+    """Fast compiled volume rate calculation."""
+    volume_rate = (water_volume - prev_water_volume) / dt
+    return volume_rate * effective_coeff
 
 # checked
 @jit(nopython=True, cache=True)
