@@ -317,10 +317,10 @@ class Robot:
         self.discount_factor_torque = 0.3
         self.volume_keep_ratio = 0.3
         self.volume_keep_ratio *= self.discharge_coefficient_mean
-        self.drag_force_ratio_mean = 0.1
+        self.drag_force_ratio_mean = 0.05
         self.drag_torque_ratio_mean = 0.7
         self.deformation_bias_limit = -0.01 # towards the end of the robot
-        self.added_mass_coefficient_force_mean = np.diag([0.5, 1.0, 0.0])
+        self.added_mass_coefficient_force_mean = np.diag([0.7, 1.2, 0.0])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0])
         self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 1.0])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.5])
@@ -447,7 +447,7 @@ class Robot:
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
         trans_x = [0.7, 1.0]
-        trans_y = [0.0, 0.0]
+        trans_y = [0.7, 1.0]
         trans_z = [0.0, 0.0]
 
         return np.array([trans_x, trans_y, trans_z])
@@ -457,9 +457,9 @@ class Robot:
         """Construct rotational drag coefficient ranges for different body deformations."""
         # Different drag coefficients for rotational x, y, z directions
         # initial and end of deformation drag coefficients
-        rot_x = [0.1, 0.2]
-        rot_y = [0.5, 1.0]
-        rot_z = [0.5, 1.0]
+        rot_x = [0.0, 0.0]
+        rot_y = [0.0, 0.0]
+        rot_z = [0.1, 0.2]
 
         return np.array([rot_x, rot_y, rot_z])
 
@@ -626,8 +626,10 @@ class Robot:
         self.a_refill = geometry.fit_length_time_function_jit(self.init_length, self.init_length - self.contraction, self.refill_time)
         self.a_release = geometry.fit_length_time_function_jit(self.init_length - self.contraction, self.init_length, self.jet_time)
 
-        self._contract_rate = self.contraction / self.refill_time if self.refill_time > 0 else 0.0
-        self._release_rate = self.contraction / self.jet_time if self.jet_time > 0 else 0.0
+        # print(f"Cycle {self.cycle} Control Inputs:")
+        # print(f"  Contraction: {self.contraction}")
+        # print(f"  Coast Time: {self.coast_time}")
+        # print(f"  Nozzle Angles: {self.nozzle.angle1}, {self.nozzle.angle2}")
     
     def _randomize_parameters(self):
         """Randomize robot parameters for domain randomization."""
@@ -681,7 +683,7 @@ class Robot:
             self.state = self.phase[0]  # contract
         elif self.cycle_time <= max(self.refill_time, self.nozzle.turn_time) + self.jet_time:
             self.state = self.phase[1]  # release
-        elif self.cycle_time <= max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time:
+        elif self.cycle_time <= max(self.refill_time, self.nozzle.turn_time) + self.coast_time:
             self.state = self.phase[2]  # coast
         else:
             self.state = self.phase[3]  # reset to rest
@@ -785,7 +787,7 @@ class Robot:
 
     def step_through_cycle(self):
         """Step through an entire breathing cycle and collect state history."""
-        total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.jet_time + self.coast_time
+        total_cycle_time = max(self.refill_time, self.nozzle.turn_time) + self.coast_time
 
         self.avg_cycle_velocity = (self.position - self.prev_position) / total_cycle_time
         self.avg_cycle_angular_velocity = (self.angle - self.prev_angle) / total_cycle_time
@@ -1298,7 +1300,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -0.00 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 6)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1405,7 +1407,7 @@ if __name__ == "__main__":
 
 
     # Plot results
-    # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
+    plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
     # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
@@ -1429,14 +1431,14 @@ if __name__ == "__main__":
     # plot_front_position_body_frame(all_time_data, all_front_position_data, all_state_data)
     # plot_front_position_world_frame(all_time_data, all_front_position_world_data, all_state_data)
     # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)
-    plot_robot_velocity(all_time_data, all_velocity_world_data, all_state_data)  
-    plot_robot_position(all_time_data, all_position_data, all_state_data)
+    # plot_robot_velocity(all_time_data, all_velocity_world_data, all_state_data)  
+    # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
@@ -1447,7 +1449,7 @@ if __name__ == "__main__":
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
     # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
-    # plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
+    plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
 
     plt.show(block=True)
     
