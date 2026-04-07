@@ -379,6 +379,11 @@ def compute_water_volume_jit(length, width):
     """Fast compiled water volume calculation."""
     return (4.0 / 3.0) * np.pi * (length / 2.0) * (width / 2.0)**2
 
+@jit(nopython=True, cache=True)
+def compute_bounding_box_volume_jit(length, width):
+    """Fast compiled bounding box volume calculation."""
+    return length * (width / 2)**2 * np.pi
+
 # checked
 @jit(nopython=True, cache=True)
 def compute_water_mass_jit(density, volume):
@@ -559,6 +564,16 @@ def compute_inertia_matrix_jit(length, width, l_buoy, w_buoy, h_buoy,
     # print("Total inertia matrix:", I_buoy + I_tube + I_skin + I_water + I_nozzle + I_nozzle_water)
 
     return I_buoy + I_tube + I_skin + I_water + I_nozzle + I_nozzle_water
+
+@jit(nopython=True, cache=True)
+def compute_bounding_box_inertia_matrix_jit(length, width, mass, length_com):
+
+    I_xx = 1/2 * mass * (width/2)**2
+    I_yy = 1/12 * mass * (3*(width/2)**2 + length**2)
+    I_zz = 1/12 * mass * (3*(width/2)**2 + length**2)
+
+    I_bounding_box = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+    return I_bounding_box
 
 @jit(nopython=True, cache=True)
 def compute_center_of_mass_jit(pos_buoy, pos_skin, pos_tube, pos_nozzle, pos_water, pos_nozzle_water, 

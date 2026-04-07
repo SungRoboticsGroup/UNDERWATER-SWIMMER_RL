@@ -1526,6 +1526,22 @@ def plot_asymmetry_torque(time_data, asymmetry_torque_data,
     return fig
 
 
+def _extract_principal_axes_series(tensor_data):
+    """Normalize inertia tensor history to an Nx3 principal-axis series."""
+    tensor_data = np.asarray(tensor_data)
+
+    if tensor_data.ndim == 3 and tensor_data.shape[1:] == (3, 3):
+        return np.diagonal(tensor_data, axis1=1, axis2=2)
+
+    if tensor_data.ndim == 2 and tensor_data.shape[1] == 3:
+        return tensor_data
+
+    raise ValueError(
+        "Expected inertia tensor data with shape (N, 3) or (N, 3, 3); "
+        f"received shape {tensor_data.shape}."
+    )
+
+
 def plot_inertia_tensor(time_data, inertia_tensor_data, 
                         state_data=None, title="Inertia Tensor Principal Axes Over Time"):
     """
@@ -1537,6 +1553,7 @@ def plot_inertia_tensor(time_data, inertia_tensor_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
+    principal_axes_data = _extract_principal_axes_series(inertia_tensor_data)
     fig, axes = plt.subplots(3, 1, figsize=(12, 10))
     
     axes_labels = ['I_xx (X-axis)', 'I_yy (Y-axis)', 'I_zz (Z-axis)']
@@ -1548,7 +1565,7 @@ def plot_inertia_tensor(time_data, inertia_tensor_data,
             _add_phase_backgrounds(ax, time_data, state_data)
         
         # Plot inertia tensor component for this axis
-        ax.plot(time_data, inertia_tensor_data[:, i], color=color, linewidth=2, 
+        ax.plot(time_data, principal_axes_data[:, i], color=color, linewidth=2, 
                 label=label, zorder=3)
         
         ax.set_xlabel('Time (s)')
@@ -1562,6 +1579,45 @@ def plot_inertia_tensor(time_data, inertia_tensor_data,
     plt.show(block=False)
     plt.pause(0.001)
     
+    return fig
+
+
+def plot_inertia_tensor_rate(time_data, inertia_tensor_rate_data,
+                             state_data=None, title="Inertia Tensor Rate Over Time"):
+    """
+    Plot the rate of change of the 3 principal inertia tensor axes over time.
+
+    Args:
+        time_data: Array of time values
+        inertia_tensor_rate_data: Array of inertia tensor rate diagonal values
+            (Nx3 for dI_xx/dt, dI_yy/dt, dI_zz/dt)
+        state_data: Optional array of state values (Phase enum values)
+        title: Plot title
+    """
+    principal_axes_rate_data = _extract_principal_axes_series(inertia_tensor_rate_data)
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+
+    axes_labels = ['dI_xx/dt (X-axis)', 'dI_yy/dt (Y-axis)', 'dI_zz/dt (Z-axis)']
+    colors = ['r', 'g', 'b']
+
+    for i, (ax, label, color) in enumerate(zip(axes, axes_labels, colors)):
+        if state_data is not None:
+            _add_phase_backgrounds(ax, time_data, state_data)
+
+        ax.plot(time_data, principal_axes_rate_data[:, i], color=color, linewidth=2,
+                label=label, zorder=3)
+
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(f'{label} (kg·m²/s)')
+        ax.set_title(f'Inertia Tensor Rate Component {label}')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best')
+
+    plt.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.001)
+
     return fig
 
 
