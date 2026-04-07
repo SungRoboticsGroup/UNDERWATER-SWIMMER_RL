@@ -446,7 +446,7 @@ def compute_drag_coefficient_jit(length, width, init_length, init_width, end_len
 @jit(nopython=True, cache=True)
 def compute_jet_moment_arm_jit(nozzle_middle_pos, length):
     """Fast compiled jet moment arm calculation."""
-    r_robot = np.array([-length / 2.0, 0.0, 0.0])
+    r_robot = np.array([-length, 0.0, 0.0])
     return nozzle_middle_pos + r_robot
 
 

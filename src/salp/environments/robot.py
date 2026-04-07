@@ -314,14 +314,14 @@ class Robot:
         self.dynamics_randomization = False
         self.disturbances = False
         self.discharge_coefficient_mean = 0.4 # should definite be lower than 0.6 maybe around 0.4 - 0.5
-        self.discount_factor_torque = 0.3
+        self.discount_factor_torque = 1.0
         self.volume_keep_ratio = 0.3
         self.volume_keep_ratio *= self.discharge_coefficient_mean
-        self.drag_force_ratio_mean = 0.05
+        self.drag_force_ratio_mean = 0.05 # do not touch this 
         self.drag_torque_ratio_mean = 0.7
         self.deformation_bias_limit = -0.01 # towards the end of the robot
-        self.added_mass_coefficient_force_mean = np.diag([1.0, 2.0, 0.0])
-        self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0])
+        self.added_mass_coefficient_force_mean = np.diag([1.0, 2.0, 0.0]) # do not touch this
+        self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0]) # do not touch this
         self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 1.0])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.5])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
@@ -459,7 +459,7 @@ class Robot:
         # initial and end of deformation drag coefficients
         rot_x = [0.0, 0.0]
         rot_y = [0.0, 0.0]
-        rot_z = [0.1, 0.2]
+        rot_z = [1.0, 1.5]
 
         return np.array([rot_x, rot_y, rot_z])
 
@@ -1007,7 +1007,9 @@ class Robot:
 
     # ==================== Jet Force Methods ====================
     def _get_jet_moment_arm(self) -> np.ndarray:
-        return geometry.compute_jet_moment_arm_jit(self.nozzle.get_middle_position(), self.length)
+
+        length = self.length / 2 - abs(self.center_of_mass[0])  # moment arm is distance from center of mass to nozzle position along x-axis
+        return geometry.compute_jet_moment_arm_jit(self.nozzle.get_nozzle_position(), length)
         # return np.array([0, 0, 0])
     
     def _get_jet_torque(self) -> np.ndarray:
@@ -1251,7 +1253,7 @@ if __name__ == "__main__":
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 1
+    n_cycles = 6
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1297,9 +1299,9 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 6)
+        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 2)
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.04, coast_time=2, 
+        robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         # robot.estimate_jet_velocity()
         robot.step_through_cycle()
@@ -1404,7 +1406,7 @@ if __name__ == "__main__":
 
 
     # Plot results
-    plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
+    # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
     # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
@@ -1435,7 +1437,7 @@ if __name__ == "__main__":
     ## Rotational Dynamics
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
@@ -1446,7 +1448,7 @@ if __name__ == "__main__":
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
     # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
-    # plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
+    plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
 
     plt.show(block=True)
     
