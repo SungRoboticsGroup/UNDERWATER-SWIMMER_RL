@@ -153,7 +153,7 @@ def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force
     v_norm = np.linalg.norm(velocity)
     F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
     # F_linear = -0.5 * density * area * trans_drag_coeff * velocity
-    F_linear = -2.0 * velocity
+    F_linear = -9.0 * velocity
     # print("Drag force terms:", F_quadratic, F_linear)
     return ((1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear) 
 

@@ -155,11 +155,11 @@ def simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle):
         
         # Accumulate data
         times.extend(time_array)
-        positions.extend(robot.position_front_world_history)
+        positions.extend(robot.position_world_history)
         velocities.extend(robot.velocity_world_history)
         euler_angles.extend(robot.euler_angle_history)
         states.extend(robot.state_history)
-    
+
     positions = np.array(positions)
     positions -= positions[0, :]  # Normalize to start at origin
     return {
@@ -346,17 +346,33 @@ def plot_trajectory_mean_std_with_experiment(sim_stats, sim_labels,
 def compare_contraction_levels():
     """Compare trajectories with different contraction levels."""
     print("Comparing different contraction levels...")
-    
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                  max_contraction=0.06, nozzle=nozzle)
+
+
+    # robot parameters (DO NOT CHANGE THESE)
+    nozzle_length1 = 0.052
+    nozzle_length2 = 0.038
+    nozzle_length3 = 0.050
+    nozzle_area = np.pi * 0.01**2
+    nozzle_mass = 0.428
+    nozzle_radius = 0.1
+    nozzle_inner_radius = 0.022
+
+    robot_mass = 0.738
+    robot_init_length = 0.26
+    robot_init_width = 0.135
+    # robot parameters (DO NOT CHANGE THESE)
+
+    nozzle = Nozzle(length1=nozzle_length1, length2=nozzle_length2, length3=nozzle_length3, area=nozzle_area, mass=nozzle_mass, radius=nozzle_radius, inner_radius=nozzle_inner_radius)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot = Robot(dry_mass=robot_mass, init_length=robot_init_length, init_width=robot_init_width, 
+                  max_contraction=0.04, nozzle=nozzle)
     robot.set_environment(density=1000)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot.enable_history_recording()
     
-    contractions = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06]  # Different contraction levels
+    contractions = [0.02, 0.03, 0.04]  # Different contraction levels
     # contractions = [0.01]  # Different contraction levels
-    n_cycles = 8
-    coast_time = 3.0
+    n_cycles = 6
+    coast_time = 2.0
     yaw_angle = 0.0
     
     trajectories = []
@@ -375,15 +391,30 @@ def compare_coast_times():
     """Compare trajectories with different coast times."""
     print("\nComparing different coast times...")
     
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.0036, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                  max_contraction=0.06, nozzle=nozzle)
+    # robot parameters (DO NOT CHANGE THESE)
+    nozzle_length1 = 0.052
+    nozzle_length2 = 0.038
+    nozzle_length3 = 0.050
+    nozzle_area = np.pi * 0.01**2
+    nozzle_mass = 0.428
+    nozzle_radius = 0.1
+    nozzle_inner_radius = 0.022
+
+    robot_mass = 0.738
+    robot_init_length = 0.26
+    robot_init_width = 0.135
+    # robot parameters (DO NOT CHANGE THESE)
+
+    nozzle = Nozzle(length1=nozzle_length1, length2=nozzle_length2, length3=nozzle_length3, area=nozzle_area, mass=nozzle_mass, radius=nozzle_radius, inner_radius=nozzle_inner_radius)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot = Robot(dry_mass=robot_mass, init_length=robot_init_length, init_width=robot_init_width, 
+                  max_contraction=0.04, nozzle=nozzle)
     robot.set_environment(density=1000)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
-    
-    coast_times = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]  # Different coast times
-    n_cycles = 1
-    contraction = 0.06
+    robot.enable_history_recording()
+   
+    coast_times = [1.0, 2.0, 3.0]  # Different coast times
+    n_cycles = 6
+    contraction = 0.03
     yaw_angle = 0.0
     
     trajectories = []
@@ -560,8 +591,8 @@ def main():
     
     # Compare individual action parameters
     # compare_contraction_levels()
-    # compare_coast_times()
-    compare_yaw_angles()
+    compare_coast_times()
+    # compare_yaw_angles()
     
     # Compare action combinations
     # compare_action_combinations()

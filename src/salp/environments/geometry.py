@@ -87,7 +87,7 @@ def visualize_compression_refill_time_relation(compression=None, refill_time=Non
 # data-driven propulsion time
 def fit_compression_propulsion_time_relation_jit():
     compression = np.array([0, 0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
-    propulsion_time = np.array([0, 0.1, 0.3, 0.4, 0.5])   # Corresponding widths to maintain constant volume
+    propulsion_time = np.array([0, 0.1, 0.3, 0.4, 0.42])   # Corresponding widths to maintain constant volume
     # propulsion_time = np.array([0, 0.2, 0.6, 0.8, 1.0])   # Corresponding widths to maintain constant volume
     weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0])
     coefficients = np.polyfit(compression, propulsion_time, 2, w=weights)  # Fit a polynomial of degree 2

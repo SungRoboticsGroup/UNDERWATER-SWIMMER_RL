@@ -1691,9 +1691,9 @@ if __name__ == "__main__":
     
     # TODO: need to fix the scale issues with the robot size and movement speed
     nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
                   max_contraction=0.04, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
     robot.set_environment(density=1000)  # water density in kg/m^3
     robot.enable_history_recording()
     # robot.enable_dynamic_randomization()
@@ -1716,7 +1716,7 @@ if __name__ == "__main__":
     while not done:
 
         start_time = time.perf_counter()
-        action = [0.5, 0.2, 1/1]  # inhale with no nozzle steering
+        action = [0.5, 0.2, 1/3]  # inhale with no nozzle steering
         # For every step in the environment, there are multiple internal robot steps
         # action = env.sample_random_action()
         obs, reward, done, truncated, info = env.step(action)
