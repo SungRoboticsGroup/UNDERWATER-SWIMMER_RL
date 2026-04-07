@@ -97,6 +97,69 @@ def fit_compression_propulsion_time_relation_jit():
 def propulsion_time_from_compression_jit(compression, coefficients):
     return coefficients[0] * compression**2 + coefficients[1] * compression + coefficients[2]  # Evaluate the polynomial at the given length
 
+@jit(nopython=True, cache=True)
+def compute_length_from_refill_time_jit(time, coefficients, init_length):
+    """
+    Analytically solves the quadratic equation to find compression.
+    coefficients: [A, B, C] from np.polyfit(x, y, 2)
+    """
+    A = coefficients[0]
+    B = coefficients[1]
+    C = coefficients[2]
+    
+    # We are solving: A*c^2 + B*c + (C - time) = 0
+    C_adjusted = C - time
+    
+    # Calculate the discriminant
+    discriminant = B**2 - 4 * A * C_adjusted
+    
+    if discriminant < 0:
+        # Prevent math domain errors if asked to extrapolate too far 
+        # below the vertex of the parabola
+        return 0.0 
+        
+    # Quadratic formula: (-B +/- sqrt(discriminant)) / 2A
+    # For your monotonically increasing data, the positive root is correct
+    c_1 = (-B + np.sqrt(discriminant)) / (2 * A)
+    c_2 = (-B - np.sqrt(discriminant)) / (2 * A)
+    
+    # Return the root that actually makes physical sense (positive compression)
+    if c_1 >= 0:
+        return init_length - c_1
+    else:
+        return init_length - c_2
+
+@jit(nopython=True, cache=True)
+def compute_length_from_propulsion_time_jit(time, coefficients, init_length, contraction):
+    """
+    Analytically solves the quadratic equation to find compression.
+    coefficients: [A, B, C] from np.polyfit(x, y, 2)
+    """
+    A = coefficients[0]
+    B = coefficients[1]
+    C = coefficients[2]
+    
+    # We are solving: A*c^2 + B*c + (C - time) = 0
+    C_adjusted = C - time
+    
+    # Calculate the discriminant
+    discriminant = B**2 - 4 * A * C_adjusted
+    
+    if discriminant < 0:
+        # Prevent math domain errors if asked to extrapolate too far 
+        # below the vertex of the parabola
+        return 0.0 
+        
+    # Quadratic formula: (-B +/- sqrt(discriminant)) / 2A
+    # For your monotonically increasing data, the positive root is correct
+    c_1 = (-B + np.sqrt(discriminant)) / (2 * A)
+    c_2 = (-B - np.sqrt(discriminant)) / (2 * A)
+    
+    # Return the root that actually makes physical sense (positive compression)
+    if c_1 >= 0:
+        return init_length + c_1 - contraction
+    else:
+        return init_length + c_2 - contraction
 
 def visualize_compression_propulsion_time_relation(compression=None, propulsion_time=None, coefficients=None,
                                                    num_points=200, title="Compression Length vs Propulsion Time",
@@ -252,7 +315,7 @@ def visualize_length_width_relation(lengths=None, widths=None, coefficients=None
 
 # checked 
 @jit(nopython=True, cache=True)
-def compute_length_jit(state_val, cycle_time, refill_time, propulsion_time, turn_time, init_length, contraction, contract_rate, release_rate, refill_coefficient, propulsion_coefficient):
+def compute_length_jit(state_val, cycle_time, refill_time, turn_time, init_length, contraction, refill_coefficient, propulsion_coefficient):
     """Fast compiled current body length calculation."""
     # if state_val == 0:  # REFILL phase
     #     if cycle_time < refill_time:
@@ -264,13 +327,14 @@ def compute_length_jit(state_val, cycle_time, refill_time, propulsion_time, turn
     # else:
     #     return init_length
 
+
     if state_val == 0:  # REFILL phase
         if cycle_time < refill_time:
-            return compute_length_from_time_jit(cycle_time, init_length - contraction, refill_time, refill_coefficient)
+            return compute_length_from_refill_time_jit(cycle_time, refill_coefficient, init_length)
         else:
             return init_length - contraction
     elif state_val == 1:  # JET phase
-        return compute_length_from_time_jit(cycle_time - max(refill_time, turn_time), init_length, propulsion_time, propulsion_coefficient)
+        return compute_length_from_propulsion_time_jit(cycle_time - max(refill_time, turn_time), propulsion_coefficient, init_length, contraction)
     else:
         return init_length
 
@@ -287,16 +351,16 @@ def compute_width_jit(state_val, cycle_time, refill_time, turn_time, init_width,
     else:
         return init_width
 
-@jit(nopython=True, cache=True)
-def fit_length_time_function_jit(init_length, end_length, time):
+# @jit(nopython=True, cache=True)
+# def fit_length_time_function_jit(init_length, end_length, time):
 
-    a = (init_length - end_length) / (0 - time)**2
+#     a = (init_length - end_length) / (0 - time)**2
 
-    return a
+#     return a
 
-@jit(nopython=True, cache=True)
-def compute_length_from_time_jit(time, end_length, end_time, a):
-    return a*(time - end_time)**2 + end_length
+# @jit(nopython=True, cache=True)
+# def compute_length_from_time_jit(time, end_length, end_time, a):
+#     return a*(time - end_time)**2 + end_length
 
 # checked
 @jit(nopython=True, cache=True)

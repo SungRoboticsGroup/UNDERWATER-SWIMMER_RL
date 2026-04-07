@@ -320,7 +320,7 @@ class Robot:
         self.drag_force_ratio_mean = 0.05
         self.drag_torque_ratio_mean = 0.7
         self.deformation_bias_limit = -0.01 # towards the end of the robot
-        self.added_mass_coefficient_force_mean = np.diag([0.7, 1.2, 0.0])
+        self.added_mass_coefficient_force_mean = np.diag([1.0, 2.0, 0.0])
         self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0])
         self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 1.0])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.5])
@@ -446,7 +446,7 @@ class Robot:
         """Construct drag coefficient ranges for different body deformations."""
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
-        trans_x = [0.7, 1.0]
+        trans_x = [1.0, 1.5]
         trans_y = [0.7, 1.0]
         trans_z = [0.0, 0.0]
 
@@ -623,8 +623,6 @@ class Robot:
         self.refill_time = geometry.refill_time_from_compression_jit(self.contraction, self.refill_time_coefficients)
         self.jet_time = geometry.propulsion_time_from_compression_jit(self.contraction, self.propulsion_time_coefficients)
 
-        self.a_refill = geometry.fit_length_time_function_jit(self.init_length, self.init_length - self.contraction, self.refill_time)
-        self.a_release = geometry.fit_length_time_function_jit(self.init_length - self.contraction, self.init_length, self.jet_time)
 
         # print(f"Cycle {self.cycle} Control Inputs:")
         # print(f"  Contraction: {self.contraction}")
@@ -822,7 +820,6 @@ class Robot:
             history_names = self._get_force_values().keys()
             for attr_name in history_names:
                 setattr(self, attr_name, np.array(getattr(self, attr_name)))
-
 
     # ==================== Coordinate Transformations ====================
     def _to_euler_angle_rate(self) -> np.ndarray:
@@ -1159,15 +1156,15 @@ class Robot:
 
     def get_current_length(self) -> float:
         return geometry.compute_length_jit(
-            self.state.value, self.cycle_time, self.refill_time, self.jet_time, self.nozzle.turn_time, 
-            self.init_length, self.contraction, self._contract_rate, self._release_rate, 
-            self.a_refill, self.a_release
+            self.state.value, self.cycle_time, self.refill_time, self.nozzle.turn_time, 
+            self.init_length, self.contraction,
+            self.refill_time_coefficients, self.propulsion_time_coefficients
         )
 
     def get_current_width(self) -> float:
         return geometry.compute_width_jit(
             self.state.value, self.cycle_time, self.refill_time, self.nozzle.turn_time, 
-            self.init_width, self.contraction, self._contract_rate, self._release_rate
+            self.init_width, self.contraction, self.refill_time_coefficients, self.propulsion_time_coefficients
         )
 
     def _length_width_relation(self, length: float) -> float:
@@ -1254,7 +1251,7 @@ if __name__ == "__main__":
     robot.reset()
     
     # Step through multiple cycles and collect state data
-    n_cycles = 6
+    n_cycles = 1
     
     # Initialize accumulators for all cycle data
     all_time_data = []
@@ -1302,7 +1299,7 @@ if __name__ == "__main__":
 
         robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 6)
         robot.nozzle.solve_angles()
-        robot.set_control(contraction=0.03, coast_time=2, 
+        robot.set_control(contraction=0.04, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
         # robot.estimate_jet_velocity()
         robot.step_through_cycle()
@@ -1424,7 +1421,7 @@ if __name__ == "__main__":
     # plot_jet_properties(all_time_data, all_jet_force_data, all_state_data)
     # plot_coriolis_force(all_time_data, all_coriolis_force_data, all_state_data)
     # plot_added_mass_force(all_time_data, all_added_mass_force_data, all_state_data)
-    # # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
+    # plot_drag_coefficient(all_time_data, all_drag_coefficient_data, all_state_data)
     # plot_drag_properties(all_time_data, all_drag_force_data, all_state_data)
     # plot_acceleration_force(all_time_data, all_acceleration_force_data, all_state_data)
 
@@ -1438,7 +1435,7 @@ if __name__ == "__main__":
     ## Rotational Dynamics
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)
@@ -1449,7 +1446,7 @@ if __name__ == "__main__":
     # plot_nozzle_yaw_angle(all_time_data, all_nozzle_yaw_data, all_state_data)
 
     # plot_trajectory_xy(all_position_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
-    plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
+    # plot_trajectory_xy(all_front_position_world_data, all_state_data, all_euler_angle_data, all_nozzle_yaw_data)
 
     plt.show(block=True)
     
