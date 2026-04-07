@@ -322,7 +322,7 @@ class Robot:
         self.deformation_bias_limit = -0.01 # towards the end of the robot
         self.added_mass_coefficient_force_mean = np.diag([0.7, 2.0, 0.0]) # do not touch this
         self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0]) # do not touch this
-        self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 1.0])
+        self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 2.0])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.5])
         self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
         self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
@@ -463,7 +463,7 @@ class Robot:
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
         trans_x = [1.0, 1.5]
-        trans_y = [0.7, 1.0]
+        trans_y = [0.5, 1.0]
         trans_z = [0.0, 0.0]
 
         return np.array([trans_x, trans_y, trans_z])
@@ -1194,11 +1194,11 @@ class Robot:
     
     def _get_added_mass_torque(self) -> np.ndarray:
         return dynamics.compute_added_mass_torque_jit(
-            self.get_inertia_matrix(), 
+            self.bounding_box_inertia_matrix, 
             self.added_mass_coefficient_torque, 
-            self.get_inertia_matrix_rate(), 
+            self.bounding_box_inertia_matrix_rate, 
             self.added_mass_rate_coefficient_torque, 
-            self.get_mass(), 
+            self.bounding_box_mass, 
             self.added_mass_coefficient_force, 
             self.angular_acceleration, 
             self.angular_velocity, 
@@ -1387,7 +1387,7 @@ if __name__ == "__main__":
 
     for i in range(n_cycles):
 
-        robot.nozzle.set_yaw_angle(yaw_angle = -0.0 * np.pi / 6)
+        robot.nozzle.set_yaw_angle(yaw_angle = -1.0 * np.pi / 6)
         robot.nozzle.solve_angles()
         robot.set_control(contraction=0.03, coast_time=2, 
                           nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]))
@@ -1504,18 +1504,18 @@ if __name__ == "__main__":
 
 
     # Plot results
-    plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
+    # plot_robot_geometry(all_time_data, all_length_data, all_width_data, all_state_data)
     # plot_cross_sectional_area(all_time_data, all_area_data, all_state_data)  
     # plot_robot_mass(all_time_data, all_mass_data, all_state_data) 
-    plot_robot_mass(all_time_data, all_bounding_box_mass_data, all_state_data)
+    # plot_robot_mass(all_time_data, all_bounding_box_mass_data, all_state_data)
     # plot_volume_rate(all_time_data, all_volume_rate_data, all_state_data)   
     # plot_mass_rate(all_time_data, all_mass_rate_data, all_state_data)
-    plot_mass_rate(all_time_data, all_bounding_box_mass_rate_data, all_state_data)
+    # plot_mass_rate(all_time_data, all_bounding_box_mass_rate_data, all_state_data)
     # plot_mass_rate(all_time_data, all_effective_mass_rate_data, all_state_data)
     # plot_inertia_tensor(all_time_data, all_inertia_tensor_data, all_state_data)
     # plot_inertia_tensor_rate(all_time_data, all_inertia_tensor_rate_data, all_state_data)
-    plot_inertia_tensor_rate(all_time_data, all_bounding_box_inertia_matrix_rate_data, all_state_data)
-    plot_inertia_tensor(all_time_data, all_bounding_box_inertia_matrix_data, all_state_data)
+    # plot_inertia_tensor_rate(all_time_data, all_bounding_box_inertia_matrix_rate_data, all_state_data)
+    # plot_inertia_tensor(all_time_data, all_bounding_box_inertia_matrix_data, all_state_data)
     # plot_center_of_mass(all_time_data, all_center_of_mass_data, all_state_data)
 
 
@@ -1534,13 +1534,13 @@ if __name__ == "__main__":
     # plot_front_position_world_frame(all_time_data, all_front_position_world_data, all_state_data)
     # plot_robot_velocity(all_time_data, all_velocity_data, all_state_data)
     # plot_robot_velocity(all_time_data, all_velocity_world_data, all_state_data)  
-    plot_robot_position(all_time_data, all_position_data, all_state_data)
+    # plot_robot_position(all_time_data, all_position_data, all_state_data)
     # plot_robot_acceleration(all_time_data, all_acceleration_data, all_state_data)
 
     ## Rotational Dynamics
     # plot_angular_velocity(all_time_data, all_angular_velocity_data, all_state_data)
     # plot_angular_acceleration(all_time_data, all_angular_acceleration_data, all_state_data)
-    # plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
+    plot_euler_angles(all_time_data, all_euler_angle_data, all_state_data)
 
     # plot_jet_torque(all_time_data, all_jet_torque_data, all_state_data)
     # plot_drag_torque(all_time_data, all_drag_torque_data, all_state_data)

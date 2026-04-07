@@ -144,6 +144,7 @@ def compute_jet_force_jit(mass_rate, jet_velocity):
 @jit(nopython=True, cache=True)
 def compute_jet_torque_jit(moment_arm, jet_force, discount_factor):
     """Fast compiled calculation of torque from jet force."""
+    # print("Moment arm:", moment_arm)
     return np.cross(moment_arm, jet_force) * discount_factor
 
 # checked
@@ -153,7 +154,7 @@ def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force
     v_norm = np.linalg.norm(velocity)
     F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
     # F_linear = -0.5 * density * area * trans_drag_coeff * velocity
-    F_linear = -9.0 * velocity
+    F_linear = -8.5 * velocity
     # print("Drag force terms:", F_quadratic, F_linear)
     return ((1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear) 
 
@@ -164,10 +165,11 @@ def compute_drag_torque_jit(density, rot_drag_coeff, area, angular_velocity, wid
     w_norm = np.linalg.norm(angular_velocity)
     # Dimensions array for the quadratic drag term
     dims = np.array([(width/2)**3, (length/2)**3, (length/2)**3])
+    # print(length)
     
     T_quadratic = -0.5 * density * rot_drag_coeff * area * w_norm * angular_velocity * dims
     # T_linear = -0.5 * density * rot_drag_coeff * area * angular_velocity * np.array([width/2, length/2, length/2])
-    T_linear = -0.01 * angular_velocity
+    T_linear = -0.05 * angular_velocity
 
     return (1 - drag_torque_ratio) * T_quadratic + drag_torque_ratio * T_linear
 
@@ -175,6 +177,8 @@ def compute_drag_torque_jit(density, rot_drag_coeff, area, angular_velocity, wid
 @jit(nopython=True, cache=True)
 def compute_added_mass_force_jit(mass, added_mass_coeff, mass_rate, added_mass_rate_coeff, acceleration, angular_velocity, velocity):
     """Fast compiled calculation of added mass force."""
+    
+    # print("Mass:", mass)
     added_mass = mass @ added_mass_coeff
     added_mass_rate = mass_rate @ added_mass_rate_coeff
     
@@ -186,6 +190,7 @@ def compute_added_mass_force_jit(mass, added_mass_coeff, mass_rate, added_mass_r
     # print("Added mass force terms:", term1, term2, term3)
     # print(added_mass_rate_coeff, added_mass_rate, velocity)
     # print(mass_rate)
+    
     
     return added_mass, -(term1 + term2 + term3)
 

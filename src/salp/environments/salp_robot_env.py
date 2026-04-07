@@ -1690,11 +1690,27 @@ class SalpRobotEnv(gym.Env):
 if __name__ == "__main__":
     
     # TODO: need to fix the scale issues with the robot size and movement speed
-    nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
+    # robot parameters (DO NOT CHANGE THESE)
+    nozzle_length1 = 0.052
+    nozzle_length2 = 0.038
+    nozzle_length3 = 0.050
+    nozzle_area = np.pi * 0.01**2
+    nozzle_mass = 0.428
+    nozzle_radius = 0.1
+    nozzle_inner_radius = 0.022
+
+    robot_mass = 0.738
+    robot_init_length = 0.26
+    robot_init_width = 0.135
+    # robot parameters (DO NOT CHANGE THESE)
+
+    nozzle = Nozzle(length1=nozzle_length1, length2=nozzle_length2, length3=nozzle_length3, area=nozzle_area, mass=nozzle_mass, radius=nozzle_radius, inner_radius=nozzle_inner_radius)
     nozzle.set_angles(angle1=0.0, angle2=0.0)
-    robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
+    robot = Robot(dry_mass=robot_mass, init_length=robot_init_length, init_width=robot_init_width, 
                   max_contraction=0.04, nozzle=nozzle)
-    robot.set_environment(density=1000)  # water density in kg/m^3
+    # robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    # robot.enable_domain_randomization()
+    robot.set_environment(density=1000)
     robot.enable_history_recording()
     # robot.enable_dynamic_randomization()
 
