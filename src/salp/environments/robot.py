@@ -79,29 +79,7 @@ class Nozzle:
         self.prev_angle1 = self.angle1
         self.prev_angle2 = self.angle2
 
-        target_direction = -np.array([np.cos(self.yaw), np.sin(self.yaw), 0])
-        target_direction = self.R_br.transpose() @ target_direction
-
-        val2 = np.clip(2 * target_direction[2] - 1, -1.0, 1.0)
-        self.angle2 = np.arccos(val2)
-        if self.angle2 <= -np.pi:
-            self.angle2 += 2 * np.pi
-        elif self.angle2 > np.pi:
-            self.angle2 -= 2 * np.pi
-
-        if self.angle2 == 0:
-            self.angle1 = 0.0
-        else:
-            a = 0.5 * (np.cos(self.angle2) - 1)
-            b = np.sqrt(2) * np.sin(self.angle2) / 2
-            c = target_direction[1]
-            val1 = np.clip(c / np.sqrt(a**2 + b**2), -1.0, 1.0)
-            self.angle1 = np.arcsin(val1) - np.arctan2(b, a)
-
-        if self.angle1 <= -np.pi:
-            self.angle1 += 2 * np.pi
-        elif self.angle1 > np.pi:
-            self.angle1 -= 2 * np.pi
+        self.angle1, self.angle2 = geometry.solve_angles(self.yaw, self.R_br)
 
     # ==================== Update Methods ====================
     def step(self, time: float):
@@ -117,29 +95,14 @@ class Nozzle:
     def get_nozzle_position(self) -> np.ndarray:
         """Calculate the nozzle tip position in world frame.
         
-        Returns:
-            3D position vector of the nozzle tip
-        """
-        # Nozzle tip position in nozzle frame
-        pos_x3 = self.length3 * np.cos(self.gamma)
-        pos_y3 = 0
-        pos_z3 = self.length3 * np.sin(self.gamma)
-        nozzle_position = np.array([pos_x3, pos_y3, pos_z3])
+        # Returns:
+        #     3D position vector of the nozzle tip
+        # """
 
-        # Middle section tip position in body frame
-        pos_x2 = 0
-        pos_y2 = 0
-        pos_z2 = self.length2
-        middle_position = np.array([pos_x2, pos_y2, pos_z2])
-
-        # Base section tip position in base frame
-        pos_x1 = 0
-        pos_y1 = 0
-        pos_z1 = self.length1
-        base_position = np.array([pos_x1, pos_y1, pos_z1])
-
-        position = self.R_br @ (base_position + self.R_mb @ (middle_position + self.R_nm @ nozzle_position))
-        return position
+        return geometry.get_nozzle_position(
+            self.length1, self.length2, self.length3, self.gamma,
+            self.R_br, self.R_mb, self.R_nm
+        )
     
     def get_nozzle_direction(self) -> np.ndarray:
         """Calculate the direction vector of the nozzle.
@@ -147,13 +110,8 @@ class Nozzle:
         Returns:
             3D direction unit vector in world frame
         """
-        pos_x = np.cos(self.gamma)
-        pos_y = 0
-        pos_z = np.sin(self.gamma)
-        nozzle_direction = np.array([pos_x, pos_y, pos_z])
 
-        direction = self.R_br @ self.R_mb @ self.R_nm @ nozzle_direction
-        return direction
+        return geometry.get_nozzle_direction(self.R_br, self.R_mb, self.R_nm, self.gamma)
     
     def get_middle_position(self) -> np.ndarray:
         """Get the position of the second nozzle joint.
@@ -161,19 +119,7 @@ class Nozzle:
         Returns:
             3D position vector in body frame
         """
-        pos_x = 0
-        pos_y = 0
-        pos_z = self.length1
-        base_position = np.array([pos_x, pos_y, pos_z])
-
-        # Middle section tip position in body frame
-        pos_x2 = 0
-        pos_y2 = 0
-        pos_z2 = self.length2
-        middle_position = np.array([pos_x2, pos_y2, pos_z2])
-
-        position = self.R_br @ (base_position + self.R_mb @ middle_position)
-        return position
+        return geometry.get_middle_position(self.R_br, self.R_mb, self.length1, self.length2)
 
     # ==================== Private Helper Methods ====================
     def _nozzle_turn_time(self) -> float:
@@ -192,26 +138,8 @@ class Nozzle:
 
     def _get_rotation_matrices(self):
         """Calculate the rotation matrices for nozzle orientation."""
-        R_theta_fixed = np.array([[np.cos(self.gamma), 0, -np.sin(self.gamma)],
-                                  [0, 1, 0],
-                                  [np.sin(self.gamma), 0, np.cos(self.gamma)]])
-        
-        R_nozzle = np.array([[np.cos(self.angle2), -np.sin(self.angle2), 0],
-                             [np.sin(self.angle2), np.cos(self.angle2), 0],
-                             [0, 0, 1]])
-        
-        R_middle = np.array([[np.cos(self.angle1), -np.sin(self.angle1), 0],
-                             [np.sin(self.angle1), np.cos(self.angle1), 0],
-                             [0, 0, 1]])
 
-        # Convert from nozzle frame to body frame
-        R_base = np.array([[0, 0, -1],
-                           [0, 1, 0],
-                           [1, 0, 0]])
-
-        self.R_nm = R_theta_fixed @ R_nozzle
-        self.R_mb = R_middle
-        self.R_br = R_base
+        self.R_nm, self.R_mb, self.R_br = geometry.get_rotation_matrices(self.gamma, self.angle1, self.angle2)
 
 class OUDisturbance:
     """
@@ -389,6 +317,7 @@ class Robot:
         self.cycle_time = 0.0
         
         # ==================== Dynamic Properties ====================
+        self.nozzle_length = abs(self.nozzle.get_nozzle_position()[0])
         self.length = self.init_length
         self.width = self.init_width
         self.deformation_bias = 0.0
@@ -692,8 +621,9 @@ class Robot:
         self.prev_bounding_box_volume = self.bounding_box_volume
         self.prev_bounding_box_mass = self.prev_bounding_box_volume * self.density
 
+        self.nozzle_length = abs(self.nozzle.get_nozzle_position()[0])  # x position of the nozzle tip in body frame
         self.length = self.get_current_length()
-        self.width_relation = self._length_width_relation(self.length)
+        # self.width_relation = self._length_width_relation(self.length)
         self.width = self._length_width_relation(self.length)
         self.deformation_bias = self._get_deformation_bias()
         self.area = self._get_cross_sectional_area()
@@ -807,7 +737,6 @@ class Robot:
         self.prev_position = self.position.copy()
         self.prev_angle = self.angle.copy()
 
-
         if self.record:
             # Initialize history lists with current values
             for attr_name, initial_value in self._get_state_values().items():
@@ -858,17 +787,11 @@ class Robot:
         else:
             self.force_noise = np.zeros(3)
 
-        self.mass = self.get_mass()
+        # self.mass = self.get_mass()
 
         # now tracking geometric center
         # account for fictitious forces because of moving center of mass
-        a_tangential = np.cross(self.angular_acceleration, self.center_of_mass)
-        a_centripetal =  np.cross(self.angular_velocity, np.cross(self.angular_velocity, self.center_of_mass))
-        a_coriolis = 2 * np.cross(self.angular_velocity, self.center_of_mass_rate)
-        a_recoil = self.center_of_mass_acc_rate
-        self.acceleration_force = self.mass[0, 0] * (
-            a_centripetal + a_coriolis + a_tangential + a_recoil
-        )
+        self.acceleration_force = self._get_noninertia_force()
         
         return dynamics.compute_linear_acceleration_jit(
             self.mass + mass_add, 
@@ -895,10 +818,10 @@ class Robot:
         else:
             self.torque_noise = np.zeros(3)
 
-        I = self.get_inertia_matrix()
+        # I = self.get_inertia_matrix()
 
         return dynamics.compute_angular_acceleration_jit(
-            I + I_add, 
+            self.I + I_add, 
             self.jet_torque, 
             self.drag_torque, 
             self.coriolis_torque, 
@@ -942,26 +865,24 @@ class Robot:
     def get_inertia_matrix(self) -> np.ndarray:
         # mass_scalar = self.mass[0, 0] # Extract raw float to pass to Numba
         
-        nozzle_length = abs(self.nozzle.get_nozzle_position()[0])  # Get nozzle length from nozzle position
-        nozzle_water_mass = self.density * np.pi * self.nozzle.inner_radius**2 * nozzle_length
+        nozzle_water_mass = self.density * np.pi * self.nozzle.inner_radius**2 * self.nozzle_length
         return geometry.compute_inertia_matrix_jit(
             self.length, self.width,
             self.buoy_length, self.buoy_width, self.buoy_height,
             self.tube_length, self.tube_radius,
-            nozzle_length, self.nozzle.radius, self.nozzle.inner_radius,
+            self.nozzle_length, self.nozzle.radius, self.nozzle.inner_radius,
             self.center_of_mass,
             self.water_mass, self.buoy_mass, self.tube_mass,
             self.skin_mass, self.nozzle.mass, nozzle_water_mass,
         )
         
-    
     def get_inertia_matrix_rate(self) -> np.ndarray:
         """Calculate rate of change of inertia matrix.
         
         Returns:
             3x3 inertia matrix rate
         """
-        current_I = self.get_inertia_matrix()
+        current_I = self.I
         if self.prev_I is None:
             self.inertia_matrix_rate = np.zeros_like(current_I)
             self.prev_I = current_I
@@ -974,7 +895,7 @@ class Robot:
 
     def get_bounding_box_inertia_matrix(self) -> np.ndarray:
         # bounding box length accounts for nozzle extension
-        length = self.length + abs(self.nozzle.get_nozzle_position()[0])
+        length = self.length + self.nozzle_length
         # moment arm: distance from center of mass to bounding box center
         length_com = abs(length / 2 - self.length / 2)
 
@@ -988,7 +909,7 @@ class Robot:
         Returns:
             3x3 bounding box inertia matrix rate
         """
-        current_I = self.get_bounding_box_inertia_matrix()
+        current_I = self.bounding_box_inertia_matrix
         if self.prev_bounding_box_I is None:
             self.bounding_box_inertia_matrix_rate = np.zeros_like(current_I)
             self.prev_bounding_box_I = current_I
@@ -1011,13 +932,12 @@ class Robot:
         pos_skin = np.array([self.deformation_bias, 0.0, 0.0])
         pos_tube = np.array([self.length / 2 - self.tube_length / 2, 0.0, 0.0])
         pos_water = pos_skin
-        nozzle_length = abs(self.nozzle.get_nozzle_position()[0])
-        pos_nozzle = np.array([-self.length / 2 - nozzle_length / 2, 0.0, 0.0])
+        pos_nozzle = np.array([-self.length / 2 - self.nozzle_length / 2, 0.0, 0.0])
         pos_nozzle_water = pos_nozzle
 
         tube_mass = self.tube_mass - self.tube_volume * self.density
         water_mass = self.density * geometry.compute_water_volume_jit(self.length, self.width)
-        nozzle_water_mass = self.density * np.pi * self.nozzle.inner_radius**2 * nozzle_length
+        nozzle_water_mass = self.density * np.pi * self.nozzle.inner_radius**2 * self.nozzle_length
         
         return geometry.compute_center_of_mass_jit(
             pos_buoy, pos_skin, pos_tube,
@@ -1032,8 +952,8 @@ class Robot:
         Returns:
             3D vector of center of mass rate
         """
-        com_rate = (self.get_center_of_mass() - self.prev_center_of_mass) / self.dt
-        self.prev_center_of_mass = self.get_center_of_mass()
+        com_rate = (self.center_of_mass - self.prev_center_of_mass) / self.dt
+        self.prev_center_of_mass = self.center_of_mass
 
         return com_rate
     
@@ -1144,7 +1064,6 @@ class Robot:
         return self._get_drag_coefficient(self.trans_drag_coefficient_range)
 
     def _get_drag_torque(self) -> np.ndarray:
-        nozzle_length = abs(self.nozzle.get_nozzle_position()[0])
 
         return dynamics.compute_drag_torque_jit(
             self.density, 
@@ -1152,7 +1071,7 @@ class Robot:
             self.area, 
             self.angular_velocity, 
             self.width, 
-            self.length + nozzle_length, 
+            self.length + self.nozzle_length, 
             self.drag_torque_ratio
         )
     
@@ -1163,6 +1082,17 @@ class Robot:
             self.trans_drag_coefficient, 
             self.velocity, 
             self.drag_force_ratio
+        )
+    
+    def _get_noninertia_force(self) -> np.ndarray:
+
+        return dynamics.compute_noninertia_force_jit(
+            self.angular_acceleration,
+            self.angular_velocity,
+            self.center_of_mass,
+            self.center_of_mass_rate,
+            self.center_of_mass_acc_rate,
+            self.mass
         )
 
     # ==================== Added Mass Methods ====================
@@ -1193,18 +1123,18 @@ class Robot:
     # ==================== Coriolis Force and Torque Methods ====================
     def _get_coriolis_force(self) -> np.ndarray:
         return dynamics.compute_coriolis_force_jit(
-            self.angular_velocity, self.get_mass(), self.velocity,
+            self.angular_velocity, self.mass, self.velocity,
         )
 
     def _get_coriolis_torque(self) -> np.ndarray:
         return dynamics.compute_coriolis_torque_jit(
-            self.angular_velocity, self.get_inertia_matrix(),
+            self.angular_velocity, self.I,
         )
 
     # ==================== Deformation Methods ====================
     def _get_deform_torque(self) -> np.ndarray:
         return dynamics.compute_deform_torque_jit(
-            self.get_inertia_matrix_rate(), self.angular_velocity,
+            self.inertia_matrix_rate, self.angular_velocity,
         )
     
     def _asymmetry_torque_model(self) -> np.ndarray:
@@ -1242,14 +1172,11 @@ class Robot:
         return geometry.width_from_length_jit(length, self.geometric_coefficients)
 
     def _get_cross_sectional_area(self) -> np.ndarray:
-        nozzle_length = abs(self.nozzle.get_nozzle_position()[0])
-        length = self.length + nozzle_length
-        return geometry.compute_cross_sectional_area_jit(length, self.width)
+        return geometry.compute_cross_sectional_area_jit(self.length + self.nozzle_length, self.width)
 
     # ==================== Mass and Volume Methods ====================
     def _get_bounding_box_volume(self) -> float:
-        length = self.length + abs(self.nozzle.get_nozzle_position()[0])
-        return geometry.compute_bounding_box_volume_jit(length, self.width)
+        return geometry.compute_bounding_box_volume_jit(self.length + self.nozzle_length, self.width)
 
     def _get_water_volume(self) -> float:
         return geometry.compute_water_volume_jit(self.length, self.width) - self.tube_volume

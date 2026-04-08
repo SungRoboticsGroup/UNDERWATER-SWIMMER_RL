@@ -200,6 +200,16 @@ def compute_added_mass_torque_jit(
 # ==================== Coriolis & Gyroscopic Effects ====================
 
 @jit(nopython=True, cache=True)
+def compute_noninertia_force_jit(angular_acceleration, angular_velocity, center_of_mass, center_of_mass_rate, center_of_mass_acc_rate, mass):
+    """Fast compiled calculation of non-inertial forces."""
+    a_tangential = np.cross(angular_acceleration, center_of_mass)
+    a_centripetal =  np.cross(angular_velocity, np.cross(angular_velocity, center_of_mass))
+    a_coriolis = 2 * np.cross(angular_velocity, center_of_mass_rate)
+    a_recoil = center_of_mass_acc_rate
+    
+    return mass[0, 0] * (a_centripetal + a_coriolis + a_tangential + a_recoil)
+
+@jit(nopython=True, cache=True)
 def compute_coriolis_force_jit(angular_velocity, mass, velocity):
     """Fast compiled calculation of Coriolis force."""
     return -np.cross(angular_velocity, mass @ velocity)

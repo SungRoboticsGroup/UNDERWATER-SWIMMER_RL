@@ -587,6 +587,127 @@ def randomize_scalar_jit(value, uncertainty=0.1, lower_bound=np.nan, upper_bound
     # Manual min/max is highly optimized in Numba for scalars
     return min(max(sample, lower_bound), upper_bound)
 
+@jit(nopython=True, cache=True)
+def solve_angles(yaw, R_br):
+    """Solve inverse kinematics to find nozzle angles for target direction."""
+    
+    target_direction = -np.array([np.cos(yaw), np.sin(yaw), 0.0], dtype=np.float64)
+    target_direction = R_br.T @ target_direction
+
+    raw_val2 = 2 * target_direction[2] - 1
+    val2 = min(max(raw_val2, -1.0), 1.0)
+    
+    angle2 = np.arccos(val2)
+    if angle2 <= -np.pi:
+        angle2 += 2 * np.pi
+    elif angle2 > np.pi:
+        angle2 -= 2 * np.pi
+
+    if angle2 == 0:
+        angle1 = 0.0
+    else:
+        a = 0.5 * (np.cos(angle2) - 1)
+        b = np.sqrt(2) * np.sin(angle2) / 2
+        c = target_direction[1]
+        val1 = min(max(c / np.sqrt(a**2 + b**2), -1.0), 1.0)
+        angle1 = np.arcsin(val1) - np.arctan2(b, a)
+
+    if angle1 <= -np.pi:
+        angle1 += 2 * np.pi
+    elif angle1 > np.pi:
+        angle1 -= 2 * np.pi
+
+    return angle1, angle2
+
+@jit(nopython=True, cache=True)
+def get_nozzle_position(length1, length2, length3, gamma, R_br, R_mb, R_nm) -> np.ndarray:
+    """Calculate the nozzle tip position in world frame.
+
+    Returns:
+        3D position vector of the nozzle tip
+    """
+    # Nozzle tip position in nozzle frame
+    pos_x3 = length3 * np.cos(gamma)
+    pos_y3 = 0
+    pos_z3 = length3 * np.sin(gamma)
+    nozzle_position = np.array([pos_x3, pos_y3, pos_z3])
+
+    # Middle section tip position in body frame
+    pos_x2 = 0
+    pos_y2 = 0
+    pos_z2 = length2
+    middle_position = np.array([pos_x2, pos_y2, pos_z2])
+
+    # Base section tip position in base frame
+    pos_x1 = 0
+    pos_y1 = 0
+    pos_z1 = length1
+    base_position = np.array([pos_x1, pos_y1, pos_z1])
+
+    position = R_br @ (base_position + R_mb @ (middle_position + R_nm @ nozzle_position))
+
+    return position
+
+@jit(nopython=True, cache=True)
+def get_nozzle_direction(R_br, R_mb, R_nm, gamma) -> np.ndarray:
+    """Calculate the direction vector of the nozzle.
+    
+    Returns:
+        3D direction unit vector in world frame
+    """
+    pos_x = np.cos(gamma)
+    pos_y = 0
+    pos_z = np.sin(gamma)
+    nozzle_direction = np.array([pos_x, pos_y, pos_z])
+
+    direction = R_br @ R_mb @ R_nm @ nozzle_direction
+
+    return direction
+
+@jit(nopython=True, cache=True)
+def get_middle_position(R_br, R_mb, length1, length2) -> np.ndarray:
+    """Get the position of the second nozzle joint.
+    
+    Returns:
+        3D position vector in body frame
+    """
+    pos_x = 0
+    pos_y = 0
+    pos_z = length1
+    base_position = np.array([pos_x, pos_y, pos_z])
+
+    # Middle section tip position in body frame
+    pos_x2 = 0
+    pos_y2 = 0
+    pos_z2 = length2
+    middle_position = np.array([pos_x2, pos_y2, pos_z2])
+
+    position = R_br @ (base_position + R_mb @ middle_position)
+
+    return position
+
+@jit(nopython=True, cache=True)
+def get_rotation_matrices(gamma, angle1, angle2):
+    """Calculate the rotation matrices for nozzle orientation."""
+    R_theta_fixed = np.array([[np.cos(gamma), 0.0, -np.sin(gamma)],
+                                [0.0, 1.0, 0.0],
+                                [np.sin(gamma), 0.0, np.cos(gamma)]], dtype=np.float64)
+    
+    R_nozzle = np.array([[np.cos(angle2), -np.sin(angle2), 0.0],
+                            [np.sin(angle2), np.cos(angle2), 0.0],
+                            [0.0, 0.0, 1.0]], dtype=np.float64)
+    
+    R_middle = np.array([[np.cos(angle1), -np.sin(angle1), 0.0],
+                            [np.sin(angle1), np.cos(angle1), 0.0],
+                            [0.0, 0.0, 1.0]], dtype=np.float64)
+
+    # Convert from nozzle frame to body frame
+    R_base = np.array([[0.0, 0.0, -1.0],
+                        [0.0, 1.0, 0.0],
+                        [1.0, 0.0, 0.0]], dtype=np.float64)
+
+    return R_theta_fixed @ R_nozzle, R_middle, R_base
+
 
 if __name__ == "__main__":
     fig, ax = visualize_length_width_relation()

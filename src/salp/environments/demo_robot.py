@@ -3,6 +3,8 @@
 Runs multiple swim cycles and plots selected diagnostics.
 Toggle plots on/off via the ENABLED_PLOTS set in main().
 """
+import time
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -91,7 +93,9 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
     """Run *n_cycles* swim cycles and return aggregated history arrays."""
     accumulators: dict[str, list] = {}
 
-    for _ in range(n_cycles):
+    t_start = time.perf_counter()
+    for i in range(n_cycles):
+        t_cycle_start = time.perf_counter()
         robot.nozzle.set_yaw_angle(yaw_angle=-1.0 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(
@@ -100,6 +104,8 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
             nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]),
         )
         robot.step_through_cycle()
+        t_cycle_end = time.perf_counter()
+        print(f"  Cycle {i+1}/{n_cycles}: {t_cycle_end - t_cycle_start:.3f}s")
 
         # Build time array for this cycle
         cycle_start_time = robot.time - robot.cycle_time
@@ -117,6 +123,8 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
                 data = buf
             accumulators.setdefault(attr_name, []).extend(data)
 
+    t_total = time.perf_counter() - t_start
+    print(f"Simulation complete: {n_cycles} cycles in {t_total:.3f}s ({t_total/n_cycles:.3f}s per cycle)")
     return {k: np.array(v) for k, v in accumulators.items()}
 
 
