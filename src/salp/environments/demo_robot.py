@@ -92,11 +92,11 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
     accumulators: dict[str, list] = {}
 
     for _ in range(n_cycles):
-        robot.nozzle.set_yaw_angle(yaw_angle=-1.0 * np.pi / 6)
+        robot.nozzle.set_yaw_angle(yaw_angle=-1.0 * np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(
             contraction=0.03,
-            coast_time=5,
+            coast_time=4,
             nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]),
         )
         robot.step_through_cycle()

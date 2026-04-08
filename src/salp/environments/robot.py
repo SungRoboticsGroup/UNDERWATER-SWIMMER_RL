@@ -364,8 +364,8 @@ class Robot:
         self.volume_keep_ratio *= self.discharge_coefficient_mean
         self.drag_force_ratio_mean = 0.05 # do not touch this 
         self.drag_torque_ratio_mean = 0.3
-        self.deformation_bias_limit = -0.02 # towards the end of the robot
-        self.added_mass_coefficient_force_mean = np.diag([0.7, 0.7, 0.0]) # do not touch this
+        self.deformation_bias_limit = -0.01 # towards the end of the robot
+        self.added_mass_coefficient_force_mean = np.diag([0.7, 0.5, 0.0]) # do not touch this
         self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0]) # do not touch this
         self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 2.5])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.5])
@@ -467,7 +467,7 @@ class Robot:
         # Different drag coefficients for along x, y, z directions
         # initial and end of deformation drag coefficients
         trans_x = [1.0, 1.5]
-        trans_y = [0.5, 1.0]
+        trans_y = [3.0, 3.0]
         trans_z = [0.0, 0.0]
 
         return np.array([trans_x, trans_y, trans_z])

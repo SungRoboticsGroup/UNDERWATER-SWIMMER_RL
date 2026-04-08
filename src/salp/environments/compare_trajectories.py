@@ -442,12 +442,12 @@ def compare_yaw_angles(n_trials=1):
     yaw_angles = [np.pi/2, np.pi/6, -np.pi/2, -np.pi/6, 0]  # Different yaw angles
     n_cycles = 6
     contraction = 0.03
-    coast_time = 2.0
+    coast_times = [4.0, 4.0, 4.0, 4.0, 2.0]  # Coast times for each yaw angle (ordered to match experiments)
     
     sim_stats = []  # Will contain {'mean': array, 'std': array} for each yaw angle
     sim_labels = []
     
-    for yaw_angle in yaw_angles:
+    for yaw_angle, coast_time in zip(yaw_angles, coast_times):
         print(f"  Running {n_trials} trials for Yaw = {np.degrees(yaw_angle):.0f}°...")
         
         # Collect all trajectories for this yaw angle
