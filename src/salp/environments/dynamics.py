@@ -1,7 +1,8 @@
 from numba import jit
-import numpy as np 
+import numpy as np
 import geometry
 
+# ==================== Helpers ====================
 
 @jit(nopython=True, cache=True)
 def _sanitize_force_vector_jit(force_vec):
@@ -14,21 +15,25 @@ def _sanitize_force_vector_jit(force_vec):
         if np.isfinite(val):
             cleaned[i] = val
         else:
-            cleaned[i] = val
+            cleaned[i] = 0.0
             is_valid = False
 
     return cleaned, is_valid
 
-# checked
+# ==================== Equations of Motion ====================
+
 @jit(nopython=True, cache=True)
-def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_mass_force, coriolis_force, noise_force, acceleraiton_force):
+def compute_linear_acceleration_jit(
+    mass_matrix, jet_force, drag_force, added_mass_force,
+    coriolis_force, noise_force, acceleration_force,
+):
     """Fast compiled computation of Newton's equations."""
     jet_force, jet_ok = _sanitize_force_vector_jit(jet_force)
     drag_force, drag_ok = _sanitize_force_vector_jit(drag_force)
     added_mass_force, added_mass_ok = _sanitize_force_vector_jit(added_mass_force)
     coriolis_force, coriolis_ok = _sanitize_force_vector_jit(coriolis_force)
     noise_force, noise_ok = _sanitize_force_vector_jit(noise_force)
-    acceleraiton_force, accel_ok = _sanitize_force_vector_jit(acceleraiton_force)
+    acceleration_force, accel_ok = _sanitize_force_vector_jit(acceleration_force)
 
     if not jet_ok:
         print("Warning: invalid value found in jet_force")
@@ -41,28 +46,29 @@ def compute_linear_acceleration_jit(mass_matrix, jet_force, drag_force, added_ma
     if not noise_ok:
         print("Warning: invalid value found in noise_force")
     if not accel_ok:
-        print("Warning: invalid value found in acceleraiton_force")
+        print("Warning: invalid value found in acceleration_force")
 
-    total_force = jet_force + drag_force + added_mass_force + coriolis_force + noise_force + acceleraiton_force
-    # np.linalg.solve is faster and more stable than inv() @ vector
-    # print("Total force:", total_force)
-    # print(jet_force, drag_force, added_mass_force, coriolis_force, noise_force, acceleraiton_force)
+    total_force = (jet_force + drag_force + added_mass_force
+                   + coriolis_force + noise_force + acceleration_force)
     return np.linalg.solve(mass_matrix, total_force)
 
-# checked
 @jit(nopython=True, cache=True)
-def compute_angular_acceleration_jit(inertia_matrix, jet_torque, drag_torque, coriolis_torque, asymmetry_torque, deform_torque, added_mass_torque, noise_torque):
+def compute_angular_acceleration_jit(
+    inertia_matrix, jet_torque, drag_torque, coriolis_torque,
+    asymmetry_torque, deform_torque, added_mass_torque, noise_torque,
+):
     """Fast compiled computation of Euler's equations."""
-    total_torque = jet_torque + drag_torque + coriolis_torque + asymmetry_torque + deform_torque + added_mass_torque + noise_torque
+    total_torque = (jet_torque + drag_torque + coriolis_torque
+                    + asymmetry_torque + deform_torque + added_mass_torque
+                    + noise_torque)
     return np.linalg.solve(inertia_matrix, total_torque)
 
-# checked
+# ==================== Frame Transformations ====================
+
 @jit(nopython=True, cache=True)
 def to_euler_angle_rate_jit(euler_angle, angular_velocity):
     """Fast compiled conversion to Euler angle rates."""
     phi, theta, _ = euler_angle
-    
-    # Pre-allocate array for speed
     T = np.array([
         [1.0, np.sin(phi) * np.tan(theta), np.cos(phi) * np.tan(theta)],
         [0.0, np.cos(phi), -np.sin(phi)],
@@ -70,60 +76,52 @@ def to_euler_angle_rate_jit(euler_angle, angular_velocity):
     ])
     return T @ angular_velocity
 
-# checked
 @jit(nopython=True, cache=True)
 def to_world_frame_jit(euler_angle, vector):
     """Fast compiled rotation from body frame to world frame."""
     phi, theta, psi = euler_angle
-    
     R_x = np.array([
         [1.0, 0.0, 0.0],
         [0.0, np.cos(phi), -np.sin(phi)],
         [0.0, np.sin(phi), np.cos(phi)]
     ])
-    
     R_y = np.array([
         [np.cos(theta), 0.0, np.sin(theta)],
         [0.0, 1.0, 0.0],
         [-np.sin(theta), 0.0, np.cos(theta)]
     ])
-    
     R_z = np.array([
         [np.cos(psi), -np.sin(psi), 0.0],
         [np.sin(psi), np.cos(psi), 0.0],
         [0.0, 0.0, 1.0]
     ])
-    
     R = R_z @ R_y @ R_x
     return R @ vector
 
 @jit(nopython=True, cache=True)
 def to_body_frame_jit(euler_angle, vector):
-    """Fast compiled rotation from body frame to world frame."""
+    """Fast compiled rotation from world frame to body frame."""
     phi, theta, psi = euler_angle
-    
     R_x = np.array([
         [1.0, 0.0, 0.0],
         [0.0, np.cos(phi), -np.sin(phi)],
         [0.0, np.sin(phi), np.cos(phi)]
     ])
-    
     R_y = np.array([
         [np.cos(theta), 0.0, np.sin(theta)],
         [0.0, 1.0, 0.0],
         [-np.sin(theta), 0.0, np.cos(theta)]
     ])
-    
     R_z = np.array([
         [np.cos(psi), -np.sin(psi), 0.0],
         [np.sin(psi), np.cos(psi), 0.0],
         [0.0, 0.0, 1.0]
     ])
-    
     R = R_z @ R_y @ R_x
     return R.T @ vector
 
-# ==================== Numba Force & Torque Calculations ====================
+# ==================== Jet Propulsion ====================
+
 @jit(nopython=True, cache=True)
 def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_area, nozzle_direction, effective_coeff):
     """Fast compiled jet velocity calculation."""
@@ -133,106 +131,91 @@ def compute_jet_velocity_jit(state_val, volume, prev_water_volume, dt, nozzle_ar
     jet_speed = volume_rate / nozzle_area
     return nozzle_direction * jet_speed
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_jet_force_jit(mass_rate, jet_velocity):
     """Fast compiled calculation of jet propulsion force."""
-    # mass_rate is a 3x3 diagonal matrix, jet_velocity is a 1D array (3,)
-    return - (mass_rate @ jet_velocity)
+    return -(mass_rate @ jet_velocity)
 
-# checked 
 @jit(nopython=True, cache=True)
 def compute_jet_torque_jit(moment_arm, jet_force, discount_factor):
     """Fast compiled calculation of torque from jet force."""
-    # print("Moment arm:", moment_arm)
     return np.cross(moment_arm, jet_force) * discount_factor
 
-# checked
+# ==================== Drag ====================
+
 @jit(nopython=True, cache=True)
 def compute_drag_force_jit(density, area, trans_drag_coeff, velocity, drag_force_ratio):
     """Fast compiled calculation of translational drag force."""
     v_norm = np.linalg.norm(velocity)
     F_quadratic = -0.5 * density * area * trans_drag_coeff * v_norm * velocity
-    # F_linear = -0.5 * density * area * trans_drag_coeff * velocity
     F_linear = -8.5 * velocity
-    # print("Drag force terms:", F_quadratic, F_linear)
-    return ((1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear) 
+    return (1 - drag_force_ratio) * F_quadratic + drag_force_ratio * F_linear
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_drag_torque_jit(density, rot_drag_coeff, area, angular_velocity, width, length, drag_torque_ratio):
     """Fast compiled calculation of rotational drag torque."""
     w_norm = np.linalg.norm(angular_velocity)
-    # Dimensions array for the quadratic drag term
     dims = np.array([(width/2)**3, (length/2)**3, (length/2)**3])
-    # print(length)
-    
     T_quadratic = -0.5 * density * rot_drag_coeff * area * w_norm * angular_velocity * dims
-    # T_linear = -0.5 * density * rot_drag_coeff * area * angular_velocity * np.array([width/2, length/2, length/2])
     T_linear = -0.05 * angular_velocity
-
     return (1 - drag_torque_ratio) * T_quadratic + drag_torque_ratio * T_linear
 
-# checked
+# ==================== Added Mass ====================
+
 @jit(nopython=True, cache=True)
-def compute_added_mass_force_jit(mass, added_mass_coeff, mass_rate, added_mass_rate_coeff, acceleration, angular_velocity, velocity):
+def compute_added_mass_force_jit(
+    mass, added_mass_coeff, mass_rate, added_mass_rate_coeff,
+    acceleration, angular_velocity, velocity,
+):
     """Fast compiled calculation of added mass force."""
-    
-    # print("Mass:", mass)
     added_mass = mass @ added_mass_coeff
     added_mass_rate = mass_rate @ added_mass_rate_coeff
-    
-    term1 = added_mass @ acceleration
+
+    # Acceleration term disabled for numerical stability
     term1 = 0.0
     term2 = np.cross(angular_velocity, added_mass @ velocity)
     term3 = added_mass_rate @ velocity
 
-    # print("Added mass force terms:", term1, term2, term3)
-    # print(added_mass_rate_coeff, added_mass_rate, velocity)
-    # print(mass_rate)
-    
-    
     return added_mass, -(term1 + term2 + term3)
 
-# checked
 @jit(nopython=True, cache=True)
-def compute_added_mass_torque_jit(I, added_mass_coeff_torque, I_rate, added_mass_rate_coeff_torque, mass, added_mass_coeff_force, angular_acceleration, angular_velocity, velocity):
+def compute_added_mass_torque_jit(
+    I, added_mass_coeff_torque, I_rate, added_mass_rate_coeff_torque,
+    mass, added_mass_coeff_force, angular_acceleration,
+    angular_velocity, velocity,
+):
     """Fast compiled calculation of added mass torque."""
-    # for numerial stability, the acceleration associated added mass must be taken out 
     added_mass = I @ added_mass_coeff_torque
-    # print(added_mass_coeff_torque)
     added_mass_rate = I_rate @ added_mass_rate_coeff_torque
     added_mass_force_matrix = mass @ added_mass_coeff_force
-    
-    term1 = added_mass @ angular_acceleration
+
+    # Acceleration term disabled for numerical stability
     term1 = 0.0
     term2 = np.cross(angular_velocity, added_mass @ angular_velocity)
     term3 = added_mass_rate @ angular_velocity
     term4 = np.cross(velocity, added_mass_force_matrix @ velocity)
 
-    # print("Added mass torque terms:", term1, term2, term3, term4)
-    
     return added_mass, -(term1 + term2 + term3 + term4)
 
-# checked
+# ==================== Coriolis & Gyroscopic Effects ====================
+
 @jit(nopython=True, cache=True)
 def compute_coriolis_force_jit(angular_velocity, mass, velocity):
     """Fast compiled calculation of Coriolis force."""
     return -np.cross(angular_velocity, mass @ velocity)
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_coriolis_torque_jit(angular_velocity, I):
     """Fast compiled calculation of Coriolis torque."""
     return -np.cross(angular_velocity, I @ angular_velocity)
 
-# checked
+# ==================== Deformation & Asymmetry ====================
+
 @jit(nopython=True, cache=True)
 def compute_deform_torque_jit(I_rate, angular_velocity):
     """Fast compiled calculation of deformation torque."""
     return -(I_rate @ angular_velocity)
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_asymmetry_torque_jit(velocity):
     """Fast compiled calculation of asymmetry torque."""
