@@ -268,21 +268,26 @@ def plot_trajectory_comparison_with_experiment(sim_trajectories, sim_labels,
     plt.show()
 
 
-def plot_trajectory_mean_std_with_experiment(sim_stats, sim_labels, 
-                                              exp_trajectories, exp_labels,
-                                              title="Simulation (Mean±Std) vs Experiment"):
-    """Plot simulation mean trajectories with std bands and experimental trajectories.
-    
+def plot_trajectory_spread_with_experiment(sim_spreads, sim_labels,
+                                            exp_trajectories, exp_labels,
+                                            title="Simulation Spread vs Experiment",
+                                            trial_alpha=0.15):
+    """Plot individual randomized simulation trajectories and experimental trajectories.
+
+    Each simulation trial is drawn as a transparent line so the density of
+    overlapping paths reveals the reachable range.
+
     Args:
-        sim_stats: List of dicts with 'mean' and 'std' arrays of shape (n_points, 3)
-        sim_labels: List of labels for simulation trajectories
-        exp_trajectories: List of experimental trajectory dictionaries
-        exp_labels: List of labels for experimental trajectories
-        title: Plot title
+        sim_spreads: List of dicts with key ``'all_positions'`` holding an
+            array of shape ``(n_trials, n_points, 3)``.
+        sim_labels: List of labels for each yaw-angle group.
+        exp_trajectories: List of experimental trajectory dicts.
+        exp_labels: List of labels for experimental trajectories.
+        title: Plot title.
+        trial_alpha: Opacity of each individual simulation trajectory.
     """
     fig, ax = plt.subplots(figsize=(12, 9))
-    
-    # Use distinct colors
+
     distinct_colors = [
         '#1f77b4',  # blue
         '#ff7f0e',  # orange
@@ -295,44 +300,29 @@ def plot_trajectory_mean_std_with_experiment(sim_stats, sim_labels,
         '#bcbd22',  # olive
         '#17becf',  # cyan
     ]
-    
-    # Plot simulation mean trajectories with std bands
-    for i, (stats, label) in enumerate(zip(sim_stats, sim_labels)):
-        mean_pos = stats['mean']
-        std_pos = stats['std']
+
+    # Plot all individual simulation trials (transparent)
+    for i, (spread, label) in enumerate(zip(sim_spreads, sim_labels)):
+        all_pos = spread['all_positions']  # (n_trials, n_points, 3)
         color = distinct_colors[i % len(distinct_colors)]
-        
-        # Plot mean trajectory
-        ax.plot(mean_pos[:, 0], mean_pos[:, 1], '-', color=color, 
-                label=label, linewidth=3, alpha=0.9)
-        
-        # Plot std band using fill_between (approximate as ellipses along trajectory)
-        # We'll use a simplified approach: plot error bars at intervals
-        n_points = len(mean_pos)
-        interval = max(1, n_points // 10)  # Show ~10 error indicators
-        for j in range(0, n_points, interval):
-            ax.errorbar(mean_pos[j, 0], mean_pos[j, 1], 
-                       xerr=std_pos[j, 0], yerr=std_pos[j, 1],
-                       color=color, alpha=0.3, capsize=3, capthick=1)
-        
-        # Mark start and end
-        ax.plot(mean_pos[0, 0], mean_pos[0, 1], 'o', color=color, 
-                markersize=12, markeredgecolor='black', markeredgewidth=1.5)
-        ax.plot(mean_pos[-1, 0], mean_pos[-1, 1], 's', color=color, 
-                markersize=12, markeredgecolor='black', markeredgewidth=1.5)
-    
-    # Plot experimental trajectories (dashed lines, same color as matching simulation)
+
+        for t in range(len(all_pos)):
+            # Only add legend entry for the first trial of each group
+            ax.plot(all_pos[t, :, 0], all_pos[t, :, 1], '-', color=color,
+                    linewidth=1, alpha=trial_alpha,
+                    label=label if t == 0 else None)
+
+    # Plot experimental trajectories (dashed, opaque)
     for i, (traj, label) in enumerate(zip(exp_trajectories, exp_labels)):
         positions = traj['positions']
         color = distinct_colors[i % len(distinct_colors)]
-        ax.plot(positions[:, 0], positions[:, 1], '--', color=color, 
-                label=label, linewidth=2.5, alpha=0.85)
-        # Mark start and end
-        ax.plot(positions[0, 0], positions[0, 1], 'o', color=color, 
+        ax.plot(positions[:, 0], positions[:, 1], '--', color=color,
+                label=label, linewidth=2.5, alpha=0.5)
+        ax.plot(positions[0, 0], positions[0, 1], 'o', color=color,
                 markersize=9, markeredgecolor='black', markeredgewidth=1)
-        ax.plot(positions[-1, 0], positions[-1, 1], 's', color=color, 
+        ax.plot(positions[-1, 0], positions[-1, 1], 's', color=color,
                 markersize=9, markeredgecolor='black', markeredgewidth=1)
-    
+
     ax.set_xlabel('X Position (m)', fontsize=12)
     ax.set_ylabel('Y Position (m)', fontsize=12)
     ax.set_title(title, fontsize=14, fontweight='bold')
@@ -429,77 +419,73 @@ def compare_coast_times():
 
     plot_trajectory_comparison(trajectories, labels, "Comparison: Different Coast Times")
 
-def compare_yaw_angles(n_trials=1):
+def compare_yaw_angles(n_trials=10):
     """Compare trajectories with different yaw angles (simulation + experiment).
-    
-    Runs n_trials randomized simulations per yaw angle and computes mean/std.
-    
+
+    Runs n_trials randomized simulations per yaw angle and plots every
+    individual trajectory as a transparent line so the reachable spread
+    is visible.
+
     Args:
-        n_trials: Number of randomized simulation trials per yaw angle (default: 1000)
+        n_trials: Number of randomized simulation trials per yaw angle.
     """
     print(f"\nComparing different yaw angles with {n_trials} randomized trials each...")
-    
-    yaw_angles = [np.pi/2, np.pi/6, -np.pi/2, -np.pi/6, 0]  # Different yaw angles
+
+    yaw_angles = [np.pi/2, np.pi/6, -np.pi/2, -np.pi/6, 0]
     n_cycles = 6
     contraction = 0.03
-    coast_times = [4.0, 4.0, 4.0, 4.0, 2.0]  # Coast times for each yaw angle (ordered to match experiments)
-    
-    sim_stats = []  # Will contain {'mean': array, 'std': array} for each yaw angle
+    coast_times = [2.0, 2.0, 2.0, 2.0, 2.0]
+
+    sim_spreads = []
     sim_labels = []
-    
+
     for yaw_angle, coast_time in zip(yaw_angles, coast_times):
         print(f"  Running {n_trials} trials for Yaw = {np.degrees(yaw_angle):.0f}°...")
-        
-        # Collect all trajectories for this yaw angle
+
         all_positions = []
-        
+
         for trial in range(n_trials):
-            # Create fresh robot for each trial to ensure independent randomization
-            nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031, area=np.pi*0.01**2, mass=0.440)
+            nozzle = Nozzle(length1=0.052, length2=0.039, length3=0.031,
+                            area=np.pi*0.01**2, mass=0.440)
             nozzle.set_angles(angle1=0.0, angle2=0.0)
-            robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14, 
+            robot = Robot(dry_mass=0.756, init_length=0.26, init_width=0.14,
                           max_contraction=0.04, nozzle=nozzle)
             robot.set_environment(density=1000)
             robot.enable_history_recording()
-            # robot.enable_dynamic_randomization()
-            
+            robot.enable_dynamic_randomization()
+            robot.enable_disturbances()
+
             traj = simulate_trajectory(robot, n_cycles, contraction, coast_time, yaw_angle)
             all_positions.append(traj['positions'])
-            
+
             if (trial + 1) % 100 == 0:
                 print(f"    Completed {trial + 1}/{n_trials} trials")
-        
-        # Resample all trajectories to same length for averaging
-        # Use the median trajectory length as reference
+
+        # Resample all trajectories to the same length for consistent plotting
         lengths = [len(pos) for pos in all_positions]
         target_len = int(np.median(lengths))
-        
+
         resampled_positions = []
         for pos in all_positions:
             if len(pos) == target_len:
                 resampled_positions.append(pos)
             else:
-                # Linear interpolation to resample
                 old_indices = np.linspace(0, 1, len(pos))
                 new_indices = np.linspace(0, 1, target_len)
                 resampled = np.zeros((target_len, 3))
                 for dim in range(3):
                     resampled[:, dim] = np.interp(new_indices, old_indices, pos[:, dim])
                 resampled_positions.append(resampled)
-        
-        resampled_positions = np.array(resampled_positions)  # Shape: (n_trials, target_len, 3)
-        
-        # Compute mean and std
-        mean_pos = np.mean(resampled_positions, axis=0)
-        std_pos = np.std(resampled_positions, axis=0)
-        
-        sim_stats.append({'mean': mean_pos, 'std': std_pos, 'all_positions': resampled_positions})
+
+        resampled_positions = np.array(resampled_positions)
+
+        sim_spreads.append({'all_positions': resampled_positions})
         sim_labels.append(f'Sim: Yaw = {np.degrees(yaw_angle):.0f}° (n={n_trials})')
-        
-        final_mean = mean_pos[-1]
-        final_std = std_pos[-1]
-        print(f"    Final position: mean=({final_mean[0]:.3f}, {final_mean[1]:.3f}, {final_mean[2]:.3f}) m")
-        print(f"                    std=({final_std[0]:.3f}, {final_std[1]:.3f}, {final_std[2]:.3f}) m")
+
+        final_positions = resampled_positions[:, -1, :]
+        print(f"    Final position range: "
+              f"x=[{final_positions[:, 0].min():.3f}, {final_positions[:, 0].max():.3f}], "
+              f"y=[{final_positions[:, 1].min():.3f}, {final_positions[:, 1].max():.3f}] m")
     
     # Load experimental data (ordered to match simulation yaw_angles: 90°, 30°, -90°, -30°, 0°)
     exp_start_times = [22, 118, 55, 165, 22]
@@ -541,8 +527,8 @@ def compare_yaw_angles(n_trials=1):
         label = os.path.splitext(file_name)[0]
         exp_labels.append(f'Exp: {label}')
     
-    plot_trajectory_mean_std_with_experiment(
-        sim_stats, sim_labels,
+    plot_trajectory_spread_with_experiment(
+        sim_spreads, sim_labels,
         exp_trajectories, exp_labels,
         f"Comparison: Simulation (n={n_trials}) vs Experiment (Different Yaw Angles)"
     )

@@ -358,19 +358,21 @@ class Robot:
         # ==================== Coefficient Parameters ====================
         self.dynamics_randomization = False
         self.disturbances = False
-        self.discharge_coefficient_mean = 0.4 # should definite be lower than 0.6 maybe around 0.4 - 0.5
+        self.discharge_coefficient = 0.4 # should definite be lower than 0.6 maybe around 0.4 - 0.5
         self.discount_factor_torque = 1.0
-        self.volume_keep_ratio = 0.3
-        self.volume_keep_ratio *= self.discharge_coefficient_mean
+        self.volume_keep_ratio_mean = 0.3
+        self.volume_keep_ratio_mean *= self.discharge_coefficient
         self.drag_force_ratio_mean = 0.05 # do not touch this 
         self.drag_torque_ratio_mean = 0.3
-        self.deformation_bias_limit = -0.01 # towards the end of the robot
+        self.deformation_bias_limit_mean = -0.01 # towards the end of the robot
         self.added_mass_coefficient_force_mean = np.diag([0.7, 0.5, 0.0]) # do not touch this
         self.added_mass_rate_coefficient_force_mean = np.diag([0.5, 0.5, 0.0]) # do not touch this
         self.added_mass_coefficient_torque_mean = np.diag([0.0, 0.0, 2.5])
         self.added_mass_rate_coefficient_torque_mean = np.diag([0.0, 0.0, 0.5])
-        self.trans_drag_coefficient_range = self._get_trans_drag_coefficient_range()
-        self.rot_drag_coefficient_range = self._get_rot_drag_coefficient_range()
+        self.trans_drag_coefficient_range_mean = self._get_trans_drag_coefficient_range()
+        self.rot_drag_coefficient_range_mean = self._get_rot_drag_coefficient_range()
+        self.trans_drag_coefficient_range = self.trans_drag_coefficient_range_mean.copy()
+        self.rot_drag_coefficient_range = self.rot_drag_coefficient_range_mean.copy()
         
         # ==================== Control Parameters ====================
         self.contraction = 0.0
@@ -402,11 +404,11 @@ class Robot:
         self.prev_water_mass = self.water_mass
         self.volume_rate = self.get_volume_rate()
         self.bounding_box_volume_rate = self.get_bounding_box_volume_rate()
-        self.effective_volume_rate = self.get_effective_volume_rate()
+        self.effective_volume_rate = 0.0
         self.mass = self.get_mass()
         self.mass_rate = self.get_mass_rate()
         self.bounding_box_mass_rate = self.get_bounding_box_mass_rate()
-        self.effective_mass_rate = self.get_effective_mass_rate()
+        self.effective_mass_rate = 0.0
         self.I = np.zeros((3, 3))
         self.prev_I = None
         self.prev_bounding_box_I = None
@@ -549,10 +551,10 @@ class Robot:
         self.prev_bounding_box_mass = self.bounding_box_mass
         self.volume_rate = self.get_volume_rate()
         self.bounding_box_volume_rate = self.get_bounding_box_volume_rate()
-        self.effective_volume_rate = self.get_effective_volume_rate()
+        self.effective_volume_rate = 0.0
         self.mass_rate = self.get_mass_rate()
         self.bounding_box_mass_rate = self.get_bounding_box_mass_rate()
-        self.effective_mass_rate = self.get_effective_mass_rate()
+        self.effective_mass_rate = np.diag([0.0, 0.0, 0.0])
         self.I = self.get_inertia_matrix()
         self.prev_I = self.I.copy()
         self.inertia_matrix_rate = np.zeros((3, 3))
@@ -581,7 +583,10 @@ class Robot:
         if self.dynamics_randomization:
             self._randomize_parameters()
         else:
-            self.discharge_coefficient = self.discharge_coefficient_mean
+            self.volume_keep_ratio = self.volume_keep_ratio_mean
+            self.deformation_bias_limit = self.deformation_bias_limit_mean
+            self.trans_drag_coefficient_range = self.trans_drag_coefficient_range_mean.copy()
+            self.rot_drag_coefficient_range = self.rot_drag_coefficient_range_mean.copy()
             self.drag_force_ratio = self.drag_force_ratio_mean
             self.drag_torque_ratio = self.drag_torque_ratio_mean
             self.added_mass_coefficient_force = self.added_mass_coefficient_force_mean
@@ -611,39 +616,62 @@ class Robot:
         """Randomize robot parameters for domain randomization."""
         
         # Randomize discharge coefficient
-        uncertainty = 0.5
-        self.discharge_coefficient = geometry.randomize_scalar_jit(
-            self.discharge_coefficient_mean, uncertainty, 0, 1,
+        uncertainty = 0.2
+        self.volume_keep_ratio = geometry.randomize_scalar_jit(
+            self.volume_keep_ratio_mean, uncertainty, 0, 1,
+        )
+
+        # Randomize deformation bias limit
+        uncertainty = 0.2
+        self.deformation_bias_limit = geometry.randomize_scalar_jit(
+            self.deformation_bias_limit_mean, uncertainty, -0.05, 0,
         )
 
         # Randomize drag ratios
-        uncertainty = 0.5
-        self.drag_force_ratio = geometry.randomize_scalar_jit(self.drag_force_ratio_mean, uncertainty)
+        uncertainty = 0.2
+        self.drag_force_ratio = geometry.randomize_scalar_jit(self.drag_force_ratio_mean, uncertainty, 0, np.nan)
         
-        uncertainty = 0.5
-        self.drag_torque_ratio = geometry.randomize_scalar_jit(self.drag_torque_ratio_mean, uncertainty)
+        uncertainty = 0.2
+        self.drag_torque_ratio = geometry.randomize_scalar_jit(self.drag_torque_ratio_mean, uncertainty, 0, np.nan)
         
         # Randomize added mass coefficients (force)
-        uncertainty = 0.5
+        uncertainty = 0.2
         upper_bound = self.added_mass_coefficient_force_mean * (1 + uncertainty)
         lower_bound = self.added_mass_coefficient_force_mean * (1 - uncertainty)
         self.added_mass_coefficient_force = np.random.uniform(lower_bound, upper_bound)
         
-        uncertainty = 0.5
+        uncertainty = 0.2
         upper_bound = self.added_mass_rate_coefficient_force_mean * (1 + uncertainty)
         lower_bound = self.added_mass_rate_coefficient_force_mean * (1 - uncertainty)
         self.added_mass_rate_coefficient_force = np.random.uniform(lower_bound, upper_bound)
         
         # Randomize added mass coefficients (torque)
-        uncertainty = 0.5
+        uncertainty = 0.2
         upper_bound = self.added_mass_coefficient_torque_mean * (1 + uncertainty)
         lower_bound = self.added_mass_coefficient_torque_mean * (1 - uncertainty)
         self.added_mass_coefficient_torque = np.random.uniform(lower_bound, upper_bound)
         
-        uncertainty = 0.5
+        uncertainty = 0.2
         upper_bound = self.added_mass_rate_coefficient_torque_mean * (1 + uncertainty)
         lower_bound = self.added_mass_rate_coefficient_torque_mean * (1 - uncertainty)
         self.added_mass_rate_coefficient_torque = np.random.uniform(lower_bound, upper_bound)
+
+        # Randomize drag coefficient ranges
+        uncertainty = 0.2
+        for i in range(self.trans_drag_coefficient_range_mean.shape[0]):
+            for j in range(self.trans_drag_coefficient_range_mean.shape[1]):
+                val = self.trans_drag_coefficient_range_mean[i, j]
+                if val != 0.0:
+                    self.trans_drag_coefficient_range[i, j] = geometry.randomize_scalar_jit(
+                        val, uncertainty, 0, np.nan
+                    )
+        for i in range(self.rot_drag_coefficient_range_mean.shape[0]):
+            for j in range(self.rot_drag_coefficient_range_mean.shape[1]):
+                val = self.rot_drag_coefficient_range_mean[i, j]
+                if val != 0.0:
+                    self.rot_drag_coefficient_range[i, j] = geometry.randomize_scalar_jit(
+                        val, uncertainty, 0, np.nan
+                    )
 
     # ==================== Stepping and State Management ====================
     def update_state(self):
