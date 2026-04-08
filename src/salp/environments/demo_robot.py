@@ -96,7 +96,7 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
         robot.nozzle.solve_angles()
         robot.set_control(
             contraction=0.03,
-            coast_time=2,
+            coast_time=5,
             nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]),
         )
         robot.step_through_cycle()
@@ -176,7 +176,13 @@ def main():
     # Available tags: print(sorted(PLOT_REGISTRY)) or "trajectory_xy"
     enabled_plots = {
         "euler_angles",
-        "trajectory_xy",
+        "angular_velocity",
+        # "jet_torque",
+        # "drag_torque",
+        # "coriolis_torque",
+        # "added_mass_torque",
+        # "deform_torque",
+        # "trajectory_xy",
     }
 
     _run_plots(data, enabled_plots)
