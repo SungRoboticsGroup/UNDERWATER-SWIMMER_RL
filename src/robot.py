@@ -807,7 +807,10 @@ class Robot:
         a_centripetal =  np.cross(self.angular_velocity, np.cross(self.angular_velocity, self.center_of_mass))
         a_coriolis = 2 * np.cross(self.angular_velocity, self.center_of_mass_rate)
         a_recoil = self.center_of_mass_acc_rate
-        self.acceleration_force = self.mass[0,0] * (a_centripetal + a_coriolis + a_tangential + a_recoil)
+        acc_sum = a_centripetal + a_coriolis + a_tangential + a_recoil
+        if not np.all(np.isfinite(acc_sum)):
+            acc_sum = np.zeros(3)
+        self.acceleration_force = self.mass[0,0] * acc_sum
         # if np.linalg.norm(a_recoil) > 1e-6:
         #     print(f"a_recoil={a_recoil}")
         # self.acceleration_force = np.zeros(3)  # disable fictitious forces for now
@@ -864,6 +867,7 @@ class Robot:
 
         self.velocity += self.acceleration * self.dt
         self.angular_velocity += self.angular_acceleration * self.dt
+        self.angular_velocity = np.clip(self.angular_velocity, -50.0, 50.0)
 
         self.euler_angle_rate = self._to_euler_angle_rate()
         self.euler_angle += self.euler_angle_rate * self.dt
