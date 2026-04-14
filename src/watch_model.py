@@ -19,7 +19,7 @@ Usage:
     python watch_model.py --model ./logs/best_model/best_model.zip
 """
 
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, PPO
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 import numpy as np
@@ -40,7 +40,13 @@ def load_latest_model(model_path, env):
     """Load the latest model from disk."""
     try:
         if os.path.exists(model_path):
-            model = SAC.load(model_path, env=env, device="cpu")
+            # Auto-detect algorithm: PPO uses ActorCriticPolicy, SAC uses its own
+            import zipfile, json
+            with zipfile.ZipFile(model_path, 'r') as zf:
+                meta = json.loads(zf.read('data'))
+            policy_module = meta.get('policy_class', {}).get('__module__', '')
+            ModelClass = PPO if 'common.policies' in policy_module else SAC
+            model = ModelClass.load(model_path, env=env, device="cpu")
             return model, os.path.getmtime(model_path)
         else:
             print(f"⚠️  Model not found: {model_path}")
@@ -60,7 +66,7 @@ def run_episode(env, model, max_cycles=20):
     
     while not done and steps < max_cycles:
         # Get action from model
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs, deterministic=False)
         
         # Take step
         obs, reward, terminated, truncated, info = env.step(action)
@@ -121,9 +127,17 @@ def main():
     # Initialize pygame first
     pygame.init()
     
+    # Detect num_obstacles from model's observation space (6 base + 2 per obstacle)
+    import zipfile, json
+    with zipfile.ZipFile(MODEL_PATH, 'r') as zf:
+        obs_space = json.loads(zf.read('data')).get('observation_space', {})
+    obs_size = obs_space.get('_shape', [6])[0]
+    num_obstacles = max(0, (obs_size - 6) // 2)
+    print(f"ℹ️  Detected obs size {obs_size} → {num_obstacles} obstacle(s)")
+
     # Create environment
     robot = create_robot()
-    env = SalpRobotEnv(render_mode="human", robot=robot)
+    env = SalpRobotEnv(render_mode="human", robot=robot, num_obstacles=num_obstacles)
     
     # Load initial model
     model, last_modified = load_latest_model(MODEL_PATH, env)
