@@ -17,13 +17,16 @@ from robot import Robot, Nozzle
 #   ModelClass, model_path, num_obstacles = PPO, "../experiments/ppo_v2/models/best_model/best_model", 0
 
 ModelClass  = PPO
-model_path  = "../experiments/ppo_v3/models/best_model/best_model"
+model_path  = "../experiments/ppo_v4/models/salp_robot_ppo_ppo_v4_1200000_steps"
 num_obstacles = 0
 
 nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
 robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15,
               max_contraction=0.06, nozzle=nozzle)
 robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+
+#to visulaize the whole cycle not just start points of the cycle comment in or out as needed
+robot.enable_history_recording()
 env = SalpRobotEnv(render_mode="human", robot=robot, num_obstacles=num_obstacles)
 model = ModelClass.load(model_path, env=env)
 
