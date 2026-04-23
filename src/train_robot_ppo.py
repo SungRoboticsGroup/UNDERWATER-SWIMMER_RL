@@ -78,7 +78,7 @@ if __name__ == "__main__":
         best_model_save_path=f'../experiments/{version}/models/best_model/',
         log_path=f'../experiments/{version}/logs/eval_logs/',
         eval_freq=10000,
-        deterministic=True,
+        deterministic=False,
         render=False,
         n_eval_episodes=5,
         verbose=1
@@ -99,14 +99,14 @@ if __name__ == "__main__":
     print("   - Checkpoints every 50000 steps")
 
     print("\n" + "="*70)
-    print("STARTING TRAINING - 500k timesteps")
+    print("STARTING TRAINING - 2M timesteps")
     print("="*70)
     print(f"📊 Monitor progress: tensorboard --logdir ../experiments/{version}/logs")
     print("📖 See METRICS.md for metric documentation")
     print("="*70 + "\n")
 
     model.learn(
-        total_timesteps=500000,
+        total_timesteps=2000000,
         callback=callback_list,
         tb_log_name=f"salp_robot_ppo_{version}",
         progress_bar=True
