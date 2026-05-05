@@ -190,7 +190,7 @@ def main():
         # "coriolis_torque",
         # "added_mass_torque",
         # "deform_torque",
-        # "trajectory_xy",
+        "trajectory_xy",
     }
 
     _run_plots(data, enabled_plots)
