@@ -33,6 +33,8 @@ class SalpRobotEnv(gym.Env):
     
     def __init__(self, render_mode: Optional[str] = None, width: int = 900, height: int = 700, robot: Optional[Robot] = None):
         super().__init__()
+
+        self.tracking_point = "front"
         
         # Environment parameters
         self.width = width
@@ -59,14 +61,14 @@ class SalpRobotEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation: [dx_body, dy_body, vx, vy, angular_vel, heading_error]
+        # Observation: [dx_body, dy_body, vx, vy, angular_vel]
         self.observation_space = spaces.Box(
-            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.pi], dtype=np.float32),
-            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.pi], dtype=np.float32),
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
+            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
         self.cycle_positions = []
-        self.cycle_front_positions = []
+        # self.cycle_front_positions = []
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
@@ -113,9 +115,10 @@ class SalpRobotEnv(gym.Env):
         # Reset robot to center
         self.robot.reset()
         self.pos_init = np.array([self.width / 2, self.height / 2])
-        self.prev_dist = np.linalg.norm(self.robot.position_world[0:-1] - self.target_point)
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        self.prev_dist = np.linalg.norm(tracking_point_pos[0:-1] - self.target_point)
         self.prev_action = np.array([0.0, 0.0, 0.0])
-        self.prev_target_point = self.robot.position_world[0:-1].copy()
+        self.prev_target_point = tracking_point_pos[0:-1].copy()
 
         # clear any previously recorded cycle history
         self.cycle_positions = []
@@ -191,14 +194,10 @@ class SalpRobotEnv(gym.Env):
                     if len(self.traversed_positions) == 0:
                         self.traversed_positions.append(np.array(self.cycle_positions[0], dtype=float))
                     self.traversed_positions.extend(np.array(p, dtype=float) for p in self.cycle_positions[1:])
-                if len(self.cycle_front_positions) > 0:
-                    if len(self.traversed_front_positions) == 0:
-                        self.traversed_front_positions.append(np.array(self.cycle_front_positions[0], dtype=float))
-                    self.traversed_front_positions.extend(np.array(p, dtype=float) for p in self.cycle_front_positions[1:])
+
 
                 # convert to Python lists for easier use in render
-                self.cycle_positions = [np.array(p) for p in self.robot.position_world_history]
-                self.cycle_front_positions = [np.array(p) for p in self.robot.position_front_world_history]
+                self.cycle_positions = [np.array(p) for p in self.robot.get_tracking_point_position_world(self.tracking_point)]
                 self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
                 self.cycle_lengths = [float(l) for l in self.robot.length_history]
                 self.cycle_widths = [float(w) for w in self.robot.width_history]
@@ -230,7 +229,8 @@ class SalpRobotEnv(gym.Env):
         done = False
         truncated = False
 
-        distance_to_target = np.linalg.norm(self.robot.position_world[0:-1] - self.target_point)
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        distance_to_target = np.linalg.norm(tracking_point_pos[0:-1] - self.target_point)
         if distance_to_target < 0.01:
             done = True
             reward += 10.0
@@ -256,14 +256,15 @@ class SalpRobotEnv(gym.Env):
         """Calculate reward based on movement and efficiency."""
 
         # 1. Tracking: reward progress toward target
-        current_diff = self.robot.position_world[0:-1] - self.target_point
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        current_diff = tracking_point_pos[0:-1] - self.target_point
         current_dist = np.linalg.norm(current_diff)
         r_track = (-current_dist + self.prev_dist) * 100
         self.prev_dist = current_dist
 
         # 2. Heading: penalise pointing away from target (body frame)
         current_diff = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
-        r_heading = -0.001 * abs(np.arctan2(-current_diff[1], -current_diff[0]))
+        r_heading = -0.0 * abs(np.arctan2(-current_diff[1], -current_diff[0]))
 
         # 3. Energy — disabled
         r_energy = 0.0
@@ -502,8 +503,8 @@ class SalpRobotEnv(gym.Env):
         self.screen.blit(label, label_rect)
         
         # Draw distance to target info
-        robot_pos = self.robot.position_world[0:-1]
-        distance_to_target = np.linalg.norm(self.target_point - robot_pos)
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        distance_to_target = np.linalg.norm(self.target_point - tracking_point_pos[0:-1])
         if self.target_orientation is not None:
             info_text = f"d:{distance_to_target:.2f}m @ {math.degrees(self.target_orientation):.0f}°"
         else:
@@ -571,17 +572,17 @@ class SalpRobotEnv(gym.Env):
             self.screen.blit(label, label_rect)
     
     def _get_observation(self) -> np.ndarray:
-        """Get current observation: [dx_body, dy_body, vx, vy, angular_vel, heading_error]."""
-        dist = self.target_point - self.robot.position_world[0:2]
+        """Get current observation: [dx_body, dy_body, vx, vy, angular_vel]."""
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        dist = self.target_point - tracking_point_pos[0:2]
         dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
-        heading_error = np.arctan2(dist_body[1], dist_body[0])
+        tracking_point_vel = self.robot.get_tracking_point_velocity_body(self.tracking_point)
         return np.array([
             dist_body[0],
             dist_body[1],
-            self.robot.velocity[0],
-            self.robot.velocity[1],
+            tracking_point_vel[0],
+            tracking_point_vel[1],
             self.robot.angular_velocity[2],
-            heading_error,
         ], dtype=np.float32)
     
     def _get_info(self) -> Dict:
@@ -1139,7 +1140,8 @@ class SalpRobotEnv(gym.Env):
         self.screen.blit(state_text, (10, 40))
         
         # Position
-        pos_text = small_font.render(f"Position: ({self.robot.position_world[0]:.3f}, {self.robot.position_world[1]:.3f}) m", True, (200, 200, 200))
+        pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        pos_text = small_font.render(f"Position: ({pos[0]:.3f}, {pos[1]:.3f}) m", True, (200, 200, 200))
         self.screen.blit(pos_text, (10, 65))
         
         # Angle

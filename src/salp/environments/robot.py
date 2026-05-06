@@ -373,6 +373,7 @@ class Robot:
         self.prev_position = np.zeros(3)
         self.velocity = np.zeros(3)
         self.velocity_world = np.zeros(3)
+        self.velocity_front = np.zeros(3)
         self.avg_cycle_velocity = np.zeros(3)
         self.acceleration = np.zeros(3)
     
@@ -449,6 +450,7 @@ class Robot:
         self.prev_position = np.zeros(3)
         self.velocity = np.zeros(3)
         self.velocity_world = np.zeros(3)
+        self.velocity_front = np.zeros(3)
         self.acceleration = np.zeros(3)
         self.euler_angle = np.zeros(3)
         self.euler_angle_rate = np.zeros(3)
@@ -498,7 +500,6 @@ class Robot:
 
     def clear_history(self):
         self._reset_history_buffers()
-
 
     # ==================== Control Methods ====================
     def set_control(self, contraction: float, coast_time: float, nozzle_angles: np.ndarray):
@@ -856,10 +857,26 @@ class Robot:
         self.angle += self.angular_velocity * self.dt
 
         # front velocity and position
+        self.velocity_front = self.velocity + np.cross(self.angular_velocity, np.array([self.length / 2, 0.0, 0.0]))
+
         self.position_front_world = (
             self.position_world
             + self._to_world_frame(np.array([self.length / 2, 0.0, 0.0]))
         )
+    
+    def get_tracking_point_position_world(self, tracking_point: str = "front") -> np.ndarray:
+        """Get the position of the tracking point (e.g. front tip) in world frame."""
+        if tracking_point == "front":
+            return self.position_front_world
+        elif tracking_point == "center":
+            return self.position_world
+
+    def get_tracking_point_velocity_body(self, tracking_point: str = "front") -> np.ndarray:
+        """Get the velocity of the tracking point (e.g. front tip) in body frame."""
+        if tracking_point == "front":
+            return self.velocity_front
+        elif tracking_point == "center":
+            return self.velocity
 
     # ==================== Inertia Methods ====================
     def get_inertia_matrix(self) -> np.ndarray:
