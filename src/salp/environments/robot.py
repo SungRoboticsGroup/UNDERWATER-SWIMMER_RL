@@ -871,6 +871,13 @@ class Robot:
         elif tracking_point == "center":
             return self.position_world
 
+    def get_tracking_point_position_world_history(self, tracking_point: str = "front") -> np.ndarray:
+        """Get the position of the tracking point (e.g. front tip) in world frame history."""
+        if tracking_point == "front":
+            return self.position_front_world_history
+        elif tracking_point == "center":
+            return self.position_world_history
+
     def get_tracking_point_velocity_body(self, tracking_point: str = "front") -> np.ndarray:
         """Get the velocity of the tracking point (e.g. front tip) in body frame."""
         if tracking_point == "front":
