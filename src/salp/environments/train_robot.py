@@ -122,27 +122,27 @@ if __name__ == "__main__":
     # vec_env.norm_reward = True
 
     # 2. Load or create model
-    model = SAC.load("./salp_robot_final_calibrated", env=vec_env)
+    # model = SAC.load("./salp_robot_final_reduced_statev2", env=vec_env)
 
     # To train from scratch instead, comment the line above and uncomment below:
-    # model = SAC(
-    #     "MlpPolicy",
-    #     vec_env,
-    #     verbose=1,
-    #     tensorboard_log="./sac_salp_robot_tensorboard/",
-    #     learning_rate=3e-4,
-    #     buffer_size=100_000,
-    #     batch_size=512,
-    #     ent_coef="auto",
-    #     gamma=0.99,
-    #     tau=0.005,
-    #     device="cuda",
-    # )
+    model = SAC(
+        "MlpPolicy",
+        vec_env,
+        verbose=1,
+        tensorboard_log="./sac_salp_robot_tensorboard/",
+        learning_rate=3e-4,
+        buffer_size=100_000,
+        batch_size=512,
+        ent_coef="auto",
+        gamma=0.99,
+        tau=0.005,
+        device="cuda",
+    )
 
     # 3. Callbacks
     save_freq = 12_500
     save_dir = "./logs/"
-    prefix = "salp_robot_calibrated"
+    prefix = "salp_robot_front_pos"
 
     checkpoint_callback = CheckpointCallback(
         save_freq=save_freq,
@@ -166,11 +166,11 @@ if __name__ == "__main__":
         total_timesteps=2_000_000,
         callback=[checkpoint_callback, episode_callback],
         reset_num_timesteps=True,
-        tb_log_name="salp_robot_calibrated_run",
+        tb_log_name="salp_robot_front_pos_run",
     )
 
     # 5. Save final model
-    model.save("salp_robot_final_calibratedv2")
+    model.save("salp_robot_final_front_pos")
     # vec_env.save("vec_final_vecnormalizev2.pkl")
 
     print("Training finished.")

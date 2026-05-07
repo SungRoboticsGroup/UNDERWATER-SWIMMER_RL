@@ -236,6 +236,7 @@ def fit_length_width_relation_jit():
     widths = np.array([0.135, 0.157, 0.176, 0.190, 0.198])
     weights = np.array([1e10, 1.0, 1.0, 1.0, 1e10])
     coefficients = np.polyfit(lengths, widths, deg=2, w=weights)  # Fit a polynomial of degree 2
+    # print("Fitted length-width relation coefficients:", coefficients)
     return coefficients
 
 @jit(nopython=True, cache=True)

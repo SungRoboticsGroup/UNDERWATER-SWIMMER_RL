@@ -238,7 +238,7 @@ class SalpRobotEnv(gym.Env):
             done = True
             reward -= 5.0
 
-        if self.robot.cycle >= 200:
+        if self.robot.cycle >= 100:
             truncated = True
 
         info = {}

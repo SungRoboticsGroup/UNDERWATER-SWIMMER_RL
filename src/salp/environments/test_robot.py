@@ -530,10 +530,11 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
 
     obs, _ = env.reset()
     env.target_point = target.copy()
-    env.prev_target_point = env.robot.position_world[0:2].copy()
-    env.prev_dist = np.linalg.norm(env.robot.position_world[0:2] - target)
+    tracking_point_pos = env.robot.get_tracking_point_position_world(env.tracking_point)
+    env.prev_target_point = tracking_point_pos.copy()[0:2]
+    env.prev_dist = np.linalg.norm(tracking_point_pos[0:2] - target)
 
-    initial_pos = env.robot.position_world[0:2].copy()
+    initial_pos = tracking_point_pos.copy()[0:2]
     initial_dist = np.linalg.norm(initial_pos - target)
 
     print(f"\n{'='*60}")
@@ -557,7 +558,8 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
 
-        pos = env.robot.position_world[0:2].copy()
+        tracking_point_pos = env.robot.get_tracking_point_position_world(env.tracking_point)
+        pos = tracking_point_pos.copy()[0:2]
         dist = np.linalg.norm(pos - target)
 
         positions.append(pos)
@@ -671,8 +673,8 @@ if __name__ == "__main__":
     robot.enable_history_recording()
 
     env = SalpRobotEnv(render_mode="human", robot=robot)
-    model = SAC.load("./logs/salp_robot_calibrated_700000_steps", env=env)  
-    result = test_single_target_tracking(env, model, target=np.array([1.2, 0.3]), max_steps=300, threshold=0.05)
+    model = SAC.load("./salp_robot_final_front_pos", env=env)  
+    result = test_single_target_tracking(env, model, target=np.array([1.5, 0.9]), max_steps=300, threshold=0.05)
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])
