@@ -34,7 +34,7 @@ class SalpRobotEnv(gym.Env):
     def __init__(self, render_mode: Optional[str] = None, width: int = 900, height: int = 700, robot: Optional[Robot] = None):
         super().__init__()
 
-        self.tracking_point = "center"  # Point on robot to track for rewards (options: "center", "front")
+        self.tracking_point = "front"  # Point on robot to track for rewards (options: "center", "front")
         
         # Environment parameters
         self.width = width
@@ -56,7 +56,7 @@ class SalpRobotEnv(gym.Env):
         
         # Action space: [inhale_control (0/1), nozzle_direction (-1 to 1)]
         self.action_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0]),
+            low=np.array([-1.0, -1.0, -1.0]),
             high=np.array([1.0, 1.0, 1.0]),
             dtype=np.float32
         )
@@ -65,6 +65,7 @@ class SalpRobotEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
             high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
+
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
         self.cycle_positions = []       # tracking point positions (for trail)
@@ -142,24 +143,25 @@ class SalpRobotEnv(gym.Env):
     def enable_latency(self):
         self.latency = True
 
+    def _map_range(self, val, in_min, in_max, out_min, out_max):
+        return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
     def _rescale_action(self, action: np.ndarray) -> np.ndarray:
         """Rescale action from [-1, 1] to robot input ranges."""
         rescaled = np.zeros_like(action)
-        rescaled[0] = action[0] * 0.04  # inhale_control max contraction is 0.04 cm
-        rescaled[1] = action[1] * 5.0   # coast_time max is 5 seconds
-        if rescaled[1] < 0.5:
-            rescaled[1] = 0.5  # minimum coast time to ensure we get some movement
-        rescaled[2] = action[2] * (np.pi / 2)  # nozzle yaw angle
+        rescaled[0] = self._map_range(action[0], -1, 1, self.robot.min_contraction, self.robot.max_contraction)  # inhale_control max contraction is 0.04 cm
+        rescaled[1] = self._map_range(action[1], -1, 1, self.robot.min_coast_time, self.robot.max_coast_time)   # coast_time max is 5 seconds
+        rescaled[2] = self._map_range(action[2], -1, 1, self.robot.nozzle.min_yaw, self.robot.nozzle.max_yaw)  # nozzle yaw angle
 
         return rescaled
 
     def _randomize_actions(self, action):
         uncertainty = 0.1
-        contraction = geometry.randomize_scalar_jit(action[0], uncertainty, 0, 1)
-        coast_time = geometry.randomize_scalar_jit(action[1], uncertainty, 0, 5)
-        if coast_time < 0.5:
-            coast_time = 0.5
-        yaw_angle = geometry.randomize_scalar_jit(action[2], uncertainty, -np.pi/2, np.pi/2)
+        contraction = geometry.randomize_scalar_jit(action[0], uncertainty, self.robot.min_contraction, self.robot.max_contraction)
+        coast_time = geometry.randomize_scalar_jit(action[1], uncertainty, self.robot.min_coast_time, self.robot.max_coast_time)
+        if coast_time < self.robot.min_coast_time:
+            coast_time = self.robot.min_coast_time
+        yaw_angle = geometry.randomize_scalar_jit(action[2], uncertainty, self.robot.nozzle.min_yaw, self.robot.nozzle.max_yaw)
         return [contraction, coast_time, yaw_angle]
 
     def _randomize_observations(self, observation):
@@ -570,11 +572,12 @@ class SalpRobotEnv(gym.Env):
             self.screen.blit(label, label_rect)
     
     def _get_observation(self) -> np.ndarray:
-        """Get current observation: [dx_body, dy_body, vx, vy, angular_vel]."""
+        """Get current observation: [dx_body, dy_body, vx, vy, angular_vel, nozzle_yaw]."""
         tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
         dist = self.target_point - tracking_point_pos[0:2]
         dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
         tracking_point_vel = self.robot.get_tracking_point_velocity_body(self.tracking_point)
+
         return np.array([
             dist_body[0],
             dist_body[1],
@@ -1526,7 +1529,7 @@ if __name__ == "__main__":
     # env.start_recording()
     while not done:
         start_time = time.perf_counter()
-        action = [0.5, 0.2, 1/1]
+        action = [0.0, 0.2, 1/1]
         obs, reward, done, truncated, info = env.step(action)
         end_time = time.perf_counter()
         cnt += 1

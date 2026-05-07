@@ -41,6 +41,8 @@ class Nozzle:
         self.yaw = 0.0
         self.prev_yaw = 0.0
         self.current_yaw = 0.0
+        self.min_yaw = -np.pi / 2
+        self.max_yaw = np.pi / 2
         
         # Fixed parameters
         self.gamma = np.pi / 4  # fixed tilt angle of nozzle downwards
@@ -277,7 +279,10 @@ class Robot:
         self.dry_mass = self.buoy_mass + self.skin_mass + self.tube_mass
         self.init_length = init_length
         self.init_width = init_width
+        self.min_contraction = 0.0
         self.max_contraction = max_contraction
+        self.max_coast_time = 5.0
+        self.min_coast_time = 0.5
         self.density = 1000  # kg/m^3, density of water
         self.dt = 0.01  # time step
         self.nozzle = nozzle
