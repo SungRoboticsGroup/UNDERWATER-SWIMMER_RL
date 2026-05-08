@@ -675,6 +675,7 @@ if __name__ == "__main__":
     env = SalpRobotEnv(render_mode="human", robot=robot)
     model = SAC.load("./salp_robot_final_front_pos", env=env)  
     result = test_single_target_tracking(env, model, target=np.array([1.5, 0.9]), max_steps=300, threshold=0.05)
+
     
     # Choose a trajectory type
     center = np.array([0.0, 0.0])
