@@ -10,3 +10,4 @@ numba>=0.59
 scipy>=1.10
 matplotlib>=3.7
 pillow>=10.0
+imitation>=1.0
