@@ -68,7 +68,12 @@ def main():
     p.add_argument("--critic-epochs", type=int, default=10)
     p.add_argument("--critic-batch-size", type=int, default=256)
     p.add_argument("--gamma", type=float, default=0.99)
-    p.add_argument("--lr",    type=float, default=3e-4)
+    p.add_argument("--lr",    type=float, default=3e-4,
+                   help="Learning rate for BC actor (and PPO construction).")
+    p.add_argument("--critic-lr", type=float, default=1e-3,
+                   help="Learning rate for the critic-pretrain regression. "
+                        "Higher than BC LR is fine: the critic is starting from "
+                        "random init and needs faster convergence.")
     p.add_argument("--seed",  type=int,   default=0)
     p.add_argument("--eval-episodes", type=int, default=10,
                    help="Set to 0 to skip the post-BC evaluation rollouts.")
@@ -101,11 +106,13 @@ def main():
     # --- 2. Load expert rollouts -------------------------------------------
     print(f"\nloading rollouts: {args.rollouts}")
     data = np.load(args.rollouts)
-    obs       = data["obs"].astype(np.float32)
-    actions   = data["actions"].astype(np.float32)
-    rewards   = data["rewards"].astype(np.float32)
-    dones     = data["dones"].astype(bool)
-    next_obs  = data["next_obs"].astype(np.float32)
+    # .copy() so the arrays are writable — torch.as_tensor warns on read-only
+    # numpy buffers (npz returns memmap-style read-only arrays).
+    obs       = data["obs"].astype(np.float32).copy()
+    actions   = data["actions"].astype(np.float32).copy()
+    rewards   = data["rewards"].astype(np.float32).copy()
+    dones     = data["dones"].astype(bool).copy()
+    next_obs  = data["next_obs"].astype(np.float32).copy()
     print(f"  N={len(obs)}  ep_returns mean={data['ep_returns'].mean():.1f} "
           f"(std {data['ep_returns'].std():.1f}, n_episodes={len(data['ep_returns'])})")
 
@@ -149,8 +156,8 @@ def main():
         + list(ppo.policy.value_net.parameters())
     )
     print(f"  critic param tensors: {len(critic_params)} "
-          f"(total params: {sum(p.numel() for p in critic_params)})")
-    opt = th.optim.Adam(critic_params, lr=args.lr)
+          f"(total params: {sum(p.numel() for p in critic_params)}, lr={args.critic_lr})")
+    opt = th.optim.Adam(critic_params, lr=args.critic_lr)
 
     # Initial critic MSE for context:
     ppo.policy.eval()

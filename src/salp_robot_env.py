@@ -497,8 +497,8 @@ class SalpRobotEnv(gym.Env):
             target = None
             for _ in range(200):
                 candidate = np.array([
-                    np.random.uniform(x_min, x_max),
-                    np.random.uniform(y_min, y_max)
+                    self.np_random.uniform(x_min, x_max),
+                    self.np_random.uniform(y_min, y_max)
                 ])
                 d = np.linalg.norm(candidate)
                 if min_distance <= d <= max_distance:
@@ -506,7 +506,7 @@ class SalpRobotEnv(gym.Env):
                     break
             if target is None:
                 # Fallback: place at min_distance on a random angle
-                angle = np.random.uniform(0, 2 * np.pi)
+                angle = self.np_random.uniform(0, 2 * np.pi)
                 target = min_distance * np.array([np.cos(angle), np.sin(angle)])
             
         elif strategy == "relative":
@@ -515,8 +515,8 @@ class SalpRobotEnv(gym.Env):
                 center = current_pos
             
             # Random distance and angle
-            distance = np.random.uniform(0.1, max_distance)
-            angle = np.random.uniform(0, 2 * np.pi)
+            distance = self.np_random.uniform(0.1, max_distance)
+            angle = self.np_random.uniform(0, 2 * np.pi)
             
             target = center + distance * np.array([np.cos(angle), np.sin(angle)])
             
@@ -525,7 +525,7 @@ class SalpRobotEnv(gym.Env):
             if center is None:
                 center = current_pos
             
-            angle = np.random.uniform(0, 2 * np.pi)
+            angle = self.np_random.uniform(0, 2 * np.pi)
             target = center + max_distance * np.array([np.cos(angle), np.sin(angle)])
             
         elif strategy == "corridor":
@@ -537,7 +537,7 @@ class SalpRobotEnv(gym.Env):
             x_max = (self.width / 2 - self.tank_margin) / scale
             
             target = np.array([
-                np.random.uniform(x_min, x_max),
+                self.np_random.uniform(x_min, x_max),
                 center[1]  # Keep same y-coordinate
             ])
             
@@ -577,8 +577,8 @@ class SalpRobotEnv(gym.Env):
             placed = False
             # First try to place on the path
             for _attempt in range(200):
-                t = np.random.uniform(0.25, 0.75)
-                lateral = np.random.uniform(-0.4, 0.4)
+                t = self.np_random.uniform(0.25, 0.75)
+                lateral = self.np_random.uniform(-0.4, 0.4)
                 pos = (t * self.target_point + lateral * perp).astype(np.float32)
                 pos[0] = np.clip(pos[0], x_min, x_max)
                 pos[1] = np.clip(pos[1], y_min, y_max)
@@ -596,8 +596,8 @@ class SalpRobotEnv(gym.Env):
             if not placed:
                 for _attempt in range(200):
                     pos = np.array([
-                        np.random.uniform(x_min, x_max),
-                        np.random.uniform(y_min, y_max),
+                        self.np_random.uniform(x_min, x_max),
+                        self.np_random.uniform(y_min, y_max),
                     ], dtype=np.float32)
                     dist_start = np.linalg.norm(pos)
                     dist_target = np.linalg.norm(pos - self.target_point)

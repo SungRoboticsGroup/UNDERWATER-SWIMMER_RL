@@ -16,8 +16,8 @@ from robot import Robot, Nozzle
 # PPO v2 best (peak reward -258 at 320k steps, no obstacles):
 #   ModelClass, model_path, num_obstacles = PPO, "../experiments/ppo_v2/models/best_model/best_model", 0
 
-ModelClass  = SAC
-model_path  = "../experiments/sac_v1/models/best_model/best_model"
+ModelClass  = PPO
+model_path  = "../experiments/ppo_bc_v2_finetune/models/best_model/best_model"
 num_obstacles = 0
 
 nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
