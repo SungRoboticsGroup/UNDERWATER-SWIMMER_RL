@@ -28,6 +28,8 @@ if __name__ == "__main__":
                         help="Experiment version label (e.g. v6). Controls all output paths.")
     parser.add_argument("--warm-start", type=str, default=None,
                         help="Path to a .zip model to warm-start from. If omitted, trains from scratch.")
+    parser.add_argument("--timesteps", type=int, default=500000,
+                        help="Total environment timesteps for model.learn().")
     args = parser.parse_args()
 
     version = args.version
@@ -92,14 +94,14 @@ if __name__ == "__main__":
     print("   - Checkpoints every 50000 steps")
 
     print("\n" + "="*70)
-    print("STARTING TRAINING - 200k timesteps")
+    print(f"STARTING TRAINING - {args.timesteps:,} timesteps")
     print("="*70)
     print(f"📊 Monitor progress: tensorboard --logdir ../experiments/{version}/logs")
     print("📖 See METRICS.md for metric documentation")
     print("="*70 + "\n")
 
     model.learn(
-        total_timesteps=200000,
+        total_timesteps=args.timesteps,
         callback=callback_list,
         tb_log_name=f"salp_robot_{version}",
         progress_bar=True
