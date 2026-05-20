@@ -17,7 +17,7 @@ from robot import Robot, Nozzle
 #   ModelClass, model_path, num_obstacles = PPO, "../experiments/ppo_v2/models/best_model/best_model", 0
 
 ModelClass  = PPO
-model_path  = "../experiments/ppo_v4/models/best_model/best_model"
+model_path  = "../experiments/ppo_bc_v2_finetune/models/best_model/best_model"
 num_obstacles = 0
 
 nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
