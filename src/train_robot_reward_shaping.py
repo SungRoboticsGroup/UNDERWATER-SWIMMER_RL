@@ -108,7 +108,7 @@ if __name__ == "__main__":
                         help="Path to a .zip checkpoint to resume from.")
     parser.add_argument("--timesteps", type=int, default=2_000_000)
     parser.add_argument("--n-envs", type=int, default=8)
-    parser.add_argument("--save-freq", type=int, default=12_500)
+    parser.add_argument("--save-freq", type=int, default=5_000)
     parser.add_argument("--tb-log-name", type=str, default="salp_robot_body_frame_sideslip",
                         help="TB log subdir name. Defaults to Dongsheng's run name for tb comparison.")
     args = parser.parse_args()
@@ -155,6 +155,7 @@ if __name__ == "__main__":
         callback=callbacks,
         reset_num_timesteps=(args.warm_start is None),
         tb_log_name=args.tb_log_name,
+        progress_bar=True,
     )
 
     final_path = os.path.join(model_dir, f"salp_robot_{version}_final")
