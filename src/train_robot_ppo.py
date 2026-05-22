@@ -28,15 +28,19 @@ FINE_TUNE_HPARAMS = dict(
 )
 
 def make_env():
-    # Create and return the SalpRobotEnv environment (no obstacles for clean comparison)
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15,
-                    max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)  # set nozzle angles
-    robot.set_environment(density=1000)  # water density in kg/m^3
+    # Dongsheng's real-robot-calibrated parameters (origin/reward_shaping).
+    nozzle = Nozzle(length1=0.052, length2=0.038, length3=0.050,
+                    area=np.pi * 0.01 ** 2, mass=0.428,
+                    radius=0.1, inner_radius=0.022)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
 
-    env = SalpRobotEnv(render_mode=None, robot=robot, num_obstacles=0)
+    robot = Robot(dry_mass=0.738, init_length=0.26, init_width=0.135,
+                  max_contraction=0.04, nozzle=nozzle)
+    robot.set_environment(density=1000)
+    robot.enable_dynamic_randomization()
+    robot.enable_disturbances()
 
+    env = SalpRobotEnv(render_mode=None, robot=robot)
     return env
 
 if __name__ == "__main__":

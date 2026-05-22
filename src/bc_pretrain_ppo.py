@@ -1,4 +1,9 @@
 """
+LEGACY: this BC pipeline was built against the pre-integration env
+(6+2N obs, [0,1] inhale, body-center reward). After the reward_shaping
+physics+env merge, both the saved SAC expert and the collected rollouts
+are stale. Re-collect rollouts against the new env before reusing.
+
 Phase B of SAC -> PPO behavior cloning.
 
 1. Build a fresh PPO with the same hyperparameters as train_robot_ppo.py.

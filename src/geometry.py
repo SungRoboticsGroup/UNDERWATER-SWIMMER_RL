@@ -1,55 +1,335 @@
 from numba import jit
 import numpy as np
 
-# ==================== Numba Geometry & Property Calculations ====================
-# data-driven refill time 
+# ==================== Data-Driven Timing Relations ====================
+
 def fit_compression_refill_time_relation_jit():
-    compression = np.array([0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
-    refill_time = np.array([0.4, 1.0, 1.8, 2.2])   # Corresponding widths to maintain constant volume
-    coefficients = np.polyfit(compression, refill_time, 2)  # Fit a polynomial of degree 2
+    compression = np.array([0, 0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
+    refill_time = np.array([0, 0.4, 1.0, 1.8, 2.2])   # Corresponding widths to maintain constant volume
+    weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0])
+    coefficients = np.polyfit(compression, refill_time, 2, w=weights)  # Fit a polynomial of degree 2
     return coefficients
 
 @jit(nopython=True, cache=True)
 def refill_time_from_compression_jit(compression, coefficients):
     return coefficients[0] * compression**2 + coefficients[1] * compression + coefficients[2]  # Evaluate the polynomial at the given length
 
-# data-driven propulsion time
+
+def visualize_compression_refill_time_relation(compression=None, refill_time=None, coefficients=None,
+                                               num_points=200, title="Compression Length vs Refill Time",
+                                               save_path=None, show=True):
+    """Visualize the relation between compression length and refill time.
+
+    Args:
+        compression: Optional array-like compression length values.
+        refill_time: Optional array-like refill time values paired with ``compression``.
+        coefficients: Optional polynomial coefficients [a, b, c]. If None, uses fitted prototype relation.
+        num_points: Number of points used to draw the fitted curve.
+        title: Figure title.
+        save_path: Optional path to save the figure image.
+        show: If True, shows the figure interactively.
+
+    Returns:
+        Tuple of (fig, ax) for further customization.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise ImportError(
+            "matplotlib is required for visualize_compression_refill_time_relation. "
+            "Install it with: pip install matplotlib"
+        ) from exc
+
+    default_compression = np.array([0, 0.01, 0.02, 0.03, 0.04], dtype=np.float64)
+    default_refill_time = np.array([0, 0.4, 1.0, 1.8, 2.2], dtype=np.float64)
+
+    if compression is None and refill_time is None:
+        compression_arr = default_compression
+        refill_time_arr = default_refill_time
+    elif compression is not None and refill_time is not None:
+        compression_arr = np.asarray(compression, dtype=np.float64)
+        refill_time_arr = np.asarray(refill_time, dtype=np.float64)
+        if compression_arr.shape != refill_time_arr.shape:
+            raise ValueError("compression and refill_time must have the same shape")
+    else:
+        raise ValueError("Provide both compression and refill_time, or leave both as None")
+
+    if coefficients is None:
+        coefficients = fit_compression_refill_time_relation_jit()
+    coefficients = np.asarray(coefficients, dtype=np.float64)
+    if coefficients.shape[0] != 3:
+        raise ValueError("coefficients must contain 3 values [a, b, c]")
+
+    x_min = np.min(compression_arr)
+    x_max = np.max(compression_arr)
+    curve_compression = np.linspace(x_min, x_max, int(max(2, num_points)))
+    curve_refill_time = refill_time_from_compression_jit(curve_compression, coefficients)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.scatter(compression_arr, refill_time_arr, color="tab:blue", s=55, label="Measured points", zorder=3)
+    ax.plot(curve_compression, curve_refill_time, color="tab:red", linewidth=2, label="Quadratic fit")
+
+    ax.set_xlabel("Compression Length (m)")
+    ax.set_ylabel("Refill Time (s)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+
+    if show:
+        plt.show(block=True)
+
+    return fig, ax
+
 def fit_compression_propulsion_time_relation_jit():
-    compression = np.array([0.01, 0.02, 0.03, 0.04])  # Example lengths during contraction
-    propulsion_time = np.array([0.1, 0.3, 0.4, 0.5])   # Corresponding widths to maintain constant volume
-    coefficients = np.polyfit(compression, propulsion_time, 2)  # Fit a polynomial of degree 2
+    compression = np.array([0, 0.01, 0.02, 0.03, 0.04])
+    propulsion_time = np.array([0, 0.1, 0.3, 0.4, 0.42])
+    weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0])
+    coefficients = np.polyfit(compression, propulsion_time, 2, w=weights)  # Fit a polynomial of degree 2
     return coefficients
 
 @jit(nopython=True, cache=True)
 def propulsion_time_from_compression_jit(compression, coefficients):
     return coefficients[0] * compression**2 + coefficients[1] * compression + coefficients[2]  # Evaluate the polynomial at the given length
 
-# data-driven geometry relation
+@jit(nopython=True, cache=True)
+def compute_length_from_refill_time_jit(time, coefficients, init_length):
+    """
+    Analytically solves the quadratic equation to find compression.
+    coefficients: [A, B, C] from np.polyfit(x, y, 2)
+    """
+    A = coefficients[0]
+    B = coefficients[1]
+    C = coefficients[2]
+    
+    # We are solving: A*c^2 + B*c + (C - time) = 0
+    C_adjusted = C - time
+    
+    # Calculate the discriminant
+    discriminant = B**2 - 4 * A * C_adjusted
+    
+    if discriminant < 0:
+        # Prevent math domain errors if asked to extrapolate too far 
+        # below the vertex of the parabola
+        return 0.0 
+        
+    # Quadratic formula: (-B +/- sqrt(discriminant)) / 2A
+    # For your monotonically increasing data, the positive root is correct
+    c_1 = (-B + np.sqrt(discriminant)) / (2 * A)
+    c_2 = (-B - np.sqrt(discriminant)) / (2 * A)
+    
+    # Return the root that actually makes physical sense (positive compression)
+    if c_1 >= 0:
+        return init_length - c_1
+    else:
+        return init_length - c_2
+
+@jit(nopython=True, cache=True)
+def compute_length_from_propulsion_time_jit(time, coefficients, init_length, contraction):
+    """
+    Analytically solves the quadratic equation to find compression.
+    coefficients: [A, B, C] from np.polyfit(x, y, 2)
+    """
+    A = coefficients[0]
+    B = coefficients[1]
+    C = coefficients[2]
+    
+    # We are solving: A*c^2 + B*c + (C - time) = 0
+    C_adjusted = C - time
+    
+    # Calculate the discriminant
+    discriminant = B**2 - 4 * A * C_adjusted
+    
+    if discriminant < 0:
+        # Prevent math domain errors if asked to extrapolate too far 
+        # below the vertex of the parabola
+        return 0.0 
+        
+    # Quadratic formula: (-B +/- sqrt(discriminant)) / 2A
+    # For your monotonically increasing data, the positive root is correct
+    c_1 = (-B + np.sqrt(discriminant)) / (2 * A)
+    c_2 = (-B - np.sqrt(discriminant)) / (2 * A)
+    
+    # Return the root that actually makes physical sense (positive compression)
+    if c_1 >= 0:
+        return init_length + c_1 - contraction
+    else:
+        return init_length + c_2 - contraction
+
+def visualize_compression_propulsion_time_relation(compression=None, propulsion_time=None, coefficients=None,
+                                                   num_points=200, title="Compression Length vs Propulsion Time",
+                                                   save_path=None, show=True):
+    """Visualize the relation between compression length and propulsion time.
+
+    Args:
+        compression: Optional array-like compression length values.
+        propulsion_time: Optional array-like propulsion time values paired with ``compression``.
+        coefficients: Optional polynomial coefficients [a, b, c]. If None, uses fitted prototype relation.
+        num_points: Number of points used to draw the fitted curve.
+        title: Figure title.
+        save_path: Optional path to save the figure image.
+        show: If True, shows the figure interactively.
+
+    Returns:
+        Tuple of (fig, ax) for further customization.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise ImportError(
+            "matplotlib is required for visualize_compression_propulsion_time_relation. "
+            "Install it with: pip install matplotlib"
+        ) from exc
+
+    default_compression = np.array([0, 0.01, 0.02, 0.03, 0.04], dtype=np.float64)
+    default_propulsion_time = np.array([0, 0.2, 0.6, 0.8, 1.0], dtype=np.float64)
+
+    if compression is None and propulsion_time is None:
+        compression_arr = default_compression
+        propulsion_time_arr = default_propulsion_time
+    elif compression is not None and propulsion_time is not None:
+        compression_arr = np.asarray(compression, dtype=np.float64)
+        propulsion_time_arr = np.asarray(propulsion_time, dtype=np.float64)
+        if compression_arr.shape != propulsion_time_arr.shape:
+            raise ValueError("compression and propulsion_time must have the same shape")
+    else:
+        raise ValueError("Provide both compression and propulsion_time, or leave both as None")
+
+    if coefficients is None:
+        coefficients = fit_compression_propulsion_time_relation_jit()
+    coefficients = np.asarray(coefficients, dtype=np.float64)
+    if coefficients.shape[0] != 3:
+        raise ValueError("coefficients must contain 3 values [a, b, c]")
+
+    x_min = np.min(compression_arr)
+    x_max = np.max(compression_arr)
+    curve_compression = np.linspace(x_min, x_max, int(max(2, num_points)))
+    curve_propulsion_time = propulsion_time_from_compression_jit(curve_compression, coefficients)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.scatter(compression_arr, propulsion_time_arr, color="tab:blue", s=55, label="Measured points", zorder=3)
+    ax.plot(curve_compression, curve_propulsion_time, color="tab:red", linewidth=2, label="Quadratic fit")
+
+    ax.set_xlabel("Compression Length (m)")
+    ax.set_ylabel("Propulsion Time (s)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+
+    if show:
+        plt.show(block=True)
+
+    return fig, ax
+
+# ==================== Data-Driven Geometry Relations ====================
+
 def fit_length_width_relation_jit():
-    lengths = np.array([0.26, 0.25, 0.24, 0.23, 0.22, 0.21, 0.20])  # Example lengths during contraction
-    widths = np.array([0.14, 0.16, 0.175, 0.18, 0.20, 0.21, 0.22])   # Corresponding widths to maintain constant volume
-    coefficients = np.polyfit(lengths, widths, 2)  # Fit a polynomial of degree 2
+    # Measurements from physical prototype
+    lengths = np.array([0.26, 0.25, 0.24, 0.23, 0.22])
+    widths = np.array([0.135, 0.157, 0.176, 0.190, 0.198])
+    weights = np.array([1e10, 1.0, 1.0, 1.0, 1e10])
+    coefficients = np.polyfit(lengths, widths, deg=2, w=weights)  # Fit a polynomial of degree 2
+    # print("Fitted length-width relation coefficients:", coefficients)
     return coefficients
 
 @jit(nopython=True, cache=True)
 def width_from_length_jit(length, coefficients):
     return coefficients[0] * length**2 + coefficients[1] * length + coefficients[2]  # Evaluate the polynomial at the given length
 
-# checked 
+
+def visualize_length_width_relation(lengths=None, widths=None, coefficients=None, num_points=200,
+                                    title="Robot Length-Width Relation", save_path=None, show=True):
+    """Visualize how robot width changes with robot length.
+
+    Args:
+        lengths: Optional array-like of measured lengths. If None, uses prototype data.
+        widths: Optional array-like of measured widths paired with ``lengths``.
+        coefficients: Optional polynomial coefficients [a, b, c]. If None, uses fitted prototype relation.
+        num_points: Number of points used to draw the fitted curve.
+        title: Figure title.
+        save_path: Optional path to save the figure image.
+        show: If True, shows the figure interactively.
+
+    Returns:
+        Tuple of (fig, ax) for further customization.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise ImportError(
+            "matplotlib is required for visualize_length_width_relation. "
+            "Install it with: pip install matplotlib"
+        ) from exc
+
+    default_lengths = np.array([0.26, 0.25, 0.24, 0.23, 0.22], dtype=np.float64)
+    default_widths = np.array([0.135, 0.157, 0.176, 0.190, 0.198], dtype=np.float64)
+
+    if lengths is None and widths is None:
+        lengths_arr = default_lengths
+        widths_arr = default_widths
+    elif lengths is not None and widths is not None:
+        lengths_arr = np.asarray(lengths, dtype=np.float64)
+        widths_arr = np.asarray(widths, dtype=np.float64)
+        if lengths_arr.shape != widths_arr.shape:
+            raise ValueError("lengths and widths must have the same shape")
+    else:
+        raise ValueError("Provide both lengths and widths, or leave both as None")
+
+    if coefficients is None:
+        coefficients = fit_length_width_relation_jit()
+    coefficients = np.asarray(coefficients, dtype=np.float64)
+    if coefficients.shape[0] != 3:
+        raise ValueError("coefficients must contain 3 values [a, b, c]")
+
+    x_min = np.min(lengths_arr)
+    x_max = np.max(lengths_arr)
+    curve_lengths = np.linspace(x_min, x_max, int(max(2, num_points)))
+    curve_widths = width_from_length_jit(curve_lengths, coefficients)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.scatter(lengths_arr, widths_arr, color="tab:blue", s=55, label="Measured points", zorder=3)
+    ax.plot(curve_lengths, curve_widths, color="tab:red", linewidth=2, label="Quadratic fit")
+
+    ax.set_xlabel("Length (m)")
+    ax.set_ylabel("Width (m)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+
+    if show:
+        plt.show(block=True)
+
+    return fig, ax
+
+# ==================== Body Dimensions ====================
+
 @jit(nopython=True, cache=True)
-def compute_length_jit(state_val, cycle_time, refill_time, turn_time, init_length, contraction, contract_rate, release_rate):
+def compute_length_jit(
+    state_val, cycle_time, refill_time, turn_time,
+    init_length, contraction, refill_coefficient, propulsion_coefficient,
+):
     """Fast compiled current body length calculation."""
     if state_val == 0:  # REFILL phase
         if cycle_time < refill_time:
-            return init_length - cycle_time * contract_rate
+            return compute_length_from_refill_time_jit(cycle_time, refill_coefficient, init_length)
         else:
             return init_length - contraction
     elif state_val == 1:  # JET phase
-        return init_length - contraction + (cycle_time - max(refill_time, turn_time)) * release_rate
+        return compute_length_from_propulsion_time_jit(cycle_time - max(refill_time, turn_time), propulsion_coefficient, init_length, contraction)
     else:
         return init_length
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_width_jit(state_val, cycle_time, refill_time, turn_time, init_width, contraction, contract_rate, release_rate):
     """Fast compiled current body width calculation."""
@@ -63,7 +343,8 @@ def compute_width_jit(state_val, cycle_time, refill_time, turn_time, init_width,
     else:
         return init_width
 
-# checked
+# ==================== Cross Section & Volume ====================
+
 @jit(nopython=True, cache=True)
 def compute_cross_sectional_area_jit(length, width):
     """Fast compiled cross-sectional area calculation."""
@@ -74,41 +355,65 @@ def compute_cross_sectional_area_jit(length, width):
     A_xy = np.pi * l_half * w_half
     return np.array([A_yz, A_xz, A_xy])
 
-# checked
 @jit(nopython=True, cache=True)
 def compute_water_volume_jit(length, width):
     """Fast compiled water volume calculation."""
     return (4.0 / 3.0) * np.pi * (length / 2.0) * (width / 2.0)**2
 
-# checked
+@jit(nopython=True, cache=True)
+def compute_bounding_box_volume_jit(length, width):
+    """Fast compiled bounding box volume calculation."""
+    return length * (width / 2)**2 * np.pi
+
+# ==================== Mass ====================
+
 @jit(nopython=True, cache=True)
 def compute_water_mass_jit(density, volume):
     """Fast compiled water mass calculation."""
     return density * volume
 
-# checked 
 @jit(nopython=True, cache=True)
 def compute_mass_matrix_jit(dry_mass, water_mass, nozzle_mass):
     """Fast compiled mass matrix calculation."""
     total_mass = dry_mass + water_mass + nozzle_mass
     return np.diag(np.array([total_mass, total_mass, total_mass]))
 
-# checked
-@jit(nopython=True, cache=True)
-def compute_mass_rate_jit(water_mass, prev_water_mass, dt):
-    """Fast compiled mass rate matrix calculation."""
-    rate = (water_mass - prev_water_mass) / dt
-    return np.diag(np.array([rate, rate, rate]))
+# ==================== Volume & Mass Rates ====================
 
-# checked
 @jit(nopython=True, cache=True)
-def compute_drag_coefficient_jit(length, width, init_length, init_width, max_contraction, ranges):
+def compute_mass_rate_jit(water_volume, prev_water_volume, dt, density=1000):
+    """Fast compiled mass rate matrix calculation."""
+    rate = compute_volume_rate_jit(water_volume, prev_water_volume, dt)
+    mass_rate = rate * density
+    return np.diag(np.array([mass_rate, mass_rate, mass_rate]))
+
+@jit(nopython=True, cache=True)
+def compute_effective_mass_rate_jit(water_volume, prev_water_volume, dt, effective_coeff, density=1000):
+    """Fast compiled mass rate matrix calculation."""
+    rate = compute_effective_volume_rate_jit(water_volume, prev_water_volume, dt, effective_coeff)
+    mass_rate = rate * density
+    return np.diag(np.array([mass_rate, mass_rate, mass_rate]))
+
+@jit(nopython=True, cache=True)
+def compute_volume_rate_jit(water_volume, prev_water_volume, dt):
+    """Fast compiled volume rate calculation."""
+    volume_rate = (water_volume - prev_water_volume) / dt
+    return volume_rate
+
+@jit(nopython=True, cache=True)
+def compute_effective_volume_rate_jit(water_volume, prev_water_volume, dt, effective_coeff):
+    """Fast compiled effective volume rate calculation."""
+    volume_rate = (water_volume - prev_water_volume) / dt
+    return volume_rate * effective_coeff
+
+# ==================== Drag Coefficients ====================
+
+@jit(nopython=True, cache=True)
+def compute_drag_coefficient_jit(length, width, init_length, init_width, end_length, end_width, ranges):
     """Fast compiled drag coefficient interpolation."""
     aspect_ratio = length / width
     init_aspect_ratio = init_length / init_width
-    contracted_length = init_length - max_contraction
-    contracted_width = init_length - contracted_length + init_width
-    end_aspect_ratio = contracted_length / contracted_width
+    end_aspect_ratio = end_length / end_width
     
     normalized_ratio = (aspect_ratio - end_aspect_ratio) / (init_aspect_ratio - end_aspect_ratio)
     
@@ -122,87 +427,149 @@ def compute_drag_coefficient_jit(length, width, init_length, init_width, max_con
         
     return drag_coeff
 
-# checked
+# ==================== Moment Arms ====================
+
 @jit(nopython=True, cache=True)
 def compute_jet_moment_arm_jit(nozzle_middle_pos, length):
     """Fast compiled jet moment arm calculation."""
-    r_robot = np.array([-length / 2.0, 0.0, 0.0])
+    r_robot = np.array([-length, 0.0, 0.0])
     return nozzle_middle_pos + r_robot
 
-# checked
+# ==================== Component Inertia Matrices ====================
+
 @jit(nopython=True, cache=True)
-def compute_inertia_matrix_jit(mass_scalar, length, width, nozzle_mass, jet_moment_arm):
+def compute_buoy_inertia_matrix_jit(length, width, height, length_com, mass):
+
+    I_xx = 1/12 * mass * (length**2 + height**2)
+    I_yy = 1/12 * mass * (width**2 + height**2)
+    I_zz = 1/12 * mass * (length**2 + width**2)
+
+    I_buoy = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+
+    return I_buoy
+
+@jit(nopython=True, cache=True)
+def compute_tube_inertia_matrix_jit(length, radius, length_com, mass):
+
+    density = 1000
+    tube_area_mass = mass - np.pi * radius**2 * length * density
+
+    I_xx = 1/2 * tube_area_mass * radius**2
+    I_yy = 1/12 * tube_area_mass * (3*radius**2 + length**2)
+    I_zz = 1/12 * tube_area_mass * (3*radius**2 + length**2)
+
+    I_tube = np.diag(np.array([I_xx, I_yy, I_zz])) + tube_area_mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+
+    return I_tube
+
+@jit(nopython=True, cache=True)
+def compute_skin_inertia_matrix_jit(length, width, length_com, mass):
+
+    I_xx = 1/3 * mass * ((width/2)**2 + (width/2)**2)
+    I_yy = 1/3 * mass * ((length/2)**2 + (width/2)**2)
+    I_zz = 1/3 * mass * ((length/2)**2 + (width/2)**2)
+
+    I_skin = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+
+    return I_skin
+
+@jit(nopython=True, cache=True)
+def compute_water_inertia_matrix_jit(length, width, length_com, mass):
+
+    I_xx = 1/5 * mass * ((width/2)**2 + (width/2)**2)
+    I_yy = 1/5 * mass * ((length/2)**2 + (width/2)**2)
+    I_zz = 1/5 * mass * ((length/2)**2 + (width/2)**2)
+
+    I_water = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+
+    return I_water
+
+@jit(nopython=True, cache=True)
+def compute_nozzle_inertia_matrix_jit(length, radius, radius_inner, length_com, mass):
+
+    I_xx = 1/2 * mass * (radius**2 + radius_inner**2)
+    I_yy = 1/12 * mass * (3*(radius**2 + radius_inner**2) + length**2)
+    I_zz = 1/12 * mass * (3*(radius**2 + radius_inner**2) + length**2)
+
+    I_nozzle = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+
+    return I_nozzle
+
+@jit(nopython=True, cache=True)
+def compute_nozzle_water_inertia_matrix_jit(length, radius_inner, length_com, mass):
+
+    I_xx = 1/2 * mass * (radius_inner**2)
+    I_yy = 1/12 * mass * (3*(radius_inner**2) + length**2)
+    I_zz = 1/12 * mass * (3*(radius_inner**2) + length**2)
+
+    I_nozzle = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+
+    return I_nozzle
+
+# ==================== Composite Inertia Matrix ====================
+
+@jit(nopython=True, cache=True)
+def compute_inertia_matrix_jit(
+    length, width, l_buoy, w_buoy, h_buoy,
+    l_tube, r_tube, l_nozzle, r_nozzle, r_nozzle_inner,
+    l_com, mass_water, mass_buoy, mass_tube, mass_skin,
+    mass_nozzle, mass_nozzle_water,
+):
     """Fast compiled inertia matrix calculation."""
-    # Physical constants matching Robot class
-    mass_buoy = 0.195
-    skin_mass = 0.145
-    tube_mass = 0.414
-    tube_volume = 3.14159265358979 * (0.058 / 2.0)**2 * 0.15
-    density = 1000.0
 
-    # buoy inertia tensor (dimensions set to 0 — placeholder)
-    l_buoy = 0.0
-    w_buoy = 0.0
-    h_buoy = 0.0
-    I_xx_buoy = 1.0/12.0 * mass_buoy * (l_buoy**2 + h_buoy**2)
-    I_yy_buoy = 1.0/12.0 * mass_buoy * (w_buoy**2 + h_buoy**2)
-    I_zz_buoy = 1.0/12.0 * mass_buoy * (l_buoy**2 + w_buoy**2)
-    I_buoy = np.diag(np.array([I_xx_buoy, I_yy_buoy, I_zz_buoy])) + mass_buoy * np.diag(np.array([0.0, (length/2.0)**2, (length/2.0)**2]))
+    # buoy inertia tensor
+    length_com = length / 2.0
+    I_buoy = compute_buoy_inertia_matrix_jit(l_buoy, w_buoy, h_buoy, length_com, mass_buoy)
 
-    # tube inertia tensor (dimensions set to 0 — placeholder)
-    l_tube = 0.0
-    r_tube = 0.0
-    net_tube_mass = tube_mass - tube_volume * density
-    I_xx_tube = 0.5 * net_tube_mass * r_tube**2
-    I_yy_tube = 1.0/12.0 * net_tube_mass * (3.0*r_tube**2 + l_tube**2)
-    I_zz_tube = 1.0/12.0 * net_tube_mass * (3.0*r_tube**2 + l_tube**2)
-    I_tube = np.diag(np.array([I_xx_tube, I_yy_tube, I_zz_tube])) + net_tube_mass * np.diag(np.array([0.0, (length/2.0 - 0.08)**2, (length/2.0 - 0.08)**2]))
-
+    # tube inertia tensor
+    length_com = length / 2.0 - l_tube / 2.0
+    I_tube = compute_tube_inertia_matrix_jit(l_tube, r_tube, length_com, mass_tube)
+    
     # skin inertia tensor
-    I_xx_skin = 1.0/3.0 * skin_mass * ((width/2.0)**2 + (width/2.0)**2)
-    I_yy_skin = 1.0/3.0 * skin_mass * ((length/2.0)**2 + (width/2.0)**2)
-    I_zz_skin = 1.0/3.0 * skin_mass * ((length/2.0)**2 + (width/2.0)**2)
-    I_skin = np.diag(np.array([I_xx_skin, I_yy_skin, I_zz_skin]))
+    length_com = l_com[0]
+    I_skin = compute_skin_inertia_matrix_jit(length, width, length_com, mass_skin)
 
     # water inertia tensor
-    water_mass_ellipsoid = compute_water_mass_jit(1000.0, compute_water_volume_jit(length, width))
-    I_xx_water = 0.2 * water_mass_ellipsoid * ((width/2.0)**2 + (width/2.0)**2)
-    I_yy_water = 0.2 * water_mass_ellipsoid * ((length/2.0)**2 + (width/2.0)**2)
-    I_zz_water = 0.2 * water_mass_ellipsoid * ((length/2.0)**2 + (width/2.0)**2)
-    I_water = np.diag(np.array([I_xx_water, I_yy_water, I_zz_water]))
+    length_com = l_com[0]
+    I_water = compute_water_inertia_matrix_jit(length, width, length_com, mass_water)
 
-    # nozzle inertia tensor (dimensions set to 0 — placeholder)
-    l_nozzle = 0.0
-    w_nozzle = 0.0
-    h_nozzle = 0.0
-    I_xx_nozzle = 1.0/12.0 * nozzle_mass * (l_nozzle**2 + h_nozzle**2)
-    I_yy_nozzle = 1.0/12.0 * nozzle_mass * (w_nozzle**2 + h_nozzle**2)
-    I_zz_nozzle = 1.0/12.0 * nozzle_mass * (l_nozzle**2 + w_nozzle**2)
-    I_nozzle = np.diag(np.array([I_xx_nozzle, I_yy_nozzle, I_zz_nozzle])) + nozzle_mass * np.diag(np.array([0.0, (length/2.0+0.025)**2, (length/2.0+0.025)**2]))
+    # nozzle inertia tensor
+    length_com = length / 2.0 + l_nozzle / 2.0
+    I_nozzle = compute_nozzle_inertia_matrix_jit(l_nozzle, r_nozzle, r_nozzle_inner, length_com, mass_nozzle)
 
-    return I_buoy + I_tube + I_skin + I_water + I_nozzle
+    # nozzle water inertia tensor
+    length_com = length / 2.0 + l_nozzle / 2.0
+    I_nozzle_water = compute_nozzle_water_inertia_matrix_jit(l_nozzle, r_nozzle_inner, length_com, mass_nozzle_water)
 
+    return I_buoy + I_tube + I_skin + I_water + I_nozzle + I_nozzle_water
 
 @jit(nopython=True, cache=True)
-def compute_center_of_mass_jit(length, width, tube_volume, nozzle_mass, buoy_mass, skin_mass, tube_mass, water_mass):
+def compute_bounding_box_inertia_matrix_jit(length, width, mass, length_com):
+
+    I_xx = 1/2 * mass * (width/2)**2
+    I_yy = 1/12 * mass * (3*(width/2)**2 + length**2)
+    I_zz = 1/12 * mass * (3*(width/2)**2 + length**2)
+
+    I_bounding_box = np.diag(np.array([I_xx, I_yy, I_zz])) + mass * np.diag(np.array([0.0, length_com**2, length_com**2]))
+    return I_bounding_box
+
+# ==================== Center of Mass ====================
+
+@jit(nopython=True, cache=True)
+def compute_center_of_mass_jit(
+    pos_buoy, pos_skin, pos_tube, pos_nozzle, pos_water, pos_nozzle_water,
+    buoy_mass, skin_mass, tube_mass, nozzle_mass, water_mass, nozzle_water_mass,
+):
     """Fast compiled center of mass calculation."""
-
-    # body frame is mounted on center of geometry
-    pos_buoy = np.array([length / 2, 0.0, 0.0])
-    pos_skin = np.array([0.0, 0.0, 0.0])
-    pos_tube = np.array([length / 2 -0.08, 0.0, 0.0])
-    pos_nozzle = np.array([-length / 2 - 0.025 + 0.05, 0.0, 0.0])
-
-    # get water center of mass
-    water_mass_ellipsoid = compute_water_mass_jit(density=1000, volume=compute_water_volume_jit(length, width))
-    pos_water = (water_mass_ellipsoid * np.array([0.0, 0.0, 0.0]) - 1000 * tube_volume * pos_tube)/ (water_mass_ellipsoid - 1000 * tube_volume)
-
-    total_mass = tube_mass + nozzle_mass + buoy_mass + skin_mass + water_mass
-    center_of_mass = (tube_mass * pos_tube + nozzle_mass * pos_nozzle + buoy_mass * pos_buoy + skin_mass * pos_skin + water_mass * pos_water) / total_mass
-    
+    total_mass = tube_mass + nozzle_mass + buoy_mass + skin_mass + water_mass + nozzle_water_mass
+    center_of_mass = (
+        tube_mass * pos_tube + nozzle_mass * pos_nozzle + buoy_mass * pos_buoy
+        + skin_mass * pos_skin + water_mass * pos_water
+        + nozzle_water_mass * pos_nozzle_water
+    ) / total_mass
     return center_of_mass
 
-
+# ==================== Utilities ====================
 
 @jit(nopython=True, cache=True)
 def randomize_scalar_jit(value, uncertainty=0.1, lower_bound=np.nan, upper_bound=np.nan):
@@ -220,3 +587,128 @@ def randomize_scalar_jit(value, uncertainty=0.1, lower_bound=np.nan, upper_bound
 
     # Manual min/max is highly optimized in Numba for scalars
     return min(max(sample, lower_bound), upper_bound)
+
+@jit(nopython=True, cache=True)
+def solve_angles(yaw, R_br):
+    """Solve inverse kinematics to find nozzle angles for target direction."""
+    
+    target_direction = -np.array([np.cos(yaw), np.sin(yaw), 0.0], dtype=np.float64)
+    target_direction = R_br.T @ target_direction
+
+    raw_val2 = 2 * target_direction[2] - 1
+    val2 = min(max(raw_val2, -1.0), 1.0)
+    
+    angle2 = np.arccos(val2)
+    if angle2 <= -np.pi:
+        angle2 += 2 * np.pi
+    elif angle2 > np.pi:
+        angle2 -= 2 * np.pi
+
+    if angle2 == 0:
+        angle1 = 0.0
+    else:
+        a = 0.5 * (np.cos(angle2) - 1)
+        b = np.sqrt(2) * np.sin(angle2) / 2
+        c = target_direction[1]
+        val1 = min(max(c / np.sqrt(a**2 + b**2), -1.0), 1.0)
+        angle1 = np.arcsin(val1) - np.arctan2(b, a)
+
+    if angle1 <= -np.pi:
+        angle1 += 2 * np.pi
+    elif angle1 > np.pi:
+        angle1 -= 2 * np.pi
+
+    return angle1, angle2
+
+@jit(nopython=True, cache=True)
+def get_nozzle_position(length1, length2, length3, gamma, R_br, R_mb, R_nm) -> np.ndarray:
+    """Calculate the nozzle tip position in world frame.
+
+    Returns:
+        3D position vector of the nozzle tip
+    """
+    # Nozzle tip position in nozzle frame
+    pos_x3 = length3 * np.cos(gamma)
+    pos_y3 = 0
+    pos_z3 = length3 * np.sin(gamma)
+    nozzle_position = np.array([pos_x3, pos_y3, pos_z3])
+
+    # Middle section tip position in body frame
+    pos_x2 = 0
+    pos_y2 = 0
+    pos_z2 = length2
+    middle_position = np.array([pos_x2, pos_y2, pos_z2])
+
+    # Base section tip position in base frame
+    pos_x1 = 0
+    pos_y1 = 0
+    pos_z1 = length1
+    base_position = np.array([pos_x1, pos_y1, pos_z1])
+
+    position = R_br @ (base_position + R_mb @ (middle_position + R_nm @ nozzle_position))
+
+    return position
+
+@jit(nopython=True, cache=True)
+def get_nozzle_direction(R_br, R_mb, R_nm, gamma) -> np.ndarray:
+    """Calculate the direction vector of the nozzle.
+    
+    Returns:
+        3D direction unit vector in world frame
+    """
+    pos_x = np.cos(gamma)
+    pos_y = 0
+    pos_z = np.sin(gamma)
+    nozzle_direction = np.array([pos_x, pos_y, pos_z])
+
+    direction = R_br @ R_mb @ R_nm @ nozzle_direction
+
+    return direction
+
+@jit(nopython=True, cache=True)
+def get_middle_position(R_br, R_mb, length1, length2) -> np.ndarray:
+    """Get the position of the second nozzle joint.
+    
+    Returns:
+        3D position vector in body frame
+    """
+    pos_x = 0
+    pos_y = 0
+    pos_z = length1
+    base_position = np.array([pos_x, pos_y, pos_z])
+
+    # Middle section tip position in body frame
+    pos_x2 = 0
+    pos_y2 = 0
+    pos_z2 = length2
+    middle_position = np.array([pos_x2, pos_y2, pos_z2])
+
+    position = R_br @ (base_position + R_mb @ middle_position)
+
+    return position
+
+@jit(nopython=True, cache=True)
+def get_rotation_matrices(gamma, angle1, angle2):
+    """Calculate the rotation matrices for nozzle orientation."""
+    R_theta_fixed = np.array([[np.cos(gamma), 0.0, -np.sin(gamma)],
+                                [0.0, 1.0, 0.0],
+                                [np.sin(gamma), 0.0, np.cos(gamma)]], dtype=np.float64)
+    
+    R_nozzle = np.array([[np.cos(angle2), -np.sin(angle2), 0.0],
+                            [np.sin(angle2), np.cos(angle2), 0.0],
+                            [0.0, 0.0, 1.0]], dtype=np.float64)
+    
+    R_middle = np.array([[np.cos(angle1), -np.sin(angle1), 0.0],
+                            [np.sin(angle1), np.cos(angle1), 0.0],
+                            [0.0, 0.0, 1.0]], dtype=np.float64)
+
+    # Convert from nozzle frame to body frame
+    R_base = np.array([[0.0, 0.0, -1.0],
+                        [0.0, 1.0, 0.0],
+                        [1.0, 0.0, 0.0]], dtype=np.float64)
+
+    return R_theta_fixed @ R_nozzle, R_middle, R_base
+
+
+if __name__ == "__main__":
+    fig, ax = visualize_length_width_relation()

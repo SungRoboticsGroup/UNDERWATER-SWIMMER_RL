@@ -1,4 +1,9 @@
 """
+LEGACY: this rollout collector was built against the pre-integration env
+(6+2N obs, [0,1] inhale, body-center reward). After the reward_shaping
+physics+env merge, the SAC v1 expert checkpoint no longer matches the env
+contract. Re-collect against a freshly trained SAC on the new env.
+
 Phase A of SAC -> PPO behavior cloning: collect demonstration rollouts from the
 trained SAC v1 expert.
 
