@@ -67,6 +67,7 @@ logs/
 models_robot/
 training_output.log
 *.zip
+*.npz
 
 # TensorBoard events
 events.out.tfevents.*

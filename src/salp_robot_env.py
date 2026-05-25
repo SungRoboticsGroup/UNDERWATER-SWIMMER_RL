@@ -4,20 +4,19 @@ Bio-inspired soft underwater robot with steerable rear nozzle.
 Based on research from University of Pennsylvania Sung Robotics Lab.
 """
 
+import os
+import math
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
 import pygame
-import math
-from typing import Tuple, Optional, Dict, Any, List
-import matplotlib.pyplot as plt
+from gymnasium import spaces
 from PIL import Image
-import os
-from datetime import datetime
-from robot import Robot, Nozzle
-import time
-import geometry
 import dynamics
+import geometry
+from robot import Nozzle, Robot
+
 
 class SalpRobotEnv(gym.Env):
     """
@@ -32,20 +31,16 @@ class SalpRobotEnv(gym.Env):
     
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
     
-    def __init__(self, render_mode: Optional[str] = None, width: int = 900, height: int = 700, robot: Optional[Robot] = None, num_obstacles: int = 2, obstacle_radius: float = 0.2):
+    def __init__(self, render_mode: Optional[str] = None, width: int = 900, height: int = 700, robot: Optional[Robot] = None):
         super().__init__()
+
+        self.tracking_point = "front"  # Point on robot to track for rewards (options: "center", "front")
         
         # Environment parameters
         self.width = width
         self.height = height
         self.pos_init = np.array([width / 2, height / 2])  # Start in center
         self.tank_margin = 50
-        self.target_radius = 0.2  # Target reach radius in meters (20cm tolerance) - v4 increased from 0.05m
-
-        # Obstacle parameters
-        self.num_obstacles = num_obstacles
-        self.obstacle_radius = obstacle_radius
-        self.obstacles: List[np.ndarray] = []  # populated in reset()
         
         # Pygame setup
         self.render_mode = render_mode
@@ -55,26 +50,26 @@ class SalpRobotEnv(gym.Env):
         self.observation_randomization = False
         self.latency = False
 
-        # # Robot state
+        # Robot state
         self.robot = robot
-        self.action = np.array([0.0, 0.0, 0.0])  # Current action
+        self.action = np.array([0.0, 0.0, 0.0])
         
         # Action space: [inhale_control (0/1), nozzle_direction (-1 to 1)]
         self.action_space = spaces.Box(
-            low=np.array([0.0, 0.0, -1.0]),
+            low=np.array([-1.0, -1.0, -1.0]),
             high=np.array([1.0, 1.0, 1.0]),
             dtype=np.float32
         )
         
-        # Observation space: 6 base dims + 2 dims per obstacle (relative x, y)
-        obs_dim = 6 + 2 * self.num_obstacles
+        # Observation: [dx_body, dy_body, vx, vy, angular_vel]
         self.observation_space = spaces.Box(
-            low=np.full(obs_dim, -np.inf, dtype=np.float32),
-            high=np.full(obs_dim, np.inf, dtype=np.float32),
-            dtype=np.float32
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
+            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
+
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
-        self.cycle_positions = []
+        self.cycle_positions = []       # tracking point positions (for trail)
+        self.cycle_center_positions = []  # body center positions (for animated body)
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
@@ -99,41 +94,36 @@ class SalpRobotEnv(gym.Env):
         self.current_coast_time = 0.5
         self.current_compression = 0.0
         
-        # Episode tracking for metrics
-        self.episode_start_position = None
-        self.episode_positions = []
-        self.episode_actions = []
-        self.episode_rewards = []
-        self.episode_reward_components = []
-        self.episode_distances_to_target = []
-        self.episode_velocities = []
-        self.initial_target_distance = 0.0
+        # Trajectory visualization
+        self.target_point = None  # Current target point
+        self.target_orientation = None  # Current target orientation (yaw angle in radians)
+        self.prev_target_point = None  # Previous target point
+        self.trajectory_waypoints = []  # List of waypoints to visualize
+        self.current_waypoint_index = 0  # Index of current target in trajectory
+        # Persistent trail of visited world positions (for live trajectory visualization)
+        self.traversed_positions = []
+        self.traversed_front_positions = []
 
         self.reset()
     
     def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
         super().reset(seed=seed)
 
-        # initialize a target point
-        self.target_point = self.generate_target_point(strategy="random")
+        # initialize a target point and orientation
+        self.target_point, self.target_orientation = self.generate_target_point(strategy="random")
         # print(f"New target point: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) meters")
-
-        # place obstacles for this episode
-        self._generate_obstacles()
         
         # Reset robot to center
         self.robot.reset()
         self.pos_init = np.array([self.width / 2, self.height / 2])
-        self.prev_dist = np.linalg.norm(self.robot.position_world[0:-1] - self.target_point)
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        self.prev_dist = np.linalg.norm(tracking_point_pos[0:-1] - self.target_point)
         self.prev_action = np.array([0.0, 0.0, 0.0])
-        self.action = np.array([0.0, 0.0, 0.0])
-       
-        # self.body_radius = self.base_radius  # Current body radius
-        self.ellipse_a = self.robot.get_current_length()    # Semi-major axis for ellipse
-        self.ellipse_b = self.robot.get_current_width()    # Semi-minor axis for ellipse
+        self.prev_target_point = tracking_point_pos[0:-1].copy()
 
         # clear any previously recorded cycle history
         self.cycle_positions = []
+        self.cycle_center_positions = []
         self.cycle_lengths = []
         self.cycle_widths = []
         self.cycle_euler_angles = []
@@ -141,17 +131,7 @@ class SalpRobotEnv(gym.Env):
         self._history_draw_index = 0
         self._history_loop = True
         self._history_step = 1
-        
-        # Reset episode tracking
-        self.episode_start_position = self.robot.position_world[0:-1].copy()
-        self.episode_positions = [self.robot.position_world[0:-1].copy()]
-        self.episode_actions = []
-        self.episode_rewards = []
-        self.episode_reward_components = []
-        self.episode_distances_to_target = [self.prev_dist]
-        self.episode_velocities = [np.linalg.norm(self.robot.velocity_world[0:-1])]
-        self.initial_target_distance = self.prev_dist
-
+        self.traversed_positions = []
         return self._get_observation(), {}
 
     def enable_action_randomization(self):
@@ -163,68 +143,61 @@ class SalpRobotEnv(gym.Env):
     def enable_latency(self):
         self.latency = True
 
-    def _rescale_action(self, action: np.ndarray) -> np.ndarray:
+    def _map_range(self, val, in_min, in_max, out_min, out_max):
+        return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
+    def _rescale_action(self, action: np.ndarray) -> np.ndarray:
         """Rescale action from [-1, 1] to robot input ranges."""
         rescaled = np.zeros_like(action)
-        rescaled[0] = action[0] * 0.06  # inhale_control
-        rescaled[1] = action[1] * 10.0   # coast_time
-        rescaled[2] = action[2] * (np.pi / 2)  # nozzle yaw angle
+        rescaled[0] = self._map_range(action[0], -1, 1, self.robot.min_contraction, self.robot.max_contraction)  # inhale_control max contraction is 0.04 cm
+        rescaled[1] = self._map_range(action[1], -1, 1, self.robot.min_coast_time, self.robot.max_coast_time)   # coast_time max is 5 seconds
+        rescaled[2] = self._map_range(action[2], -1, 1, self.robot.nozzle.min_yaw, self.robot.nozzle.max_yaw)  # nozzle yaw angle
 
         return rescaled
 
     def _randomize_actions(self, action):
         uncertainty = 0.1
-        contraction = geometry.randomize_scalar_jit(action[0], uncertainty, 0, 1)
-        coast_time = geometry.randomize_scalar_jit(action[1], uncertainty, 0, 20)
-        yaw_angle = geometry.randomize_scalar_jit(action[2], uncertainty, -np.pi/2, np.pi/2)
+        contraction = geometry.randomize_scalar_jit(action[0], uncertainty, self.robot.min_contraction, self.robot.max_contraction)
+        coast_time = geometry.randomize_scalar_jit(action[1], uncertainty, self.robot.min_coast_time, self.robot.max_coast_time)
+        if coast_time < self.robot.min_coast_time:
+            coast_time = self.robot.min_coast_time
+        yaw_angle = geometry.randomize_scalar_jit(action[2], uncertainty, self.robot.nozzle.min_yaw, self.robot.nozzle.max_yaw)
         return [contraction, coast_time, yaw_angle]
 
     def _randomize_observations(self, observation):
-        pos_x = geometry.randomize_scalar_jit(observation[0], 0.05)
-        pos_y = geometry.randomize_scalar_jit(observation[1], 0.05)
-        v_x = geometry.randomize_scalar_jit(observation[2], 0.2)
-        v_y = geometry.randomize_scalar_jit(observation[3], 0.2)
-        angular_velocity = geometry.randomize_scalar_jit(observation[4], 0.02)
-        heading_error = geometry.randomize_scalar_jit(observation[5], 0.1)
-        randomized = np.array([pos_x, pos_y, v_x, v_y, angular_velocity, heading_error])
-        # Append any extra dims (e.g. obstacle offsets) unchanged
-        if len(observation) > 6:
-            randomized = np.concatenate([randomized, observation[6:]])
-        return randomized
+        return np.array([
+            geometry.randomize_scalar_jit(observation[0], 0.05),   # dx_body
+            geometry.randomize_scalar_jit(observation[1], 0.05),   # dy_body
+            geometry.randomize_scalar_jit(observation[2], 0.2),    # vx
+            geometry.randomize_scalar_jit(observation[3], 0.2),    # vy
+            geometry.randomize_scalar_jit(observation[4], 0.02),   # angular_vel
+            geometry.randomize_scalar_jit(observation[5], 0.1),    # heading_error
+        ])
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
-        # Store action for tracking
-        self.action = action.copy()
-        self.episode_actions.append(action.copy())
-        
+        self.action = action
         rescaled_action = self._rescale_action(action)
 
         if self.action_randomization:
             rescaled_action = self._randomize_actions(rescaled_action)
 
-        # print(f"Action taken: Inhale: {action[0]:.2f}, Coast Time: {action[1]:.2f}, Nozzle Yaw: {action[2]:.2f} rad")
-        self.robot.nozzle.set_yaw_angle(yaw_angle = rescaled_action[2])  # Map -1 to 1 to -pi/2 to pi/2
+        self.robot.nozzle.set_yaw_angle(yaw_angle=rescaled_action[2])
         self.robot.nozzle.solve_angles()
-        self.robot.set_control(rescaled_action[0], rescaled_action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))  # contraction, coast_time, nozzle angle
-        try:
-            self.robot.step_through_cycle()
-        except Exception:
-            obs, _ = self.reset()
-            return obs, -500.0, False, True, {}
-
-        # Detect numerical blow-up before it propagates
-        v_norm = np.linalg.norm(self.robot.velocity)
-        w_norm = np.linalg.norm(self.robot.angular_velocity)
-        if not np.isfinite(v_norm) or not np.isfinite(w_norm) or v_norm > 50.0 or w_norm > 50.0:
-            obs, _ = self.reset()
-            return obs, -500.0, False, True, {}
+        self.robot.set_control(rescaled_action[0], rescaled_action[1], np.array([self.robot.nozzle.angle1, self.robot.nozzle.angle2]))
+        self.robot.step_through_cycle()
 
         # store the most recent breathing-cycle histories (meters)
         if self.render_mode == "human":
             try:
+                # Persist previously completed cycle so trajectory remains visible across actions
+                if len(self.cycle_positions) > 0:
+                    if len(self.traversed_positions) == 0:
+                        self.traversed_positions.append(np.array(self.cycle_positions[0], dtype=float))
+                    self.traversed_positions.extend(np.array(p, dtype=float) for p in self.cycle_positions[1:])
+
                 # convert to Python lists for easier use in render
-                self.cycle_positions = [np.array(p) for p in self.robot.position_world_history]
+                self.cycle_positions = [np.array(p) for p in self.robot.get_tracking_point_position_world_history(self.tracking_point)]
+                self.cycle_center_positions = [np.array(p) for p in self.robot.get_tracking_point_position_world_history("center")]
                 self.cycle_euler_angles = [np.array(ea) for ea in self.robot.euler_angle_history]
                 self.cycle_lengths = [float(l) for l in self.robot.length_history]
                 self.cycle_widths = [float(w) for w in self.robot.width_history]
@@ -234,280 +207,157 @@ class SalpRobotEnv(gym.Env):
                 # Reset animation for new cycle
                 self._animation_start_time = None
                 self._animation_complete = False
-                # Set animation duration based on actual cycle time
+                # Set animation duration based on actual cycle time (convert to milliseconds)
                 actual_cycle_time = max(self.robot.refill_time, self.robot.nozzle.turn_time) + self.robot.jet_time + self.robot.coast_time
                 self._animation_total_duration_ms = actual_cycle_time / 2 * 1000
             except Exception:
                 self.cycle_positions = []
+                self.cycle_center_positions = []
                 self.cycle_euler_angles = []
                 self.cycle_lengths = []
                 self.cycle_widths = []
                 self.cycle_nozzle_yaws = []
                 self._animation_complete = True
 
-        # Track episode data
-        self.episode_positions.append(self.robot.position_world[0:-1].copy())
-        current_velocity = np.linalg.norm(self.robot.velocity_world[0:-1])
-        self.episode_velocities.append(current_velocity)
-
-        distance_to_target = np.linalg.norm(self.robot.position_world[0:-1] - self.target_point)
-        self.episode_distances_to_target.append(distance_to_target)
-
-        # Calculate reward and track components
-        reward, reward_components = self._calculate_reward_with_components()
-        self.episode_rewards.append(reward)
-        self.episode_reward_components.append(reward_components)
-
         observation = self._get_observation()
         if self.observation_randomization:
             observation = self._randomize_observations(observation)
 
-        # Check obstacle collision
-        hit_obstacle = self._check_obstacle_collision()
+        reward, reward_details = self._calculate_reward()
 
-        # Check termination
+        # Termination
         done = False
         truncated = False
 
-        # V4: BIG terminal bonuses to make success clearly the best outcome!
-        if distance_to_target < self.target_radius:
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        distance_to_target = np.linalg.norm(tracking_point_pos[0:-1] - self.target_point)
+        if distance_to_target < 0.01:
             done = True
-            reward += 500.0  # HUGE success bonus! (was 10.0)
+            reward += 10.0
         elif distance_to_target > 5.0:
+            done = True
+            reward -= 5.0
+
+        if self.robot.cycle >= 100:
             truncated = True
-            reward -= 200.0  # BIG failure penalty (was -5.0)
 
-        if hit_obstacle:
-            truncated = True
-            reward -= 200.0  # Same magnitude as out-of-bounds penalty
-
-        # reset after a certain number of steps
-        if self.robot.cycle >= 500:
-            truncated = True
-            reward -= 50.0  # Penalty for timeout
-
-        # Build info dict
-        info = {
-            'position_history': self.robot.position_world_history,
-            'length_history': self.robot.length_history,
-            'width_history': self.robot.width_history
-        }
-        info.update(reward_components)
-
-        # Add episode metrics when episode ends
-        if done or truncated:
-            episode_metrics = self._calculate_episode_metrics()
-            info.update(episode_metrics)
+        info = {}
+        info.update(reward_details)
 
         self.prev_action = self.action
 
-        # Account for latency — pure drift from the previous state
         if self.latency:
-            latency = 0.05
-            latency = geometry.randomize_scalar_jit(latency, 1.0)
+            latency = geometry.randomize_scalar_jit(0.5, 1.0)
             self.robot.set_control(contraction=0, coast_time=latency, nozzle_angles=[self.robot.nozzle.angle1, self.robot.nozzle.angle2])
 
         return observation, reward, done, truncated, info
     
-    def _calculate_reward(self) -> float:
-        """Calculate reward based on realistic movement and efficiency."""
+    def _calculate_reward(self) -> Tuple[float, Dict]:
+        """Calculate reward based on movement and efficiency."""
 
-        current_diff = self.robot.position_world[0:-1] - self.target_point
+        # 1. Tracking: reward progress toward target
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        current_diff = tracking_point_pos[0:-1] - self.target_point
         current_dist = np.linalg.norm(current_diff)
-        dist_improvement = - current_dist + self.prev_dist   # Negative distance as improvement
-        # print(f"Distance to target: {current_dist:.3f} m, Improvement: {dist_improvement:.3f} m")
-        r_track = dist_improvement * 100
-        self.prev_dist = current_dist
-        # print(r_track)
-        
-        # 2. Heading (Dot Product)
-        # Normalize vectors first!
-        error_direction = - (current_diff / (np.linalg.norm(current_diff) + 1e-6))
-        heading = self.robot.velocity_world[0:-1] / (np.linalg.norm(self.robot.velocity_world[0:-1]) + 1e-6)
-        r_heading = np.dot(heading, error_direction)
-        # print(r_heading)
-        
-        # 3. Cycle penalty - encourage fewer cycles to reach target (time efficiency)
-        r_cycle = -0.5  # Small penalty per cycle
-        
-        # 4. Energy efficiency - encourage strong compressions to maximize thrust per cycle
-        compression = self.action[0] if len(self.action) > 0 else 0.0
-        r_energy = -0.1 * (1.0 - compression) ** 2  # Penalize weak compressions
-        # print(r_energy)
-        
-        # 5. Smoothness (Action Jerk)
-        # Only penalize the nozzle angle change, not the thrust change
-        nozzle_yaw = self.action[2] if len(self.action) > 2 else 0.0
-        angle_change = abs(nozzle_yaw - self.prev_action[2])
-        r_smooth = -0.1 * (angle_change ** 2)
-        # print(r_smooth)
-        
-        # Total
-        # Note: Weights are critical. Tracking is usually the most important.
-        total_reward = (
-            1.0 * r_track +      # Distance progress (most important)
-            0.5 * r_heading +    # Heading alignment
-            1.0 * r_cycle +      # Time penalty (ENABLED for v2)
-            0.2 * r_energy +     # Energy efficiency (ENABLED for v2)
-            1.0 * r_smooth       # Control smoothness
-        )
-        # print(total_reward)
-
-        # print(f"Reward components: Track={r_track:.3f}, Heading={r_heading:.3f}, Cycle={r_cycle:.3f}, Energy={r_energy:.3f}, Smoothness={r_smooth:.3f}, Total={total_reward:.3f}")
-        
-        return float(total_reward)
-    
-    def _calculate_reward_with_components(self) -> Tuple[float, Dict[str, float]]:
-        """Calculate reward and return individual components for logging."""
-        current_diff = self.robot.position_world[0:-1] - self.target_point
-        current_dist = np.linalg.norm(current_diff)
-        dist_improvement = - current_dist + self.prev_dist
-        r_track = dist_improvement * 100
+        r_track = (-current_dist + self.prev_dist) * 100
         self.prev_dist = current_dist
 
-        # Body-frame heading error towards target
-        current_diff_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
-        r_heading = -0.5 * abs(np.arctan2(-current_diff_body[1], -current_diff_body[0]))
+        # 2. Heading: penalise pointing away from target (body frame)
+        current_diff = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
+        r_heading = -0.0 * abs(np.arctan2(-current_diff[1], -current_diff[0]))
 
-        # Smoothness (penalize nozzle angle jerk)
-        nozzle_yaw = self.action[2] if len(self.action) > 2 else 0.0
+        # 3. Energy — disabled
+        r_energy = 0.0
+
+        # 4. Smoothness: penalise nozzle angle jerk
+        _, _, nozzle_yaw = self.action
         angle_change = nozzle_yaw - self.prev_action[2]
         r_smooth = -1.0 * (angle_change ** 2)
 
-        # Yaw stability penalty (discourages spinning)
+        # 5. Yaw stability: penalise large average angular velocity
         r_yaw = -10.0 * abs(self.robot.avg_cycle_angular_velocity[2])
 
-        # Time penalty (encourages faster task completion)
+        # 6. Cross-track error — disabled
+        r_cross_track = 0.0
+
+        # 7. Time penalty
         r_time = -0.1
 
-        # Sideslip / sway penalty (body-frame lateral velocity)
-        sideways_velocity = abs(self.robot.avg_cycle_velocity[1])
-        r_sideslip = -100.0 * sideways_velocity
+        # 8. Nozzle angle penalty 
+        r_nozzle = -10.0 * self.action[2] ** 2
 
-        # Obstacle proximity penalty (soft repulsion within 2x obstacle radius)
-        r_obstacle = 0.0
-        if self.obstacles:
-            robot_pos = self.robot.position_world[0:-1]
-            min_dist = min(np.linalg.norm(robot_pos - o) for o in self.obstacles)
-            danger_zone = 2.0 * self.obstacle_radius
-            if min_dist < danger_zone:
-                r_obstacle = -1.0 * (1.0 - min_dist / danger_zone)
+        # 9. Sideslip / sway penalty - disabled
+        r_sideslip = 0.0
 
-        total_reward = r_track + r_heading + r_smooth + r_yaw + r_time + r_sideslip + r_obstacle
+        # 10. Body orientation alignment — disabled
+        r_orientation = 0.0
 
-        components = {
-            'rewards/track': float(r_track),
-            'rewards/heading': float(r_heading),
-            'rewards/smooth': float(r_smooth),
-            'rewards/yaw': float(r_yaw),
-            'rewards/time': float(r_time),
-            'rewards/sideslip': float(r_sideslip),
-            'rewards/obstacle': float(r_obstacle),
+        total_reward = (r_track + r_heading + r_energy + r_smooth + r_yaw
+                        + r_cross_track + r_time + r_nozzle + r_sideslip + r_orientation)
+
+        reward_info = {
+            "rewards/track":       r_track,
+            "rewards/heading":     r_heading,
+            "rewards/smooth":      r_smooth,
+            "rewards/yaw":         r_yaw,
+            "rewards/time":        r_time,
+            "rewards/nozzle":      r_nozzle,
+            "rewards/sideslip":    r_sideslip,
+            "rewards/orientation": r_orientation,
         }
 
-        return float(total_reward), components
+        return float(total_reward), reward_info
     
-    def _calculate_episode_metrics(self) -> Dict[str, Any]:
-        """Calculate comprehensive episode metrics for TensorBoard logging."""
-        metrics = {}
-        
-        # Navigation metrics
-        if len(self.episode_positions) > 1:
-            # Path length (sum of distances between consecutive positions)
-            path_length = sum(
-                np.linalg.norm(self.episode_positions[i+1] - self.episode_positions[i])
-                for i in range(len(self.episode_positions) - 1)
-            )
-            metrics['path_length'] = float(path_length)
-            
-            # Direct distance (straight line from start to end)
-            direct_distance = np.linalg.norm(
-                self.episode_positions[-1] - self.episode_start_position
-            )
-            metrics['direct_distance'] = float(direct_distance)
-            
-            # Path efficiency
-            if path_length > 0:
-                metrics['path_efficiency'] = float(direct_distance / path_length)
-            else:
-                metrics['path_efficiency'] = 0.0
-        
-        # Final and initial distances to target
-        metrics['final_distance'] = float(self.episode_distances_to_target[-1]) if self.episode_distances_to_target else 0.0
-        metrics['initial_distance'] = float(self.initial_target_distance)
-        
-        # Action statistics
-        if len(self.episode_actions) > 0:
-            actions_array = np.array(self.episode_actions)
-            metrics['avg_compression'] = float(np.mean(actions_array[:, 0]))
-            metrics['avg_coast_time'] = float(np.mean(actions_array[:, 1]))
-            metrics['avg_nozzle_angle'] = float(np.mean(np.abs(actions_array[:, 2])))
-        
-        # Velocity statistics
-        if len(self.episode_velocities) > 0:
-            metrics['avg_velocity'] = float(np.mean(self.episode_velocities))
-        
-        # Reward component averages
-        if len(self.episode_reward_components) > 0:
-            for key in ['rewards/track', 'rewards/heading', 'rewards/smooth', 'rewards/yaw', 'rewards/time', 'rewards/sideslip', 'rewards/obstacle']:
-                values = [comp[key] for comp in self.episode_reward_components if key in comp]
-                if values:
-                    short_key = key.replace('/', '_')
-                    metrics[f'avg_{short_key}'] = float(np.mean(values))
-        
-        return metrics
-    
-    def generate_target_point(self, strategy: str = "random",
+    def generate_target_point(self, strategy: str = "random", 
                              center: Optional[np.ndarray] = None,
-                             min_distance: float = 0.5,
-                             max_distance: float = 2.0) -> np.ndarray:
+                             max_distance: float = 2.0,
+                             target_orientation: Optional[float] = None) -> Tuple[np.ndarray, float]:
         """
-        Generate a target point for the robot to reach.
-
+        Generate a target point and orientation for the robot to reach.
+        
         Args:
             strategy: Target generation strategy:
-                - "random": Uniform random point within tank bounds, between min/max distance from start
-                - "relative": Point relative to robot's current position
-                - "circle": Point on a circle around a center point
-                - "corridor": Point along a horizontal corridor
-
-            center: Center point for relative/circle strategies.
+                - "random": Uniform random point within tank bounds with random orientation
+                - "relative": Point relative to robot's current position, oriented away from center
+                - "circle": Point on a circle around a center point, oriented tangent to circle
+                - "corridor": Point along a horizontal corridor, oriented along corridor direction
+                
+            center: Center point for relative/circle strategies. 
                    Defaults to robot's current position or tank center.
-
-            min_distance: Minimum distance from start (0,0) for "random" strategy. Default 0.5 m.
-
+                   
             max_distance: Maximum distance from center (for relative/circle strategies).
                          Default is 2.0 meters.
-
+                         
+            target_orientation: If provided, use this specific orientation instead of strategy-based.
+                               Angle in radians. If None, orientation is determined by strategy.
+        
         Returns:
-            Target point as [x, y] in meters (robot frame coordinates)
+            Tuple of (target_point, target_orientation) where:
+            - target_point: [x, y] in meters (robot frame coordinates)
+            - target_orientation: yaw angle in radians
         """
         scale = 200.0  # pixels to meters conversion
-
+        
         # Get current robot position
-        current_pos = self.robot.position_world[0:-1] if hasattr(self.robot, 'position_world') else np.array([0.0, 0.0])
-
+        current_pos = self.robot.position[0:-1] if hasattr(self.robot, 'position') else np.array([0.0, 0.0])
+        
+        # Variable to store the angle used for generating the target (needed for orientation)
+        generation_angle = 0.0
+        
         if strategy == "random":
-            # Generate random point within tank bounds, enforcing min/max distance from start
+            # Generate random point within tank bounds
+            # Convert pixel bounds to meters
             x_min = (-self.width / 2 + self.tank_margin) / scale
             x_max = (self.width / 2 - self.tank_margin) / scale
             y_min = (-self.height / 2 + self.tank_margin) / scale
             y_max = (self.height / 2 - self.tank_margin) / scale
-
-            target = None
-            for _ in range(200):
-                candidate = np.array([
-                    self.np_random.uniform(x_min, x_max),
-                    self.np_random.uniform(y_min, y_max)
-                ])
-                d = np.linalg.norm(candidate)
-                if min_distance <= d <= max_distance:
-                    target = candidate
-                    break
-            if target is None:
-                # Fallback: place at min_distance on a random angle
-                angle = self.np_random.uniform(0, 2 * np.pi)
-                target = min_distance * np.array([np.cos(angle), np.sin(angle)])
+            
+            target = np.array([
+                np.random.uniform(x_min, x_max),
+                np.random.uniform(y_min, y_max)
+            ])
+            # Random orientation for random strategy
+            generation_angle = np.random.uniform(0, 2 * np.pi)
             
         elif strategy == "relative":
             # Generate point relative to current position
@@ -515,18 +365,21 @@ class SalpRobotEnv(gym.Env):
                 center = current_pos
             
             # Random distance and angle
-            distance = self.np_random.uniform(0.1, max_distance)
-            angle = self.np_random.uniform(0, 2 * np.pi)
+            distance = np.random.uniform(0.1, max_distance)
+            generation_angle = np.random.uniform(0, 2 * np.pi)
             
-            target = center + distance * np.array([np.cos(angle), np.sin(angle)])
+            target = center + distance * np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            # Orientation points away from center (same as direction to target)
             
         elif strategy == "circle":
             # Generate point on circle around center
             if center is None:
                 center = current_pos
             
-            angle = self.np_random.uniform(0, 2 * np.pi)
-            target = center + max_distance * np.array([np.cos(angle), np.sin(angle)])
+            generation_angle = np.random.uniform(0, 2 * np.pi)
+            target = center + max_distance * np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            # Orientation is tangent to circle (perpendicular to radius)
+            generation_angle = generation_angle + np.pi / 2  # Tangent angle
             
         elif strategy == "corridor":
             # Generate point along a horizontal corridor at robot's y-position
@@ -537,9 +390,11 @@ class SalpRobotEnv(gym.Env):
             x_max = (self.width / 2 - self.tank_margin) / scale
             
             target = np.array([
-                self.np_random.uniform(x_min, x_max),
+                np.random.uniform(x_min, x_max),
                 center[1]  # Keep same y-coordinate
             ])
+            # Orientation along corridor (horizontal)
+            generation_angle = 0.0 if target[0] > center[0] else np.pi
             
         else:
             raise ValueError(f"Unknown target generation strategy: {strategy}")
@@ -553,71 +408,13 @@ class SalpRobotEnv(gym.Env):
         target[0] = np.clip(target[0], x_min, x_max)
         target[1] = np.clip(target[1], y_min, y_max)
         
-        return target.astype(np.float32)
+        # Use provided orientation if specified, otherwise use strategy-based orientation
+        orientation = target_orientation if target_orientation is not None else generation_angle
+        # Normalize orientation to [-pi, pi]
+        orientation = (orientation + np.pi) % (2 * np.pi) - np.pi
+        
+        return target.astype(np.float32), float(orientation)
     
-    def _generate_obstacles(self):
-        """Place circular obstacles biased toward the start→target path, with clearance from endpoints."""
-        scale = 200.0
-        x_min = (-self.width / 2 + self.tank_margin) / scale
-        x_max = (self.width / 2 - self.tank_margin) / scale
-        y_min = (-self.height / 2 + self.tank_margin) / scale
-        y_max = (self.height / 2 - self.tank_margin) / scale
-        min_clear = 0.5  # meters clearance from start and target
-
-        path_len = np.linalg.norm(self.target_point)
-        if path_len > 1e-6:
-            direction = self.target_point / path_len
-            perp = np.array([-direction[1], direction[0]], dtype=np.float32)
-        else:
-            direction = np.array([1.0, 0.0], dtype=np.float32)
-            perp = np.array([0.0, 1.0], dtype=np.float32)
-
-        self.obstacles = []
-        for _ in range(self.num_obstacles):
-            placed = False
-            # First try to place on the path
-            for _attempt in range(200):
-                t = self.np_random.uniform(0.25, 0.75)
-                lateral = self.np_random.uniform(-0.4, 0.4)
-                pos = (t * self.target_point + lateral * perp).astype(np.float32)
-                pos[0] = np.clip(pos[0], x_min, x_max)
-                pos[1] = np.clip(pos[1], y_min, y_max)
-                dist_start = np.linalg.norm(pos)
-                dist_target = np.linalg.norm(pos - self.target_point)
-                too_close_other = any(
-                    np.linalg.norm(pos - o) < 2 * self.obstacle_radius + 0.1
-                    for o in self.obstacles
-                )
-                if dist_start > min_clear and dist_target > min_clear and not too_close_other:
-                    self.obstacles.append(pos)
-                    placed = True
-                    break
-            # Fallback: random placement anywhere in the tank
-            if not placed:
-                for _attempt in range(200):
-                    pos = np.array([
-                        self.np_random.uniform(x_min, x_max),
-                        self.np_random.uniform(y_min, y_max),
-                    ], dtype=np.float32)
-                    dist_start = np.linalg.norm(pos)
-                    dist_target = np.linalg.norm(pos - self.target_point)
-                    too_close_other = any(
-                        np.linalg.norm(pos - o) < 2 * self.obstacle_radius + 0.1
-                        for o in self.obstacles
-                    )
-                    if dist_start > min_clear and dist_target > min_clear and not too_close_other:
-                        self.obstacles.append(pos)
-                        break
-
-    def _check_obstacle_collision(self) -> bool:
-        """Return True if the robot currently overlaps any obstacle."""
-        robot_pos = self.robot.position_world[0:-1]
-        robot_half = self.robot.get_current_length() / 2
-        for obs in self.obstacles:
-            if np.linalg.norm(robot_pos - obs) < (self.obstacle_radius + robot_half):
-                return True
-        return False
-
     def sample_random_action(self) -> np.ndarray:
         """
         Sample a random action from the action space.
@@ -634,17 +431,9 @@ class SalpRobotEnv(gym.Env):
 
         return action.astype(np.float32)
     
-    def _draw_target_point(self, scale: float = 200):
-        """
-        Draw the target point on the screen.
-        
-        Args:
-            scale: Pixels per meter for coordinate conversion
-        """
-        if not hasattr(self, 'target_point') or self.target_point is None:
-            return
-        
-        if self.screen is None:
+    def _draw_target_point(self, scale: float = 200.0):
+        """Draw the target point (crosshair + orientation arrow) on the screen."""
+        if self.target_point is None or self.screen is None:
             return
         
         # Convert target point from meters to screen pixels
@@ -653,7 +442,7 @@ class SalpRobotEnv(gym.Env):
         # print(f"Drawing target at screen pos: ({target_screen_x}, {target_screen_y})")
         
         # Draw target point as a circle with crosshair
-        target_radius = 15
+        target_radius = 7
         target_color = (255, 0, 0)  # Bright red
         outline_color = (255, 100, 100)  # Light red outline
         crosshair_color = (200, 0, 0)  # Darker red for crosshair
@@ -662,7 +451,7 @@ class SalpRobotEnv(gym.Env):
         pygame.draw.circle(self.screen, target_color, (target_screen_x, target_screen_y), target_radius)
         
         # Draw outline
-        pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 3)
+        pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 1)
         
         # Draw crosshair (plus sign)
         crosshair_size = target_radius + 5
@@ -673,6 +462,38 @@ class SalpRobotEnv(gym.Env):
                         (target_screen_x, target_screen_y - crosshair_size),
                         (target_screen_x, target_screen_y + crosshair_size), 2)
         
+        # Draw target orientation arrow if available
+        if hasattr(self, 'target_orientation') and self.target_orientation is not None:
+            arrow_len = 25
+            arrow_angle = self.target_orientation
+            arrow_end_x = target_screen_x + arrow_len * math.cos(arrow_angle)
+            arrow_end_y = target_screen_y + arrow_len * math.sin(arrow_angle)
+            
+            # Draw main arrow line
+            pygame.draw.line(self.screen, (255, 200, 0), 
+                           (target_screen_x, target_screen_y), 
+                           (int(arrow_end_x), int(arrow_end_y)), 3)
+            
+            # Draw arrowhead
+            arrowhead_size = 8
+            # Calculate perpendicular direction
+            perp_x = -math.sin(arrow_angle)
+            perp_y = math.cos(arrow_angle)
+            # Base of arrowhead
+            base_x = arrow_end_x - math.cos(arrow_angle) * arrowhead_size
+            base_y = arrow_end_y - math.sin(arrow_angle) * arrowhead_size
+            # Two points of arrowhead triangle
+            left_x = base_x + perp_x * (arrowhead_size / 2)
+            left_y = base_y + perp_y * (arrowhead_size / 2)
+            right_x = base_x - perp_x * (arrowhead_size / 2)
+            right_y = base_y - perp_y * (arrowhead_size / 2)
+            
+            pygame.draw.polygon(self.screen, (255, 200, 0), [
+                (int(arrow_end_x), int(arrow_end_y)),
+                (int(left_x), int(left_y)),
+                (int(right_x), int(right_y))
+            ])
+        
         # Draw label
         if not (hasattr(pygame, 'font') and pygame.font.get_init()):
             pygame.font.init()
@@ -681,44 +502,89 @@ class SalpRobotEnv(gym.Env):
         label_rect = label.get_rect(midbottom=(target_screen_x, target_screen_y - target_radius - 10))
         self.screen.blit(label, label_rect)
         
-        # Draw distance to target as info
-        robot_pos = self.robot.position_world[0:-1]
-        distance_to_target = np.linalg.norm(self.target_point - robot_pos)
-        dist_label = font.render(f"d:{distance_to_target:.2f}m", True, crosshair_color)
+        # Draw distance to target info
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        distance_to_target = np.linalg.norm(self.target_point - tracking_point_pos[0:-1])
+        if self.target_orientation is not None:
+            info_text = f"d:{distance_to_target:.2f}m @ {math.degrees(self.target_orientation):.0f}°"
+        else:
+            info_text = f"d:{distance_to_target:.2f}m"
+        dist_label = font.render(info_text, True, crosshair_color)
         dist_label_rect = dist_label.get_rect(midtop=(target_screen_x, target_screen_y + target_radius + 10))
         self.screen.blit(dist_label, dist_label_rect)
     
-    def _draw_obstacles(self, scale: float = 200):
-        """Draw circular obstacles as filled orange circles with a bright outline."""
-        if self.screen is None:
+    def set_trajectory(self, waypoints: List[np.ndarray]):
+        """
+        Set a trajectory for the robot to follow.
+        
+        Args:
+            waypoints: List of [x, y] waypoints in meters
+        """
+        self.trajectory_waypoints = waypoints
+        self.current_waypoint_index = 0
+        if len(waypoints) > 0:
+            self.target_point = waypoints[0]
+    
+    def _draw_trajectory(self, scale: float = 200.0):
+        """Draw the trajectory waypoints and connecting path."""
+        if not self.trajectory_waypoints or self.screen is None:
             return
-        for obs in self.obstacles:
-            cx = int(self.pos_init[0] + obs[0] * scale)
-            cy = int(self.pos_init[1] + obs[1] * scale)
-            r_px = max(4, int(self.obstacle_radius * scale))
-            pygame.draw.circle(self.screen, (180, 80, 0), (cx, cy), r_px)
-            pygame.draw.circle(self.screen, (255, 140, 0), (cx, cy), r_px, 3)
+        
+        # Draw lines connecting waypoints
+        if len(self.trajectory_waypoints) > 1:
+            points = []
+            for waypoint in self.trajectory_waypoints:
+                screen_x = int(self.pos_init[0] + waypoint[0] * scale)
+                screen_y = int(self.pos_init[1] + waypoint[1] * scale)
+                points.append((screen_x, screen_y))
 
+            points.append(points[0]) # close the loop
+            # Draw trajectory path
+            pygame.draw.lines(self.screen, (100, 100, 255), False, points, 2)
+        
+        # Draw all waypoints
+        for i, waypoint in enumerate(self.trajectory_waypoints):
+            screen_x = int(self.pos_init[0] + waypoint[0] * scale)
+            screen_y = int(self.pos_init[1] + waypoint[1] * scale)
+            
+            # Color based on status: visited (gray), current (red), future (blue)
+            if i < self.current_waypoint_index:
+                # Already visited - gray
+                color = (100, 100, 100)
+                radius = 5
+            elif i == self.current_waypoint_index:
+                # Current target - already drawn by _draw_target_point
+                continue
+            else:
+                # Future waypoints - blue
+                color = (0, 100, 255)
+                radius = 7
+            
+            pygame.draw.circle(self.screen, color, (screen_x, screen_y), radius)
+            pygame.draw.circle(self.screen, (255, 255, 255), (screen_x, screen_y), radius, 1)
+            
+            # Draw waypoint number
+            if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+                pygame.font.init()
+            font = pygame.font.Font(None, 12)
+            label = font.render(str(i+1), True, (255, 255, 255))
+            label_rect = label.get_rect(center=(screen_x, screen_y - radius - 8))
+            self.screen.blit(label, label_rect)
+    
     def _get_observation(self) -> np.ndarray:
-        """Get current observation (body-frame relative to target)."""
-        # Transform world-frame diff to target into body frame
-        dist = self.target_point - self.robot.position_world[0:2]
+        """Get current observation: [dx_body, dy_body, vx, vy, angular_vel, nozzle_yaw]."""
+        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        dist = self.target_point - tracking_point_pos[0:2]
         dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
-        heading_error = np.arctan2(dist_body[1], dist_body[0])
+        tracking_point_vel = self.robot.get_tracking_point_velocity_body(self.tracking_point)
 
-        obs_parts = [
-            dist_body[0],                       # body-frame x distance to target
-            dist_body[1],                       # body-frame y distance to target
-            self.robot.velocity[0],             # body-frame forward velocity
-            self.robot.velocity[1],             # body-frame lateral velocity
-            self.robot.angular_velocity[2],     # yaw rate
-            heading_error,                      # heading error to target
-        ]
-        # Append relative position of each obstacle (world-frame robot → obstacle vector)
-        for obs in self.obstacles:
-            obs_parts.append(float(obs[0] - self.robot.position_world[0]))
-            obs_parts.append(float(obs[1] - self.robot.position_world[1]))
-        return np.array(obs_parts, dtype=np.float32)
+        return np.array([
+            dist_body[0],
+            dist_body[1],
+            tracking_point_vel[0],
+            tracking_point_vel[1],
+            self.robot.angular_velocity[2],
+        ], dtype=np.float32)
     
     def _get_info(self) -> Dict:
         """Get additional information."""
@@ -816,8 +682,40 @@ class SalpRobotEnv(gym.Env):
             self._animation_complete = True
             current_frame_idx = len(pts) - 1  # Show last frame
 
+        # Draw live trajectory trail: completed cycles + current in-progress cycle
+        trajectory_points = []
+        if len(self.traversed_positions) > 0:
+            trajectory_points.extend(self.traversed_positions)
+
+        for j in range(current_frame_idx + 1):
+            sample_idx = pts[j][2]
+            if sample_idx < len(self.cycle_positions):
+                trajectory_points.append(self.cycle_positions[sample_idx])
+
+        if len(trajectory_points) > 1:
+            max_points = 1200
+            if len(trajectory_points) > max_points:
+                step = max(1, len(trajectory_points) // max_points)
+                trajectory_points = trajectory_points[::step]
+
+            screen_points = []
+            for pos in trajectory_points:
+                sx = int(float(pos[0]) * scale) + self.pos_init[0]
+                sy = int(float(pos[1]) * scale) + self.pos_init[1]
+                screen_points.append((sx, sy))
+
+            if len(screen_points) > 1:
+                pygame.draw.lines(self.screen, (80, 220, 255), False, screen_points, 2)
+
         # Draw only the current frame
-        px, py, idx = pts[current_frame_idx]
+        _, _, idx = pts[current_frame_idx]
+        # Always position the animated body at the center point, not the tracking point
+        if self.cycle_center_positions and idx < len(self.cycle_center_positions):
+            cp = self.cycle_center_positions[idx]
+            px = int(float(cp[0]) * scale) + self.pos_init[0]
+            py = int(float(cp[1]) * scale) + self.pos_init[1]
+        else:
+            px, py = pts[current_frame_idx][0], pts[current_frame_idx][1]
         
         li = min(idx, len(self.cycle_lengths) - 1) if len(self.cycle_lengths) > 0 else 0
         wi = min(idx, len(self.cycle_widths) - 1) if len(self.cycle_widths) > 0 else 0
@@ -1225,7 +1123,8 @@ class SalpRobotEnv(gym.Env):
         self.screen.blit(state_text, (10, 40))
         
         # Position
-        pos_text = small_font.render(f"Position: ({self.robot.position_world[0]:.3f}, {self.robot.position_world[1]:.3f}) m", True, (200, 200, 200))
+        pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        pos_text = small_font.render(f"Position: ({pos[0]:.3f}, {pos[1]:.3f}) m", True, (200, 200, 200))
         self.screen.blit(pos_text, (10, 65))
         
         # Angle
@@ -1259,12 +1158,8 @@ class SalpRobotEnv(gym.Env):
 
         # scaling between meters and pixels (pixels per meter)
         scale = 200
-
-        # robot screen center in pixels (convert robot meter positions to screen coordinates)
-        # print(f"Robot world pos: ({self.robot.position_world[0]}, {self.robot.position_world[1]})")
         robot_x = int(self.pos_init[0] + self.robot.position_world[0] * scale)
         robot_y = int(self.pos_init[1] + self.robot.position_world[1] * scale)
-        # print(f"Robot screen pos: ({robot_x}, {robot_y})")
 
         # draw rulers and grid to visualize meters in both x and y
         self._draw_rulers(scale)
@@ -1272,10 +1167,9 @@ class SalpRobotEnv(gym.Env):
         # draw a small reference frame at the tank center (x/y axes)
         self._draw_reference_frame(scale)
 
-        self._draw_obstacles(scale)
+        # Draw trajectory and current target
+        self._draw_trajectory(scale)
         self._draw_target_point(scale)
-        # draw historical path and sized ellipses
-        # draw real-time animated history of the current cycle
         self._draw_history(scale)
 
         # Only draw static body/nozzle when animation is complete
@@ -1453,8 +1347,8 @@ class SalpRobotEnv(gym.Env):
                         print("✓ Robot reset to starting position")
                     elif event.key == pygame.K_n:
                         # Generate new target
-                        self.target_point = self.generate_target_point(strategy="random")
-                        print(f"✓ New target: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) m")
+                        self.target_point, self.target_orientation = self.generate_target_point(strategy="random")
+                        print(f"✓ New target: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) m @ {np.degrees(self.target_orientation):.1f}°")
                     elif event.key == pygame.K_c:
                         # Center nozzle
                         nozzle_steering = 0.0
@@ -1550,7 +1444,7 @@ class SalpRobotEnv(gym.Env):
                 
                 # Print current state (update less frequently to avoid spam)
                 if cycle_count % 10 == 0:  # Print every 10 cycles
-                    robot_pos = self.robot.position_world[0:-1]
+                    robot_pos = self.robot.position[0:-1]
                     distance_to_target = np.linalg.norm(self.target_point - robot_pos)
                     nozzle_angle_deg = np.degrees(nozzle_steering * (np.pi / 2))
                     compression_pct = inhale_control * 100
@@ -1570,7 +1464,7 @@ class SalpRobotEnv(gym.Env):
             if has_input and (done or truncated):
                 print(f"\n✓ Episode ended at cycle {self.robot.cycle}")
                 if done:
-                    robot_pos = self.robot.position_world[0:-1]
+                    robot_pos = self.robot.position[0:-1]
                     print(f"  Goal reached! Final distance: {np.linalg.norm(self.target_point - robot_pos):.3f} m")
                 elif truncated:
                     print(f"  Robot went out of bounds or reached maximum cycles")
@@ -1602,46 +1496,45 @@ class SalpRobotEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    
-    # TODO: need to fix the scale issues with the robot size and movement speed
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                  max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=np.pi)
-    robot.set_environment(density=1000)  # water density in kg/m^3
+    import time
+
+    # Robot physical parameters — DO NOT CHANGE
+    nozzle = Nozzle(
+        length1=0.052, length2=0.038, length3=0.050,
+        area=np.pi * 0.01**2, mass=0.428,
+        radius=0.1, inner_radius=0.022,
+    )
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
+    robot = Robot(
+        dry_mass=0.738, init_length=0.26, init_width=0.135,
+        max_contraction=0.04, nozzle=nozzle,
+    )
+    robot.set_environment(density=1000)
+    robot.enable_history_recording()
+    # robot.enable_dynamic_randomization()
+    # robot.enable_disturbances()
+
     env = SalpRobotEnv(render_mode="human", robot=robot)
+    # env = SalpRobotEnv(render_mode=None, robot=robot)
+    # env.enable_action_randomization()
+    # env.enable_observation_randomization()
+    # env.enable_latency()
+    
+
     obs, info = env.reset()
     
     done = False
     cnt = 0
     
-    # Test action sequence
-    actions = np.array([
-        [0.695722, 0.01922786, -0.06692487],
-        [0.2808507, 0.8017318, 0.87773895],
-        [0.57452214, 0.11145315, -0.82465506],
-        [0.32618135, 0.11088043, 0.88842094],
-        [0.17267734, 0.6958977, -0.9337022],
-        [0.49285844, 0.2883283, 0.81122017],
-        [0.34796143, 0.35572827, -0.8472595],
-        [0.49369425, 0.27951986, 0.8069289],
-        [0.37975544, 0.338947, -0.8655774],
-        [0.4979022, 0.23918751, 0.7962456]
-    ])
-    
-    env.start_recording()
-    while cnt < 10:
-        # action = [0.06, 0.0, 0.0]  # inhale with no nozzle steering
-        # For every step in the environment, there are multiple internal robot steps
-        # action = env.sample_random_action()
-        action = actions[cnt % len(actions)]
+    # env.start_recording()
+    while not done:
+        start_time = time.perf_counter()
+        action = [0.0, 0.2, 1/1]
         obs, reward, done, truncated, info = env.step(action)
-        # print("Step:", cnt, "Action:", action, "Obs:", obs, "Reward:", reward, "Done:", done)
-        # print(reward)
+        end_time = time.perf_counter()
         cnt += 1
-        # Wait for the animation to complete before next step
         env.wait_for_animation()
-        # env.render()
-    gif_path = env.stop_recording(filename="manual_actions.gif")
+        print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
+    # gif_path = env.stop_recording(filename="manual_actions.gif")
     env.close()
       
