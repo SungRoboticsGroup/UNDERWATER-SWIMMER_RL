@@ -10,7 +10,7 @@ from robot import Robot, Nozzle
 # Point this at a checkpoint trained on the new env (see train_robot_reward_shaping.py).
 
 ModelClass  = SAC
-model_path  = "../experiments/rs_v1/models/salp_robot_rs_v1_final"
+model_path  = "../experiments/rs_v2/models/salp_robot_rs_v2_final"
 
 nozzle = Nozzle(length1=0.052, length2=0.038, length3=0.050,
                 area=np.pi * 0.01 ** 2, mass=0.428,
