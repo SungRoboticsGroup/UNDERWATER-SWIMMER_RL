@@ -1,41 +1,60 @@
 # test_robot.py
+import numpy as np
 from stable_baselines3 import SAC, PPO
+from sb3_contrib import RecurrentPPO
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 
 # --- Model selection ---
-# SAC v6 (best overall, trained with 2 obstacles):
-#   ModelClass, model_path, num_obstacles = SAC, "../experiments/v6/models/best_model/best_model", 2
+# NOTE: pre-integration checkpoints (SAC v6, PPO v3/v2, old PPO BC finetune) were
+# trained against the old env (6+2N obs, [0,1] inhale) and will NOT load here.
+# Point this at a checkpoint trained on the new env (train_robot_reward_shaping.py
+# for SAC, train_robot_ppo.py --warm-start for PPO BC-finetune,
+# train_robot_recurrent_ppo.py --warm-start for the recurrent variant).
 #
-# PPO v3 best (peak reward -253 at 80k steps, no obstacles):
-#   ModelClass, model_path, num_obstacles = PPO, "../experiments/ppo_v3/models/best_model/best_model", 0
-#
-# PPO v3 400k checkpoint:
-#   ModelClass, model_path, num_obstacles = PPO, "../experiments/ppo_v3/models/salp_robot_ppo_ppo_v3_400000_steps", 0
-#
-# PPO v2 best (peak reward -258 at 320k steps, no obstacles):
-#   ModelClass, model_path, num_obstacles = PPO, "../experiments/ppo_v2/models/best_model/best_model", 0
+# Current options on this branch:
+#   SAC rs_v2 final:           SAC,          "../experiments/rs_v2/models/salp_robot_rs_v2_final"
+#   PPO BC v3 best:            PPO,          "../experiments/ppo_bc_v3_finetune/models/best_model/best_model"
+#   PPO BC v3 final (2M):      PPO,          "../experiments/ppo_bc_v3_finetune/models/salp_robot_ppo_ppo_bc_v3_finetune_final"
+#   Recurrent PPO BC v1 best:  RecurrentPPO, "../experiments/recurrent_ppo_bc_v1/models/best_model/best_model"
+#   Recurrent PPO BC v1 final: RecurrentPPO, "../experiments/recurrent_ppo_bc_v1/models/salp_robot_recurrent_ppo_recurrent_ppo_bc_v1_final"
 
-ModelClass  = PPO
-model_path  = "../experiments/ppo_bc_v2_finetune/models/best_model/best_model"
-num_obstacles = 0
+ModelClass  = RecurrentPPO
+model_path  = "../experiments/recurrent_ppo_bc_v1/models/best_model/best_model"
 
-nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15,
-              max_contraction=0.06, nozzle=nozzle)
-robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+nozzle = Nozzle(length1=0.052, length2=0.038, length3=0.050,
+                area=np.pi * 0.01 ** 2, mass=0.428,
+                radius=0.1, inner_radius=0.022)
+nozzle.set_angles(angle1=0.0, angle2=0.0)
+
+robot = Robot(dry_mass=0.738, init_length=0.26, init_width=0.135,
+              max_contraction=0.04, nozzle=nozzle)
+robot.set_environment(density=1000)
 
 #to visulaize the whole cycle not just start points of the cycle comment in or out as needed
 robot.enable_history_recording()
-env = SalpRobotEnv(render_mode="human", robot=robot, num_obstacles=num_obstacles)
+env = SalpRobotEnv(render_mode="human", robot=robot)
 model = ModelClass.load(model_path, env=env)
+
 
 obs, _ = env.reset()
 env.start_recording()
+
+# RecurrentPPO needs LSTM hidden state threaded across steps and reset on
+# episode boundaries; feedforward SAC/PPO ignore both kwargs.
+lstm_states = None
+episode_starts = np.ones((1,), dtype=bool)
+
 for i in range(100):
-    action, _states = model.predict(obs, deterministic=False)
+    if isinstance(model, RecurrentPPO):
+        action, lstm_states = model.predict(
+            obs, state=lstm_states, episode_start=episode_starts, deterministic=False,
+        )
+    else:
+        action, _ = model.predict(obs, deterministic=False)
 
     obs, reward, terminated, truncated, info = env.step(action)
+    episode_starts = np.array([terminated or truncated])
 
     env.wait_for_animation()
 
@@ -43,6 +62,7 @@ for i in range(100):
 
     if truncated:
         obs, _ = env.reset()
+        lstm_states = None  # fresh episode -> zero LSTM belief
 
     if terminated:
         print("Episode finished!")

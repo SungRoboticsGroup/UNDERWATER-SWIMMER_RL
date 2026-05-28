@@ -1,176 +1,183 @@
 """
-RecurrentPPO Training Script for SALP Robot Navigation
+RecurrentPPO training for the SALP robot, structured to match train_robot_ppo.py:
+argparse-controlled `--version`, `--warm-start`, `--timesteps`, `--n-envs`, and
+auto fine-tune-mode hparams when warm-starting from a BC'd RecurrentPPO zip.
 
-This script trains a RecurrentPPO agent with LSTM memory for underwater robot navigation.
-The LSTM enables the agent to learn temporal patterns in the breathing cycle dynamics.
+Env mirrors train_robot_reward_shaping.py (Dongsheng's calibrated params +
+domain randomization + disturbances). MlpLstmPolicy with separate actor/critic
+LSTMs, hidden size 256.
 
-Comparison with SAC (train_robot.py):
-- RecurrentPPO: On-policy, memory-enabled (LSTM)
-- SAC: Off-policy, memoryless
+Run examples:
+    # From scratch
+    python train_robot_recurrent_ppo.py --version recurrent_v1 --timesteps 2000000
 
-Usage:
-    python train_robot_recurrent_ppo.py
-
-Monitor training:
-    tensorboard --logdir ../experiments/v5_recurrent/logs
+    # From a recurrent-BC warm-start (fine-tune hparams auto-enabled)
+    python train_robot_recurrent_ppo.py \
+        --version recurrent_ppo_bc_v1 \
+        --warm-start ../experiments/recurrent_bc_v1/models/bc_recurrent_ppo.zip \
+        --timesteps 2000000
 """
 
+import argparse
+import numpy as np
+
 from sb3_contrib import RecurrentPPO
-from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, CallbackList
+from stable_baselines3.common.utils import get_schedule_fn
+
 from salp_robot_env import SalpRobotEnv
 from robot import Robot, Nozzle
 from tensorboard_callback import DetailedMetricsCallback
-import numpy as np
-import os
+
+
+# Conservative RecurrentPPO hparams for fine-tuning a BC'd / pretrained policy.
+# Same shape as train_robot_ppo.py's FINE_TUNE_HPARAMS; rationale carries over:
+# slower drift away from the cloned actor, no entropy injection, tighter clip,
+# target_kl early-stops runaway updates, fewer SGD passes per rollout.
+FINE_TUNE_HPARAMS = dict(
+    learning_rate=1e-4,
+    ent_coef=0.0,
+    clip_range=0.1,
+    target_kl=0.05,
+    n_epochs=5,
+)
+
 
 def make_env():
-    """Create and return the SalpRobotEnv environment."""
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15, 
-                    max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
-    robot.set_environment(density=1000)  # water density in kg/m^3
+    nozzle = Nozzle(length1=0.052, length2=0.038, length3=0.050,
+                    area=np.pi * 0.01 ** 2, mass=0.428,
+                    radius=0.1, inner_radius=0.022)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
 
-    env = SalpRobotEnv(render_mode=None, robot=robot)
-    return env
+    robot = Robot(dry_mass=0.738, init_length=0.26, init_width=0.135,
+                  max_contraction=0.04, nozzle=nozzle)
+    robot.set_environment(density=1000)
+    robot.enable_dynamic_randomization()
+    robot.enable_disturbances()
+
+    return SalpRobotEnv(render_mode=None, robot=robot)
+
 
 if __name__ == "__main__":
-    
-    print("="*70)
-    print("RECURRENT PPO TRAINING - VERSION 5")
-    print("="*70)
-    print("\n🧠 Algorithm: RecurrentPPO with LSTM Memory")
-    print("   - On-policy learning (requires more samples than SAC)")
-    print("   - LSTM captures temporal patterns in breathing cycles")
-    print("   - Better handling of sequential decision making")
-    print("\n📊 Same environment and reward as SAC v4")
-    print("="*70 + "\n")
+    parser = argparse.ArgumentParser(description="Train RecurrentPPO agent for salp robot")
+    parser.add_argument("--version", type=str, default="recurrent_v1",
+                        help="Experiment version label. Controls all output paths.")
+    parser.add_argument("--warm-start", type=str, default=None,
+                        help="Path to a .zip RecurrentPPO checkpoint to warm-start from.")
+    parser.add_argument("--timesteps", type=int, default=2_000_000)
+    parser.add_argument("--n-envs", type=int, default=4,
+                        help="Parallel envs. RecurrentPPO uses DummyVecEnv (LSTM state "
+                             "threading is fragile under subprocs).")
+    parser.add_argument("--fine-tune", dest="fine_tune", action="store_true",
+                        help="Apply conservative fine-tune-mode hparams "
+                             "(default: auto-on when --warm-start is given).")
+    parser.add_argument("--no-fine-tune", dest="fine_tune", action="store_false",
+                        help="Disable fine-tune mode even when warm-starting.")
+    parser.set_defaults(fine_tune=None)  # None -> auto = warm_start is not None
+    args = parser.parse_args()
+    if args.fine_tune is None:
+        args.fine_tune = args.warm_start is not None
 
-    # Create experiment directories
-    exp_dir = "../experiments/v5_recurrent"
-    os.makedirs(f"{exp_dir}/logs", exist_ok=True)
-    os.makedirs(f"{exp_dir}/models", exist_ok=True)
-    os.makedirs(f"{exp_dir}/models/best_model", exist_ok=True)
-    os.makedirs(f"{exp_dir}/recordings", exist_ok=True)
-    print(f"✅ Experiment directory created: {exp_dir}\n")
+    version = args.version
+    log_dir   = f"../experiments/{version}/logs"
+    model_dir = f"../experiments/{version}/models"
 
-    # Create vectorized environments
-    # NOTE: RecurrentPPO works best with DummyVecEnv (not SubprocVecEnv)
-    # because LSTM states need to be managed carefully
-    num_cpu = 4  # Reduced from 8 for stability with RecurrentPPO
-    print(f"Creating {num_cpu} parallel environments...")
-    vec_env = make_vec_env(make_env, n_envs=num_cpu, vec_env_cls=DummyVecEnv)
-    print("✅ Environments created\n")
-
-    # Create separate evaluation environment
+    vec_env  = make_vec_env(make_env, n_envs=args.n_envs, vec_env_cls=DummyVecEnv)
     eval_env = make_env()
-    print("✅ Evaluation environment created\n")
+    print("Environment is valid!")
 
-    # Initialize RecurrentPPO model
-    print("Initializing RecurrentPPO model...")
-    print("\n📋 Hyperparameters:")
-    print("   - Policy: MlpLstmPolicy (with LSTM memory)")
-    print("   - Learning rate: 3e-4")
-    print("   - n_steps: 2048 (steps per env before update)")
-    print("   - batch_size: 64")
-    print("   - n_epochs: 10 (optimization epochs per update)")
-    print("   - LSTM hidden size: 256")
-    print("   - Gamma: 0.99 (discount factor)")
-    print("   - GAE lambda: 0.95")
-    print("   - Clip range: 0.2")
-    
-    model = RecurrentPPO(
-        "MlpLstmPolicy",  # Policy with LSTM
-        vec_env,
-        verbose=1,
-        tensorboard_log=f'{exp_dir}/logs',
-        learning_rate=3e-4,
-        n_steps=2048,  # Steps per environment before update
-        batch_size=64,  # Minibatch size for optimization
-        n_epochs=10,  # Number of epochs when optimizing the surrogate loss
-        gamma=0.99,  # Discount factor
-        gae_lambda=0.95,  # Factor for trade-off of bias vs variance for GAE
-        clip_range=0.2,  # Clipping parameter for PPO
-        ent_coef=0.0,  # Entropy coefficient for exploration
-        vf_coef=0.5,  # Value function coefficient
-        max_grad_norm=0.5,  # Max gradient norm for clipping
-        policy_kwargs=dict(
-            lstm_hidden_size=256,  # LSTM hidden state size
-            n_lstm_layers=1,  # Number of LSTM layers
-            enable_critic_lstm=True,  # Use LSTM for critic too
-            shared_lstm=False,  # Separate LSTMs for actor and critic
-        ),
-        device="auto"
-    )
-    print("\n✅ RecurrentPPO model initialized!\n")
+    print("=" * 70)
+    if args.warm_start:
+        print(f"TRAINING {version.upper()} - Warm-start from: {args.warm_start}")
+        print("=" * 70)
+        model = RecurrentPPO.load(args.warm_start, env=vec_env)
+        print("✅ Warm-start RecurrentPPO loaded successfully!")
+        if args.fine_tune:
+            print(f"\nApplying fine-tune hparam overrides: {FINE_TUNE_HPARAMS}")
+            model.learning_rate = FINE_TUNE_HPARAMS["learning_rate"]
+            model.lr_schedule   = get_schedule_fn(FINE_TUNE_HPARAMS["learning_rate"])
+            model.clip_range    = get_schedule_fn(FINE_TUNE_HPARAMS["clip_range"])
+            model.ent_coef      = FINE_TUNE_HPARAMS["ent_coef"]
+            model.target_kl     = FINE_TUNE_HPARAMS["target_kl"]
+            model.n_epochs      = FINE_TUNE_HPARAMS["n_epochs"]
+            for g in model.policy.optimizer.param_groups:
+                g["lr"] = FINE_TUNE_HPARAMS["learning_rate"]
+    else:
+        print(f"TRAINING {version.upper()} - Training from scratch"
+              + (" (fine-tune hparams)" if args.fine_tune else ""))
+        print("=" * 70)
+        from_scratch_hparams = dict(
+            learning_rate=3e-4,
+            n_epochs=10,
+            clip_range=0.2,
+            ent_coef=0.0,
+            target_kl=None,
+        )
+        if args.fine_tune:
+            from_scratch_hparams.update(FINE_TUNE_HPARAMS)
+        model = RecurrentPPO(
+            "MlpLstmPolicy", vec_env, verbose=1,
+            tensorboard_log=log_dir,
+            n_steps=2048,
+            batch_size=64,
+            gamma=0.99,
+            gae_lambda=0.95,
+            vf_coef=0.5,
+            max_grad_norm=0.5,
+            policy_kwargs=dict(
+                lstm_hidden_size=256,
+                n_lstm_layers=1,
+                enable_critic_lstm=True,
+                shared_lstm=False,
+            ),
+            device="auto",
+            **from_scratch_hparams,
+        )
 
-    # Setup Callbacks
-    print("Setting up callbacks...")
-    
-    # Detailed metrics callback (logs custom metrics every 1000 steps)
+    # Set tb log dir (needed for warm-start case where model was already constructed)
+    model.tensorboard_log = log_dir
+
+    print("\nSetting up callbacks...")
     metrics_callback = DetailedMetricsCallback(log_freq=1000, verbose=1)
-    
-    # Evaluation callback (saves best model)
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=f'{exp_dir}/models/best_model/',
-        log_path=f'{exp_dir}/logs/eval_logs/',
-        eval_freq=10000,  # Evaluate every 10k steps (more frequent than SAC)
-        deterministic=True,
+        best_model_save_path=f"{model_dir}/best_model/",
+        log_path=f"{log_dir}/eval_logs/",
+        eval_freq=10000,
+        deterministic=False,
         render=False,
         n_eval_episodes=5,
-        verbose=1
+        verbose=1,
     )
-    
-    # Checkpoint callback (save model periodically)
     checkpoint_callback = CheckpointCallback(
-        save_freq=50000,  # Save every 50k steps
-        save_path=f'{exp_dir}/models/',
-        name_prefix="salp_robot_v5_recurrent",
-        verbose=1
+        save_freq=50000,
+        save_path=model_dir,
+        name_prefix=f"salp_robot_recurrent_ppo_{version}",
+        verbose=1,
     )
-    
-    # Combine callbacks
     callback_list = CallbackList([metrics_callback, eval_callback, checkpoint_callback])
-    
+
     print("✅ Callbacks configured:")
     print("   - Detailed metrics logged every 1000 steps")
     print("   - Evaluation every 10000 steps")
-    print("   - Checkpoints every 50000 steps\n")
+    print("   - Checkpoints every 50000 steps")
 
-    # Train
-    print("="*70)
-    print("STARTING TRAINING - 500k timesteps")
-    print("="*70)
-    print("📊 Monitor progress: tensorboard --logdir ../experiments/v5_recurrent/logs")
-    print("📖 See METRICS.md for metric documentation")
-    print("\n⚠️  NOTE: RecurrentPPO needs more samples than SAC!")
-    print("   - SAC v4: 200k timesteps")
-    print("   - RecurrentPPO v5: 500k timesteps (2.5x more)")
-    print("   - This is expected for on-policy algorithms")
-    print("="*70 + "\n")
-    
+    print("\n" + "=" * 70)
+    print(f"STARTING TRAINING - {args.timesteps:,} timesteps")
+    print("=" * 70)
+    print(f"📊 Monitor progress: tensorboard --logdir {log_dir}")
+    print("=" * 70 + "\n")
+
     model.learn(
-        total_timesteps=500000,  # More than SAC due to on-policy nature
+        total_timesteps=args.timesteps,
         callback=callback_list,
-        tb_log_name="salp_robot_v5_recurrent",
-        progress_bar=True
+        tb_log_name=f"salp_robot_recurrent_ppo_{version}",
+        progress_bar=True,
     )
 
-    # Save Final Model
-    print("\n✅ Training complete!")
-    model.save(f"{exp_dir}/models/salp_robot_v5_recurrent_final")
-    print(f"💾 Final model saved: {exp_dir}/models/salp_robot_v5_recurrent_final")
-    print(f"💾 Best model saved: {exp_dir}/models/best_model/")
-    print("\n" + "="*70)
-    print("TRAINING SUMMARY")
-    print("="*70)
-    print(f"Algorithm: RecurrentPPO with LSTM")
-    print(f"Total timesteps: 500,000")
-    print(f"Parallel envs: {num_cpu}")
-    print(f"Logs: {exp_dir}/logs")
-    print(f"Models: {exp_dir}/models")
-    print("="*70)
+    model.save(f"{model_dir}/salp_robot_recurrent_ppo_{version}_final")
+    print(f"\n✅ Training complete!")
+    print(f"💾 Final model saved: salp_robot_recurrent_ppo_{version}_final")
+    print(f"💾 Best model saved: {model_dir}/best_model/")

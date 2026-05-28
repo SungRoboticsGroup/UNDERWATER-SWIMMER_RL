@@ -1,6 +1,9 @@
 """
-Phase A of SAC -> PPO behavior cloning: collect demonstration rollouts from the
-trained SAC v1 expert.
+Phase A of SAC -> PPO behavior cloning: collect demonstration rollouts from a
+trained SAC expert. Env matches train_robot_reward_shaping.py (Dongsheng's
+calibrated params + domain randomization + disturbances) so the recorded
+transitions live in the same distribution the downstream BC student and PPO
+finetune will see.
 
 Run from src/:
     # Smoke (single env, prints fast)
@@ -32,25 +35,34 @@ from robot import Robot, Nozzle
 
 
 def make_env():
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15,
-                  max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    # Mirror train_robot_reward_shaping.py: Dongsheng's calibrated params +
+    # domain randomization + disturbances. Keeps the rollout distribution
+    # aligned with what SAC was trained on and what PPO finetune will see.
+    nozzle = Nozzle(length1=0.052, length2=0.038, length3=0.050,
+                    area=np.pi * 0.01 ** 2, mass=0.428,
+                    radius=0.1, inner_radius=0.022)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
+
+    robot = Robot(dry_mass=0.738, init_length=0.26, init_width=0.135,
+                  max_contraction=0.04, nozzle=nozzle)
     robot.set_environment(density=1000)
-    return SalpRobotEnv(render_mode=None, robot=robot, num_obstacles=0)
+    robot.enable_dynamic_randomization()
+    robot.enable_disturbances()
+
+    return SalpRobotEnv(render_mode=None, robot=robot)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str,
-                        default="../experiments/sac_v1/models/best_model/best_model",
+                        default="../experiments/rs_v2/models/salp_robot_rs_v2_final",
                         help="Path to the SAC zip (without .zip suffix is fine).")
     parser.add_argument("--num-transitions", type=int, default=200_000,
                         help="Total (s, a) transitions to collect.")
     parser.add_argument("--n-envs", type=int, default=8,
                         help="Parallel envs. 1 -> DummyVecEnv (no subprocess overhead).")
     parser.add_argument("--out", type=str,
-                        default="../experiments/sac_v1/rollouts/expert.npz")
+                        default="../experiments/rs_v2/rollouts/expert.npz")
     parser.add_argument("--deterministic", action="store_true",
                         help="If set, sample actions deterministically instead of stochastically.")
     parser.add_argument("--seed", type=int, default=0)
