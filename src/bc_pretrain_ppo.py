@@ -1,9 +1,4 @@
 """
-LEGACY: this BC pipeline was built against the pre-integration env
-(6+2N obs, [0,1] inhale, body-center reward). After the reward_shaping
-physics+env merge, both the saved SAC expert and the collected rollouts
-are stale. Re-collect rollouts against the new env before reusing.
-
 Phase B of SAC -> PPO behavior cloning.
 
 1. Build a fresh PPO with the same hyperparameters as train_robot_ppo.py.
@@ -14,10 +9,14 @@ Phase B of SAC -> PPO behavior cloning.
 4. Save as a PPO zip that the existing train_robot_ppo.py --warm-start path
    can load unchanged.
 
+Env construction mirrors train_robot_reward_shaping.py (Dongsheng's calibrated
+params + DR + disturbances) so observation/action spaces and stochasticity
+match the SAC expert that produced the rollouts.
+
 Run from src/:
     python bc_pretrain_ppo.py \
-        --rollouts ../experiments/sac_v1/rollouts/expert.npz \
-        --out ../experiments/bc_v1/models/bc_ppo \
+        --rollouts ../experiments/rs_v2/rollouts/expert.npz \
+        --out ../experiments/bc_v3/models/bc_ppo \
         --bc-epochs 20 \
         --critic-epochs 10
 """
@@ -28,6 +27,10 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm.auto import tqdm
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
@@ -40,12 +43,20 @@ from robot import Robot, Nozzle
 
 
 def make_env():
-    nozzle = Nozzle(length1=0.05, length2=0.05, length3=0.05, area=0.00016, mass=1.0)
-    robot = Robot(dry_mass=1.0, init_length=0.3, init_width=0.15,
-                  max_contraction=0.06, nozzle=nozzle)
-    robot.nozzle.set_angles(angle1=0.0, angle2=0.0)
+    # Mirror train_robot_reward_shaping.py: Dongsheng's calibrated params +
+    # domain randomization + disturbances.
+    nozzle = Nozzle(length1=0.052, length2=0.038, length3=0.050,
+                    area=np.pi * 0.01 ** 2, mass=0.428,
+                    radius=0.1, inner_radius=0.022)
+    nozzle.set_angles(angle1=0.0, angle2=0.0)
+
+    robot = Robot(dry_mass=0.738, init_length=0.26, init_width=0.135,
+                  max_contraction=0.04, nozzle=nozzle)
     robot.set_environment(density=1000)
-    return SalpRobotEnv(render_mode=None, robot=robot, num_obstacles=0)
+    robot.enable_dynamic_randomization()
+    robot.enable_disturbances()
+
+    return SalpRobotEnv(render_mode=None, robot=robot)
 
 
 def compute_mc_returns(rewards: np.ndarray, dones: np.ndarray, gamma: float) -> np.ndarray:
@@ -64,9 +75,9 @@ def compute_mc_returns(rewards: np.ndarray, dones: np.ndarray, gamma: float) -> 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rollouts", type=str,
-                   default="../experiments/sac_v1/rollouts/expert.npz")
+                   default="../experiments/rs_v2/rollouts/expert.npz")
     p.add_argument("--out", type=str,
-                   default="../experiments/bc_v1/models/bc_ppo",
+                   default="../experiments/bc_v3/models/bc_ppo",
                    help="Output PPO zip path (without .zip suffix).")
     p.add_argument("--bc-epochs",     type=int, default=20)
     p.add_argument("--bc-batch-size", type=int, default=256)
@@ -141,7 +152,26 @@ def main():
         optimizer_kwargs={"lr": args.lr},
         device=device,
     )
-    bc_trainer.train(n_epochs=args.bc_epochs, progress_bar=True)
+
+    # Per-epoch loop so we can capture average BC loss per epoch for plotting.
+    # Loss = -log p(expert_action | obs) under PPO's stochastic actor (matches
+    # what imitation.bc.BC minimizes, plus a small entropy bonus we ignore).
+    obs_t_all = th.as_tensor(obs, dtype=th.float32, device=device)
+    act_t_all = th.as_tensor(actions, dtype=th.float32, device=device)
+    eval_idx_size = min(8192, len(obs))  # sample for fast per-epoch loss probe
+
+    bc_losses = []
+    pbar = tqdm(range(args.bc_epochs), desc="BC epochs")
+    for epoch in pbar:
+        bc_trainer.train(n_epochs=1, progress_bar=False)
+        ppo.policy.eval()
+        with th.no_grad():
+            idx = th.randint(len(obs), (eval_idx_size,), device=device)
+            _, logp, _ = ppo.policy.evaluate_actions(obs_t_all[idx], act_t_all[idx])
+            loss = -logp.mean().item()
+        ppo.policy.train()
+        bc_losses.append(loss)
+        pbar.set_postfix({"neg_logp": f"{loss:.3f}"})
 
     # --- 4. Critic pretrain on MC returns -----------------------------------
     print(f"\n=== Critic pretrain: {args.critic_epochs} epochs, "
@@ -176,7 +206,9 @@ def main():
         TensorDataset(obs_t, ret_t),
         batch_size=args.critic_batch_size, shuffle=True,
     )
-    for epoch in range(args.critic_epochs):
+    critic_mses = []
+    pbar = tqdm(range(args.critic_epochs), desc="Critic epochs")
+    for epoch in pbar:
         losses = []
         for ob_b, ret_b in loader:
             v = ppo.policy.predict_values(ob_b).squeeze(-1)
@@ -185,7 +217,9 @@ def main():
             loss.backward()
             opt.step()
             losses.append(loss.item())
-        print(f"  critic epoch {epoch+1:>2}/{args.critic_epochs}: mse={np.mean(losses):.3f}")
+        epoch_mse = float(np.mean(losses))
+        critic_mses.append(epoch_mse)
+        pbar.set_postfix({"mse": f"{epoch_mse:.3f}"})
 
     ppo.policy.eval()
     with th.no_grad():
@@ -211,9 +245,50 @@ def main():
         os.makedirs(out_dir, exist_ok=True)
     ppo.save(args.out)
     print(f"\nsaved -> {args.out}.zip")
+
+    # --- 7. Save metrics + plots -----------------------------------------
+    plots_dir = os.path.join(out_dir, "plots") if out_dir else "plots"
+    os.makedirs(plots_dir, exist_ok=True)
+
+    # Persist raw numbers so they can be re-plotted later if needed.
+    metrics_npz = os.path.join(plots_dir, "bc_metrics.npz")
+    np.savez(
+        metrics_npz,
+        bc_losses=np.asarray(bc_losses, dtype=np.float32),
+        critic_mses=np.asarray(critic_mses, dtype=np.float32),
+        critic_mse_pre=np.float32(mse0),
+        critic_mse_post=np.float32(mse1),
+    )
+    print(f"saved metrics -> {metrics_npz}")
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+    axes[0].plot(range(1, len(bc_losses) + 1), bc_losses, marker="o", markersize=3)
+    axes[0].set_xlabel("BC epoch")
+    axes[0].set_ylabel("mean -log p(expert action | obs)")
+    axes[0].set_title(f"BC actor loss ({len(bc_losses)} epochs, sampled probe)")
+    axes[0].grid(True, alpha=0.3)
+
+    # Critic MSE on a log scale — easier to read the order-of-magnitude drop.
+    critic_x = list(range(1, len(critic_mses) + 1))
+    axes[1].plot(critic_x, critic_mses, marker="o", markersize=3, label="train MSE")
+    axes[1].axhline(mse0, color="red",   linestyle="--", alpha=0.6, label=f"pre-pretrain ({mse0:.0f})")
+    axes[1].axhline(mse1, color="green", linestyle="--", alpha=0.6, label=f"post-pretrain ({mse1:.0f})")
+    axes[1].set_xlabel("critic epoch")
+    axes[1].set_ylabel("MSE(V(s), MC return)")
+    axes[1].set_title(f"Critic pretrain ({len(critic_mses)} epochs)")
+    axes[1].set_yscale("log")
+    axes[1].legend(loc="upper right", fontsize=9)
+    axes[1].grid(True, alpha=0.3, which="both")
+
+    fig.tight_layout()
+    plot_path = os.path.join(plots_dir, "bc_curves.png")
+    fig.savefig(plot_path, dpi=140)
+    plt.close(fig)
+    print(f"saved plot    -> {plot_path}")
     print(f"\nNext step:")
     print(f"  cd src && python train_robot_ppo.py \\")
-    print(f"      --version ppo_bc_v1 \\")
+    print(f"      --version ppo_bc_v3_finetune \\")
     print(f"      --warm-start {args.out}.zip")
 
 
