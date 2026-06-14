@@ -53,6 +53,7 @@ class SalpRobotEnv(gym.Env):
         # Robot state
         self.robot = robot
         self.action = np.array([0.0, 0.0, 0.0])
+        self.prev_observation = None
         
         # Action space: [inhale_control (0/1), nozzle_direction (-1 to 1)]
         self.action_space = spaces.Box(
@@ -61,10 +62,10 @@ class SalpRobotEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation: [dx_body, dy_body, vx, vy, angular_vel]
+        # Observation: [dx_body, dy_body, vx, vy, angular_vel, action[0], action[1], action[2]]
         self.observation_space = spaces.Box(
-            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
-            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
+            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
 
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
@@ -116,9 +117,24 @@ class SalpRobotEnv(gym.Env):
         # Reset robot to center
         self.robot.reset()
         self.pos_init = np.array([self.width / 2, self.height / 2])
+        # tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        # self.prev_dist = np.linalg.norm(tracking_point_pos[0:-1] - self.target_point)
+        # self.prev_action = np.array([0.0, 0.0, 0.0])
+
         tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
-        self.prev_dist = np.linalg.norm(tracking_point_pos[0:-1] - self.target_point)
-        self.prev_action = np.array([0.0, 0.0, 0.0])
+        dist = self.target_point - tracking_point_pos[0:2]
+        dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
+        self.prev_observation = np.array([
+            dist_body[0],  # dx_body
+            dist_body[1],  # dy_body
+            0.0,  # vx
+            0.0,  # vy
+            0.0,  # angular_vel
+            0.0,
+            0.0,
+            0.0
+        ], dtype=np.float32)
+
         self.prev_target_point = tracking_point_pos[0:-1].copy()
 
         # clear any previously recorded cycle history
@@ -223,7 +239,7 @@ class SalpRobotEnv(gym.Env):
         if self.observation_randomization:
             observation = self._randomize_observations(observation)
 
-        reward, reward_details = self._calculate_reward()
+        reward, reward_details = self._calculate_reward(observation)
 
         # Termination
         done = False
@@ -244,7 +260,7 @@ class SalpRobotEnv(gym.Env):
         info = {}
         info.update(reward_details)
 
-        self.prev_action = self.action
+        self.prev_observation = observation
 
         if self.latency:
             latency = geometry.randomize_scalar_jit(0.5, 1.0)
@@ -252,15 +268,16 @@ class SalpRobotEnv(gym.Env):
 
         return observation, reward, done, truncated, info
     
-    def _calculate_reward(self) -> Tuple[float, Dict]:
+    def _calculate_reward(self, observation) -> Tuple[float, Dict]:
         """Calculate reward based on movement and efficiency."""
 
         # 1. Tracking: reward progress toward target
-        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
-        current_diff = tracking_point_pos[0:-1] - self.target_point
+        # tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+        current_diff = observation[0:2]
         current_dist = np.linalg.norm(current_diff)
-        r_track = (-current_dist + self.prev_dist) * 100
-        self.prev_dist = current_dist
+        prev_diff = self.prev_observation[0:2]
+        prev_dist = np.linalg.norm(prev_diff)
+        r_track = (-current_dist + prev_dist) * 100
 
         # 2. Heading: penalise pointing away from target (body frame)
         current_diff = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
@@ -270,21 +287,20 @@ class SalpRobotEnv(gym.Env):
         r_energy = 0.0
 
         # 4. Smoothness: penalise nozzle angle jerk
-        _, _, nozzle_yaw = self.action
-        angle_change = nozzle_yaw - self.prev_action[2]
-        r_smooth = -1.0 * (angle_change ** 2)
+        angle_change = self.action[-1] - self.prev_observation[-1]
+        r_smooth = -5.0 * (angle_change ** 2)
 
         # 5. Yaw stability: penalise large average angular velocity
-        r_yaw = -10.0 * abs(self.robot.avg_cycle_angular_velocity[2])
+        r_yaw = - 0.0 * abs(self.robot.avg_cycle_angular_velocity[2])
 
         # 6. Cross-track error — disabled
         r_cross_track = 0.0
 
         # 7. Time penalty
-        r_time = -0.1
+        r_time = -0.1 * self. [1]
 
         # 8. Nozzle angle penalty 
-        r_nozzle = -10.0 * self.action[2] ** 2
+        r_nozzle = -1.0 * self.action[2] ** 2
 
         # 9. Sideslip / sway penalty - disabled
         r_sideslip = 0.0
@@ -584,6 +600,9 @@ class SalpRobotEnv(gym.Env):
             tracking_point_vel[0],
             tracking_point_vel[1],
             self.robot.angular_velocity[2],
+            self.action[0],
+            self.action[1],
+            self.action[2],
         ], dtype=np.float32)
     
     def _get_info(self) -> Dict:

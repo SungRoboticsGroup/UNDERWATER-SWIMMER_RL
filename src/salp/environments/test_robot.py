@@ -322,6 +322,8 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
         next_pos = trajectory[1]
         env.robot.position_world[0] = start_pos[0]
         env.robot.position_world[1] = start_pos[1]
+        env.robot.position_front_world[0] = start_pos[0]
+        env.robot.position_front_world[1] = start_pos[1]
         direction = next_pos - start_pos
         yaw_angle = np.arctan2(direction[1], direction[0])
         env.robot.euler_angle[2] = yaw_angle
@@ -336,7 +338,7 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     total_steps = 0
     targets_reached = 0
     distances_to_targets = []
-    actual_trajectory = [np.array([env.robot.position_world[0], env.robot.position_world[1]])]
+    actual_trajectory = [np.array([env.robot.position_front_world[0], env.robot.position_front_world[1]])]
 
     trajectory.append(trajectory[0])  # loop back to start
     trajectory = trajectory[1:]
@@ -354,12 +356,12 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
 
-            actual_trajectory.append(np.array([env.robot.position_world[0], env.robot.position_world[1]]))
+            actual_trajectory.append(np.array([env.robot.position_front_world[0], env.robot.position_front_world[1]]))
 
             if render:
                 env.wait_for_animation()
 
-            distance = np.linalg.norm(env.robot.position_world[0:-1] - target)
+            distance = np.linalg.norm(env.robot.position_front_world[0:-1] - target)
             min_distance = min(min_distance, distance)
             total_steps += 1
 
@@ -657,6 +659,276 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
         'total_steps': total_steps,
     }
 
+
+# ---------------------------------------------------------------------------
+# Pure Pursuit trajectory tracking
+# ---------------------------------------------------------------------------
+
+def pure_pursuit_lookahead(
+    robot_pos: np.ndarray,
+    waypoints: list,
+    lookahead_dist: float,
+    start_seg: int = 0,
+    is_closed: bool = True,
+) -> tuple:
+    """Find the pure-pursuit lookahead point on a piecewise-linear path.
+
+    The algorithm:
+      1. Find the path segment and parameter closest to *robot_pos*.
+      2. Walk forward along the arc from that closest point by *lookahead_dist*.
+      3. Return the resulting point and the index of the segment it lies on.
+
+    Args:
+        robot_pos:      Current robot 2-D position [x, y].
+        waypoints:      Ordered list / array of [x, y] path waypoints.
+        lookahead_dist: How far ahead on the arc to place the target (metres).
+        start_seg:      Segment index hint — search starts here and wraps
+                        around for closed paths.  Avoids latching onto a
+                        segment already behind the robot.
+        is_closed:      If True the last waypoint connects back to the first.
+
+    Returns:
+        (lookahead_point, segment_index) where *lookahead_point* is [x, y] and
+        *segment_index* is the index into the segments list for the returned
+        point.
+    """
+    pts = np.asarray(waypoints, dtype=float)
+    n = len(pts)
+
+    # Build segment list
+    if is_closed:
+        segments = [(i, (i + 1) % n) for i in range(n)]
+    else:
+        segments = [(i, i + 1) for i in range(n - 1)]
+    total_segs = len(segments)
+
+    # --- Step 1: find the closest point on the path, starting from start_seg --
+    best_dist = float('inf')
+    best_seg = start_seg % total_segs
+    best_t = 0.0
+
+    for offset in range(total_segs):
+        seg_idx = (start_seg + offset) % total_segs
+        i, j = segments[seg_idx]
+        a, b = pts[i], pts[j]
+        ab = b - a
+        ab_len_sq = float(np.dot(ab, ab))
+        if ab_len_sq < 1e-12:
+            continue
+        t = float(np.clip(np.dot(robot_pos - a, ab) / ab_len_sq, 0.0, 1.0))
+        closest = a + t * ab
+        d = float(np.linalg.norm(robot_pos - closest))
+        if d < best_dist:
+            best_dist = d
+            best_seg = seg_idx
+            best_t = t
+
+    # --- Step 2: walk forward by lookahead_dist from the closest point --------
+    remaining = lookahead_dist
+    seg_idx = best_seg
+    t = best_t
+
+    for _ in range(total_segs):
+        i, j = segments[seg_idx]
+        a, b = pts[i], pts[j]
+        ab = b - a
+        seg_len = float(np.linalg.norm(ab))
+        if seg_len < 1e-12:
+            seg_idx = (seg_idx + 1) % total_segs
+            t = 0.0
+            continue
+
+        dist_to_end = seg_len * (1.0 - t)
+        if remaining <= dist_to_end:
+            lookahead_t = t + remaining / seg_len
+            return a + lookahead_t * ab, seg_idx
+
+        remaining -= dist_to_end
+        seg_idx = (seg_idx + 1) % total_segs
+        t = 0.0
+
+    # Fallback: clamp to the last waypoint reached
+    i, j = segments[best_seg]
+    return pts[j], best_seg
+
+
+def test_pure_pursuit_tracking(
+    env,
+    model,
+    trajectory: list,
+    max_steps: int = 500,
+    lookahead_dist: float = 0.25,
+    is_closed: bool = True,
+    render: bool = True,
+    completion_laps: int = 1,
+) -> dict:
+    """Test robot trajectory tracking using the Pure Pursuit algorithm.
+
+    Unlike the waypoint-based :func:`test_trajectory_tracking`, Pure Pursuit
+    continuously updates ``env.target_point`` to a lookahead point that is
+    *lookahead_dist* metres ahead of the robot along the reference path.  This
+    produces smoother target updates and better handles the robot falling behind
+    or cutting corners.
+
+    Args:
+        env:             SalpRobotEnv instance.
+        model:           Trained SB3 model.
+        trajectory:      List of [x, y] waypoints defining the reference path.
+        max_steps:       Maximum environment steps before the test ends.
+        lookahead_dist:  Pure-pursuit lookahead distance in metres.
+        is_closed:       If True, the path is treated as a closed loop.
+        render:          If True, call ``env.wait_for_animation()`` each step.
+        completion_laps: Number of laps to run before stopping (closed paths
+                         only; ignored when *is_closed* is False).
+
+    Returns:
+        dict with keys:
+            actual_trajectory, desired_trajectory, cross_track_errors,
+            along_track_progress, total_steps, laps_completed,
+            mean_cross_track_error, max_cross_track_error.
+    """
+    if len(trajectory) < 2:
+        raise ValueError("trajectory must contain at least 2 waypoints")
+
+    pts = np.asarray(trajectory, dtype=float)
+
+    # Pre-compute cumulative arc lengths for progress tracking
+    diffs = np.diff(pts, axis=0)
+    seg_lengths = np.linalg.norm(diffs, axis=1)
+    if is_closed:
+        seg_lengths = np.append(seg_lengths, np.linalg.norm(pts[0] - pts[-1]))
+    total_path_len = float(np.sum(seg_lengths))
+    cum_lengths = np.concatenate([[0.0], np.cumsum(seg_lengths)])
+
+    obs, _ = env.reset()
+
+    # Place robot at the first waypoint, oriented toward the second
+    start_pos = pts[0]
+    env.robot.position_world[0] = start_pos[0]
+    env.robot.position_world[1] = start_pos[1]
+    env.robot.position_front_world[0] = start_pos[0]
+    env.robot.position_front_world[1] = start_pos[1]
+    direction = pts[1] - pts[0]
+    env.robot.euler_angle[2] = float(np.arctan2(direction[1], direction[0]))
+
+    # Set full trajectory for visualisation
+    env.set_trajectory(list(trajectory))
+
+    # Find initial lookahead
+    robot_pos = pts[0].copy()
+    lookahead_pt, current_seg = pure_pursuit_lookahead(
+        robot_pos, trajectory, lookahead_dist, start_seg=0, is_closed=is_closed
+    )
+    env.target_point = lookahead_pt.copy()
+    env.prev_target_point = robot_pos.copy()
+    tracking_pt = env.robot.get_tracking_point_position_world(env.tracking_point)
+    env.prev_dist = float(np.linalg.norm(tracking_pt[0:2] - lookahead_pt))
+
+    # Metrics
+    actual_trajectory = [robot_pos.copy()]
+    cross_track_errors = []
+    along_track_arc = 0.0          # total arc walked so far
+    laps_completed = 0
+    prev_seg = current_seg
+    step = 0
+
+    print(f"\n{'='*60}")
+    print(f"PURE PURSUIT TRAJECTORY TRACKING")
+    print(f"{'='*60}")
+    print(f"Waypoints     : {len(trajectory)}")
+    print(f"Lookahead dist: {lookahead_dist:.3f} m")
+    print(f"Path length   : {total_path_len:.3f} m  ({'closed' if is_closed else 'open'})")
+    print(f"Max steps     : {max_steps}")
+    print(f"{'='*60}\n")
+
+    for step in range(max_steps):
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, terminated, truncated, info = env.step(action)
+
+        tracking_pt = env.robot.get_tracking_point_position_world(env.tracking_point)
+        robot_pos = tracking_pt[0:2].copy()
+        actual_trajectory.append(robot_pos.copy())
+
+        # --- Pure pursuit: update lookahead point ----------------------------
+        lookahead_pt, current_seg = pure_pursuit_lookahead(
+            robot_pos, trajectory, lookahead_dist,
+            start_seg=current_seg, is_closed=is_closed,
+        )
+        env.prev_target_point = env.target_point.copy()
+        env.target_point = lookahead_pt.copy()
+        env.current_waypoint_index = current_seg
+        env.prev_dist = float(np.linalg.norm(robot_pos - lookahead_pt))
+
+        # --- Cross-track error (perp distance to nearest path segment) -------
+        i, j_idx = current_seg, (current_seg + 1) % len(trajectory)
+        a = pts[i]
+        b = pts[j_idx] if is_closed else pts[min(j_idx, len(pts) - 1)]
+        ab = b - a
+        ab_len = float(np.linalg.norm(ab))
+        if ab_len > 1e-10:
+            t_cte = float(np.clip(np.dot(robot_pos - a, ab) / (ab_len ** 2), 0.0, 1.0))
+            cte = float(np.linalg.norm(robot_pos - (a + t_cte * ab)))
+        else:
+            cte = float(np.linalg.norm(robot_pos - a))
+        cross_track_errors.append(cte)
+
+        # --- Along-track progress & lap counting ----------------------------
+        seg_arc = cum_lengths[current_seg]
+        i_pt, j_pt = (current_seg, (current_seg + 1) % len(pts))
+        t_at = float(np.clip(
+            np.dot(robot_pos - pts[i_pt], pts[j_pt] - pts[i_pt]) /
+            max(float(np.linalg.norm(pts[j_pt] - pts[i_pt])) ** 2, 1e-12),
+            0.0, 1.0
+        ))
+        arc_position = seg_arc + t_at * seg_lengths[current_seg]
+
+        # Detect lap completion (segment index wrapped around)
+        if is_closed and current_seg < prev_seg and prev_seg >= len(trajectory) - 2:
+            laps_completed += 1
+            print(f"  Lap {laps_completed} completed at step {step + 1}")
+            if laps_completed >= completion_laps:
+                print(f"\n  Target laps reached at step {step + 1}")
+                step += 1
+                break
+        prev_seg = current_seg
+
+        if (step + 1) % 50 == 0:
+            print(f"  step {step+1:4d} | seg {current_seg:3d} | CTE {cte:.4f} m | arc {arc_position:.3f} m")
+
+        if terminated or truncated:
+            print(f"\n  Episode ended at step {step + 1} (terminated={terminated}, truncated={truncated})")
+            obs, _ = env.reset()
+            env.set_trajectory(list(trajectory))
+            env.robot.euler_angle[2] = float(np.arctan2(direction[1], direction[0]))
+
+        if render:
+            env.wait_for_animation()
+
+    total_steps = step + 1 if step < max_steps else max_steps
+    mean_cte = float(np.mean(cross_track_errors)) if cross_track_errors else 0.0
+    max_cte = float(np.max(cross_track_errors)) if cross_track_errors else 0.0
+
+    print(f"\n{'='*60}")
+    print(f"PURE PURSUIT RESULTS")
+    print(f"{'='*60}")
+    print(f"  Total steps          : {total_steps}")
+    print(f"  Laps completed       : {laps_completed}")
+    print(f"  Mean cross-track err : {mean_cte:.4f} m")
+    print(f"  Max  cross-track err : {max_cte:.4f} m")
+    print(f"{'='*60}\n")
+
+    return {
+        'actual_trajectory': actual_trajectory,
+        'desired_trajectory': list(trajectory),
+        'cross_track_errors': cross_track_errors,
+        'along_track_progress': arc_position if cross_track_errors else 0.0,
+        'total_steps': total_steps,
+        'laps_completed': laps_completed,
+        'mean_cross_track_error': mean_cte,
+        'max_cross_track_error': max_cte,
+    }
+
+
 if __name__ == "__main__":
     # Robot physical parameters — DO NOT CHANGE
     nozzle = Nozzle(
@@ -673,8 +945,8 @@ if __name__ == "__main__":
     robot.enable_history_recording()
 
     env = SalpRobotEnv(render_mode="human", robot=robot)
-    model = SAC.load("./salp_robot_final_front_pos", env=env)  
-    result = test_single_target_tracking(env, model, target=np.array([1.5, 0.9]), max_steps=300, threshold=0.05)
+    model = SAC.load("./logs/salp_robot_expanded_state_finetune_200000_steps", env=env)
+    # result = test_single_target_tracking(env, model, target=np.array([1.5, 0.9]), max_steps=300, threshold=0.05)
 
     
     # Choose a trajectory type
@@ -706,43 +978,58 @@ if __name__ == "__main__":
     
     # env.start_recording()
     
-    # Test the trajectory
-    stats = test_trajectory_tracking(env, model, trajectory, steps_per_target=100, render=True)
-    
-    # Print summary statistics
-    print(f"\n{'='*60}")
-    print(f"TRAJECTORY TRACKING RESULTS - {trajectory_name.upper()}")
-    print(f"{'='*60}")
-    print(f"Total targets: {stats['total_targets']}")
-    print(f"Targets reached: {stats['targets_reached']}")
-    print(f"Success rate: {stats['success_rate']*100:.1f}%")
-    print(f"Average minimum distance: {stats['avg_min_distance']:.3f}m")
-    print(f"Total steps: {stats['total_steps']}")
+    # --- Choose: 'waypoint' for discrete waypoint tracking, 'pure_pursuit' for Pure Pursuit ---
+    tracking_mode = 'pure_pursuit'   # change to 'waypoint' to use the old method
+
+    if tracking_mode == 'pure_pursuit':
+        stats = test_pure_pursuit_tracking(
+            env, model, trajectory,
+            max_steps=500,
+            lookahead_dist=0.40,
+            is_closed=True,
+            render=True,
+            completion_laps=1,
+        )
+        print(f"\n{'='*60}")
+        print(f"PURE PURSUIT RESULTS - {trajectory_name.upper()}")
+        print(f"{'='*60}")
+        print(f"Total steps          : {stats['total_steps']}")
+        print(f"Laps completed       : {stats['laps_completed']}")
+        print(f"Mean cross-track err : {stats['mean_cross_track_error']:.4f} m")
+        print(f"Max  cross-track err : {stats['max_cross_track_error']:.4f} m")
+    else:
+        stats = test_trajectory_tracking(env, model, trajectory, steps_per_target=100, render=True)
+        print(f"\n{'='*60}")
+        print(f"TRAJECTORY TRACKING RESULTS - {trajectory_name.upper()}")
+        print(f"{'='*60}")
+        print(f"Total targets: {stats['total_targets']}")
+        print(f"Targets reached: {stats['targets_reached']}")
+        print(f"Success rate: {stats['success_rate']*100:.1f}%")
+        print(f"Average minimum distance: {stats['avg_min_distance']:.3f}m")
+        print(f"Total steps: {stats['total_steps']}")
 
     # gif_path = env.stop_recording(f"trajectory_{trajectory_name}_test.gif")
     env.close()
-    
+
     # Generate trajectory comparison plots
     print(f"\n{'='*60}")
     print("Generating trajectory comparison plots...")
     print(f"{'='*60}")
-    
-    # Plot trajectory comparison
+
     plot_trajectory_comparison(
         stats['desired_trajectory'],
         stats['actual_trajectory'],
-        title=f"Trajectory Comparison - {trajectory_name.upper()}",
-        save_path=f"recordings/trajectory_comparison_{trajectory_name}.png"
+        title=f"Trajectory Comparison ({tracking_mode}) - {trajectory_name.upper()}",
+        save_path=f"recordings/trajectory_comparison_{trajectory_name}_{tracking_mode}.png"
     )
-    
-    # Plot tracking error over time
+
     plot_tracking_error_over_time(
         stats['desired_trajectory'],
         stats['actual_trajectory'],
-        title=f"Tracking Error - {trajectory_name.upper()}",
-        save_path=f"recordings/tracking_error_{trajectory_name}.png"
+        title=f"Tracking Error ({tracking_mode}) - {trajectory_name.upper()}",
+        save_path=f"recordings/tracking_error_{trajectory_name}_{tracking_mode}.png"
     )
-    
+
     print(f"✓ All plots saved to recordings/ directory")
 
 

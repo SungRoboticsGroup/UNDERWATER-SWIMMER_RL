@@ -351,6 +351,145 @@ def plot_yaw_angle(file_names: list, start_time: list) -> None:
     plt.tight_layout()
     plt.show()
 
+def plot_contraction_comparison(save_path: str = None) -> None:
+    """Plot X-Z trajectories for 2 cm, 3 cm, and 4 cm compression levels.
+
+    Publication-quality figure with colorblind-safe colors, serif fonts,
+    and a clean two-spine layout.  The 0-deg nozzle trajectories are aligned
+    so the first trajectory lies along the positive X axis.
+
+    Args:
+        save_path: If provided, save the figure to this path at 300 DPI.
+    """
+    file_names = [
+        'compression_2cm_coast_2s_nozzle_0deg.csv',
+        'compression_3cm_coast_2s_nozzle_0deg.csv',
+        'compression_4cm_coast_2s_nozzle_0deg.csv',
+    ]
+    start_times = [25, 22, 22]
+    labels = ['2 cm', '3 cm', '4 cm']
+
+    # Colorblind-safe palette (Wong 2011)
+    colors = ['#0072B2', '#E69F00', '#D55E00']
+
+    rc_params = {
+        'font.family': 'serif',
+        'font.size': 13,
+        'axes.labelsize': 14,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'legend.fontsize': 12,
+        'axes.linewidth': 0.8,
+        'grid.linewidth': 0.5,
+    }
+
+    with plt.rc_context(rc_params):
+        fig, ax = plt.subplots(figsize=(7, 6))
+
+        for file_name, start, label, color in zip(file_names, start_times, labels, colors):
+            _, positions, _, _ = read_file(file_name, start_time=start)
+            x, z = positions[:, 0], positions[:, 2]
+
+            # Rotate each trajectory individually so its start→end vector aligns with +X
+            dx = x[-1] - x[0]
+            dz = z[-1] - z[0]
+            angle = -np.arctan2(dz, dx)
+            c, s = np.cos(angle), np.sin(angle)
+            x_rot = c * x - s * z
+            z_rot = s * x + c * z
+
+            ax.plot(x_rot, z_rot, '-', color=color, linewidth=2.0,
+                    label=label, solid_capstyle='round')
+            ax.plot(x_rot[0], z_rot[0], 'o', color=color, markersize=6,
+                    markeredgecolor='white', markeredgewidth=0.8, zorder=5)
+            ax.plot(x_rot[-1], z_rot[-1], 's', color=color, markersize=6,
+                    markeredgecolor='white', markeredgewidth=0.8, zorder=5)
+
+        ax.set_xlabel('X position (m)')
+        ax.set_ylabel('Z position (m)')
+        ax.invert_yaxis()
+        ax.set_aspect('equal', adjustable='datalim')
+        ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.4, color='gray')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.legend(title='Compression', loc='best',
+                  framealpha=0.9, edgecolor='#cccccc', fancybox=False)
+
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to {save_path}")
+        plt.show()
+
+
+def plot_coast_contraction_comparison(save_path: str = None) -> None:
+    """Plot X-Z trajectories comparing different coast times and compression levels.
+
+    Args:
+        save_path: If provided, save the figure to this path at 300 DPI.
+    """
+    file_names = [
+        'compression_3cm_coast_2s_nozzle_0deg.csv',
+        'compression_4cm_coast_2s_nozzle_0deg.csv',
+        'compression_3cm_coast_3s_nozzle_0deg.csv',
+    ]
+    start_times = [22, 22, 28]
+    labels = ['3 cm / 2 s', '4 cm / 2 s', '3 cm / 3 s']
+
+    # Colorblind-safe palette (Wong 2011)
+    colors = ['#0072B2', '#E69F00', '#D55E00']
+
+    rc_params = {
+        'font.family': 'serif',
+        'font.size': 13,
+        'axes.labelsize': 14,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'legend.fontsize': 12,
+        'legend.title_fontsize': 12,
+        'axes.linewidth': 0.8,
+        'grid.linewidth': 0.5,
+    }
+
+    with plt.rc_context(rc_params):
+        fig, ax = plt.subplots(figsize=(7, 6))
+
+        for file_name, start, label, color in zip(file_names, start_times, labels, colors):
+            _, positions, _, _ = read_file(file_name, start_time=start)
+            x, z = positions[:, 0], positions[:, 2]
+
+            # Rotate each trajectory individually so its start→end aligns with +X
+            dx = x[-1] - x[0]
+            dz = z[-1] - z[0]
+            theta = -np.arctan2(dz, dx)
+            ct, st = np.cos(theta), np.sin(theta)
+            x_rot = ct * x - st * z
+            z_rot = st * x + ct * z
+
+            ax.plot(x_rot, z_rot, '-', color=color, linewidth=2.0,
+                    label=label, solid_capstyle='round')
+            ax.plot(x_rot[0], z_rot[0], 'o', color=color, markersize=6,
+                    markeredgecolor='white', markeredgewidth=0.8, zorder=5)
+            ax.plot(x_rot[-1], z_rot[-1], 's', color=color, markersize=6,
+                    markeredgecolor='white', markeredgewidth=0.8, zorder=5)
+
+        ax.set_xlabel('X position (m)')
+        ax.set_ylabel('Z position (m)')
+        ax.invert_yaxis()
+        ax.set_aspect('equal', adjustable='datalim')
+        ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.4, color='gray')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.legend(title='Compression / Coast time', loc='best',
+                  framealpha=0.9, edgecolor='#cccccc', fancybox=False)
+
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to {save_path}")
+        plt.show()
+
+
 def plot_nozzle_angle_comparison():
 
     start_time = [22, 165, 118, 22, 55]
@@ -387,7 +526,9 @@ if __name__ == "__main__":
     # plot_velocity_magnitudes(file_names, start_time)
     # plot_velocity_components_xz(file_names, start_time)
     # compute_average_velocities(file_names, start_time)
-    plot_yaw_rate(file_names, start_time)
+    # plot_yaw_rate(file_names, start_time)
     # plot_yaw_angle(file_names, start_time)
+    # plot_contraction_comparison(save_path="contraction_comparison.pdf")
+    plot_coast_contraction_comparison(save_path="coast_contraction_comparison.pdf")
 
     # plot_nozzle_angle_comparison()
