@@ -297,7 +297,7 @@ class SalpRobotEnv(gym.Env):
         r_cross_track = 0.0
 
         # 7. Time penalty
-        r_time = -0.1 * self. [1]
+        r_time = -0.1 * self.action[1]
 
         # 8. Nozzle angle penalty 
         r_nozzle = -1.0 * self.action[2] ** 2

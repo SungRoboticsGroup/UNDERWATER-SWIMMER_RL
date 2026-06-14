@@ -320,10 +320,12 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     if len(trajectory) >= 2:
         start_pos = trajectory[0]
         next_pos = trajectory[1]
+
         env.robot.position_world[0] = start_pos[0]
         env.robot.position_world[1] = start_pos[1]
         env.robot.position_front_world[0] = start_pos[0]
         env.robot.position_front_world[1] = start_pos[1]
+
         direction = next_pos - start_pos
         yaw_angle = np.arctan2(direction[1], direction[0])
         env.robot.euler_angle[2] = yaw_angle
@@ -660,273 +662,197 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
     }
 
 
-# ---------------------------------------------------------------------------
-# Pure Pursuit trajectory tracking
-# ---------------------------------------------------------------------------
+def pure_pursuit_lookahead(env, lookahead_distance: float = 0.3):
+    """
+    Compute the pure pursuit lookahead point given the current env state.
 
-def pure_pursuit_lookahead(
-    robot_pos: np.ndarray,
-    waypoints: list,
-    lookahead_dist: float,
-    start_seg: int = 0,
-    is_closed: bool = True,
-) -> tuple:
-    """Find the pure-pursuit lookahead point on a piecewise-linear path.
-
-    The algorithm:
-      1. Find the path segment and parameter closest to *robot_pos*.
-      2. Walk forward along the arc from that closest point by *lookahead_dist*.
-      3. Return the resulting point and the index of the segment it lies on.
+    Walks forward along ``env.trajectory_waypoints`` starting from
+    ``env.current_waypoint_index`` and returns the first waypoint that is
+    at least *lookahead_distance* metres away from the robot's tracking
+    point.  If all waypoints are closer than the look-ahead distance the
+    furthest one is returned as a fallback.
 
     Args:
-        robot_pos:      Current robot 2-D position [x, y].
-        waypoints:      Ordered list / array of [x, y] path waypoints.
-        lookahead_dist: How far ahead on the arc to place the target (metres).
-        start_seg:      Segment index hint — search starts here and wraps
-                        around for closed paths.  Avoids latching onto a
-                        segment already behind the robot.
-        is_closed:      If True the last waypoint connects back to the first.
+        env: SalpRobotEnv instance with trajectory_waypoints set.
+        lookahead_distance: Look-ahead radius in metres.
 
     Returns:
-        (lookahead_point, segment_index) where *lookahead_point* is [x, y] and
-        *segment_index* is the index into the segments list for the returned
-        point.
+        lookahead_point: np.ndarray [x, y] in metres.
     """
-    pts = np.asarray(waypoints, dtype=float)
-    n = len(pts)
+    waypoints = env.trajectory_waypoints
+    if not waypoints:
+        return env.target_point.copy()
 
-    # Build segment list
-    if is_closed:
-        segments = [(i, (i + 1) % n) for i in range(n)]
-    else:
-        segments = [(i, i + 1) for i in range(n - 1)]
-    total_segs = len(segments)
+    tp = env.robot.get_tracking_point_position_world(env.tracking_point)
+    pos = tp[:2].copy()
+    n = len(waypoints)
 
-    # --- Step 1: find the closest point on the path, starting from start_seg --
-    best_dist = float('inf')
-    best_seg = start_seg % total_segs
-    best_t = 0.0
+    # Search forward from current waypoint
+    start_idx = env.current_waypoint_index
+    for offset in range(n):
+        idx = (start_idx + offset) % n
+        wp = np.asarray(waypoints[idx])
+        if np.linalg.norm(wp - pos) >= lookahead_distance:
+            return wp.copy()
 
-    for offset in range(total_segs):
-        seg_idx = (start_seg + offset) % total_segs
-        i, j = segments[seg_idx]
-        a, b = pts[i], pts[j]
-        ab = b - a
-        ab_len_sq = float(np.dot(ab, ab))
-        if ab_len_sq < 1e-12:
-            continue
-        t = float(np.clip(np.dot(robot_pos - a, ab) / ab_len_sq, 0.0, 1.0))
-        closest = a + t * ab
-        d = float(np.linalg.norm(robot_pos - closest))
-        if d < best_dist:
-            best_dist = d
-            best_seg = seg_idx
-            best_t = t
-
-    # --- Step 2: walk forward by lookahead_dist from the closest point --------
-    remaining = lookahead_dist
-    seg_idx = best_seg
-    t = best_t
-
-    for _ in range(total_segs):
-        i, j = segments[seg_idx]
-        a, b = pts[i], pts[j]
-        ab = b - a
-        seg_len = float(np.linalg.norm(ab))
-        if seg_len < 1e-12:
-            seg_idx = (seg_idx + 1) % total_segs
-            t = 0.0
-            continue
-
-        dist_to_end = seg_len * (1.0 - t)
-        if remaining <= dist_to_end:
-            lookahead_t = t + remaining / seg_len
-            return a + lookahead_t * ab, seg_idx
-
-        remaining -= dist_to_end
-        seg_idx = (seg_idx + 1) % total_segs
-        t = 0.0
-
-    # Fallback: clamp to the last waypoint reached
-    i, j = segments[best_seg]
-    return pts[j], best_seg
+    # Fallback: furthest waypoint
+    dists = [np.linalg.norm(np.asarray(w) - pos) for w in waypoints]
+    return np.asarray(waypoints[int(np.argmax(dists))]).copy()
 
 
-def test_pure_pursuit_tracking(
-    env,
-    model,
-    trajectory: list,
-    max_steps: int = 500,
-    lookahead_dist: float = 0.25,
-    is_closed: bool = True,
-    render: bool = True,
-    completion_laps: int = 1,
-) -> dict:
-    """Test robot trajectory tracking using the Pure Pursuit algorithm.
+def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float = 0.3,
+                               steps_per_waypoint: int = 60, waypoint_threshold: float = 0.15,
+                               render: bool = True):
+    """
+    Track *trajectory* using pure pursuit geometry + RL model control.
 
-    Unlike the waypoint-based :func:`test_trajectory_tracking`, Pure Pursuit
-    continuously updates ``env.target_point`` to a lookahead point that is
-    *lookahead_dist* metres ahead of the robot along the reference path.  This
-    produces smoother target updates and better handles the robot falling behind
-    or cutting corners.
+    At every step:
+      1. Pure pursuit selects a lookahead point on the trajectory.
+      2. ``env.target_point`` is updated to that lookahead point so the
+         observation encodes the correct goal direction.
+      3. The RL model predicts an action given the updated observation.
+      4. The environment steps forward.
+      5. When the robot comes within *waypoint_threshold* of the current
+         waypoint the waypoint index advances.
 
     Args:
-        env:             SalpRobotEnv instance.
-        model:           Trained SB3 model.
-        trajectory:      List of [x, y] waypoints defining the reference path.
-        max_steps:       Maximum environment steps before the test ends.
-        lookahead_dist:  Pure-pursuit lookahead distance in metres.
-        is_closed:       If True, the path is treated as a closed loop.
-        render:          If True, call ``env.wait_for_animation()`` each step.
-        completion_laps: Number of laps to run before stopping (closed paths
-                         only; ignored when *is_closed* is False).
+        env: SalpRobotEnv instance (render_mode already set).
+        model: Trained SB3 model with a ``predict`` method.
+        trajectory: List of [x, y] waypoints in metres.
+        lookahead_distance: Pure pursuit look-ahead radius (metres).
+        steps_per_waypoint: Max env steps before forcing advance to next waypoint.
+        waypoint_threshold: Distance (m) to consider a waypoint reached.
+        render: If True call ``env.wait_for_animation()`` each step.
 
     Returns:
         dict with keys:
-            actual_trajectory, desired_trajectory, cross_track_errors,
-            along_track_progress, total_steps, laps_completed,
-            mean_cross_track_error, max_cross_track_error.
+            targets_reached, total_targets, success_rate,
+            avg_min_distance, total_steps,
+            actual_positions (N×2 ndarray), desired_trajectory (list).
     """
-    if len(trajectory) < 2:
-        raise ValueError("trajectory must contain at least 2 waypoints")
-
-    pts = np.asarray(trajectory, dtype=float)
-
-    # Pre-compute cumulative arc lengths for progress tracking
-    diffs = np.diff(pts, axis=0)
-    seg_lengths = np.linalg.norm(diffs, axis=1)
-    if is_closed:
-        seg_lengths = np.append(seg_lengths, np.linalg.norm(pts[0] - pts[-1]))
-    total_path_len = float(np.sum(seg_lengths))
-    cum_lengths = np.concatenate([[0.0], np.cumsum(seg_lengths)])
+    waypoints = [np.asarray(w, dtype=float) for w in trajectory]
+    n = len(waypoints)
 
     obs, _ = env.reset()
+    env.set_trajectory(waypoints)
+    env.current_waypoint_index = 0
+    env.target_point = waypoints[0].astype(np.float32)
 
-    # Place robot at the first waypoint, oriented toward the second
-    start_pos = pts[0]
-    env.robot.position_world[0] = start_pos[0]
-    env.robot.position_world[1] = start_pos[1]
-    env.robot.position_front_world[0] = start_pos[0]
-    env.robot.position_front_world[1] = start_pos[1]
-    direction = pts[1] - pts[0]
-    env.robot.euler_angle[2] = float(np.arctan2(direction[1], direction[0]))
+    # Initialise robot at first waypoint, oriented toward second
+    env.robot.position_world[0] = waypoints[0][0]
+    env.robot.position_world[1] = waypoints[0][1]
+    if n >= 2:
+        d = waypoints[1] - waypoints[0]
+        env.robot.euler_angle[2] = float(np.arctan2(d[1], d[0]))
 
-    # Set full trajectory for visualisation
-    env.set_trajectory(list(trajectory))
-
-    # Find initial lookahead
-    robot_pos = pts[0].copy()
-    lookahead_pt, current_seg = pure_pursuit_lookahead(
-        robot_pos, trajectory, lookahead_dist, start_seg=0, is_closed=is_closed
-    )
-    env.target_point = lookahead_pt.copy()
-    env.prev_target_point = robot_pos.copy()
-    tracking_pt = env.robot.get_tracking_point_position_world(env.tracking_point)
-    env.prev_dist = float(np.linalg.norm(tracking_pt[0:2] - lookahead_pt))
-
-    # Metrics
-    actual_trajectory = [robot_pos.copy()]
-    cross_track_errors = []
-    along_track_arc = 0.0          # total arc walked so far
-    laps_completed = 0
-    prev_seg = current_seg
-    step = 0
+    obs = env._get_observation()
 
     print(f"\n{'='*60}")
-    print(f"PURE PURSUIT TRAJECTORY TRACKING")
+    print(f"PURE PURSUIT + RL MODEL TRAJECTORY TRACKING")
     print(f"{'='*60}")
-    print(f"Waypoints     : {len(trajectory)}")
-    print(f"Lookahead dist: {lookahead_dist:.3f} m")
-    print(f"Path length   : {total_path_len:.3f} m  ({'closed' if is_closed else 'open'})")
-    print(f"Max steps     : {max_steps}")
-    print(f"{'='*60}\n")
+    print(f"Waypoints       : {n}")
+    print(f"Look-ahead dist : {lookahead_distance} m")
+    print(f"WP threshold    : {waypoint_threshold} m")
+    print(f"Steps / waypoint: {steps_per_waypoint}")
+    print(f"{'='*60}")
 
-    for step in range(max_steps):
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(action)
+    actual_positions = [env.robot.get_tracking_point_position_world(env.tracking_point)[:2].copy()]
+    targets_reached = 0
+    min_distances = []
+    total_steps = 0
 
-        tracking_pt = env.robot.get_tracking_point_position_world(env.tracking_point)
-        robot_pos = tracking_pt[0:2].copy()
-        actual_trajectory.append(robot_pos.copy())
+    for wp_idx in range(n):
+        current_wp = waypoints[wp_idx]
+        env.current_waypoint_index = wp_idx
 
-        # --- Pure pursuit: update lookahead point ----------------------------
-        lookahead_pt, current_seg = pure_pursuit_lookahead(
-            robot_pos, trajectory, lookahead_dist,
-            start_seg=current_seg, is_closed=is_closed,
-        )
-        env.prev_target_point = env.target_point.copy()
-        env.target_point = lookahead_pt.copy()
-        env.current_waypoint_index = current_seg
-        env.prev_dist = float(np.linalg.norm(robot_pos - lookahead_pt))
+        min_dist = float('inf')
+        reached = False
 
-        # --- Cross-track error (perp distance to nearest path segment) -------
-        i, j_idx = current_seg, (current_seg + 1) % len(trajectory)
-        a = pts[i]
-        b = pts[j_idx] if is_closed else pts[min(j_idx, len(pts) - 1)]
-        ab = b - a
-        ab_len = float(np.linalg.norm(ab))
-        if ab_len > 1e-10:
-            t_cte = float(np.clip(np.dot(robot_pos - a, ab) / (ab_len ** 2), 0.0, 1.0))
-            cte = float(np.linalg.norm(robot_pos - (a + t_cte * ab)))
-        else:
-            cte = float(np.linalg.norm(robot_pos - a))
-        cross_track_errors.append(cte)
+        print(f"\n  Waypoint {wp_idx+1}/{n}: ({current_wp[0]:.3f}, {current_wp[1]:.3f})")
 
-        # --- Along-track progress & lap counting ----------------------------
-        seg_arc = cum_lengths[current_seg]
-        i_pt, j_pt = (current_seg, (current_seg + 1) % len(pts))
-        t_at = float(np.clip(
-            np.dot(robot_pos - pts[i_pt], pts[j_pt] - pts[i_pt]) /
-            max(float(np.linalg.norm(pts[j_pt] - pts[i_pt])) ** 2, 1e-12),
-            0.0, 1.0
-        ))
-        arc_position = seg_arc + t_at * seg_lengths[current_seg]
+        for step in range(steps_per_waypoint):
+            # --- Pure pursuit: compute lookahead and update env target ---
+            lookahead = pure_pursuit_lookahead(env, lookahead_distance)
+            env.target_point = lookahead.astype(np.float32)
+            # Sync prev_dist so reward isn't corrupted by the target change
+            tp = env.robot.get_tracking_point_position_world(env.tracking_point)
+            env.prev_dist = float(np.linalg.norm(tp[:2] - lookahead))
+            # Recompute obs so it encodes the new lookahead target
+            obs = env._get_observation()
 
-        # Detect lap completion (segment index wrapped around)
-        if is_closed and current_seg < prev_seg and prev_seg >= len(trajectory) - 2:
-            laps_completed += 1
-            print(f"  Lap {laps_completed} completed at step {step + 1}")
-            if laps_completed >= completion_laps:
-                print(f"\n  Target laps reached at step {step + 1}")
-                step += 1
+            # --- RL model predicts action toward lookahead point ---
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            total_steps += 1
+
+            tp = env.robot.get_tracking_point_position_world(env.tracking_point)[:2].copy()
+            actual_positions.append(tp)
+
+            # Measure progress toward the actual waypoint (not lookahead)
+            dist_to_wp = float(np.linalg.norm(tp - current_wp))
+            if dist_to_wp < min_dist:
+                min_dist = dist_to_wp
+
+            if render:
+                env.wait_for_animation()
+
+            if dist_to_wp < waypoint_threshold and not reached:
+                reached = True
+                targets_reached += 1
+                print(f"    ✓ Reached in {step+1} steps  (dist={dist_to_wp:.3f} m)")
                 break
-        prev_seg = current_seg
 
-        if (step + 1) % 50 == 0:
-            print(f"  step {step+1:4d} | seg {current_seg:3d} | CTE {cte:.4f} m | arc {arc_position:.3f} m")
+            if terminated:
+                obs, _ = env.reset()
+                env.set_trajectory(waypoints)
+                env.current_waypoint_index = wp_idx
+                env.target_point = current_wp.astype(np.float32)
+                obs = env._get_observation()
+                print(f"    Episode reset at step {step+1}")
 
-        if terminated or truncated:
-            print(f"\n  Episode ended at step {step + 1} (terminated={terminated}, truncated={truncated})")
-            obs, _ = env.reset()
-            env.set_trajectory(list(trajectory))
-            env.robot.euler_angle[2] = float(np.arctan2(direction[1], direction[0]))
+        min_distances.append(min_dist)
+        if not reached:
+            print(f"    ✗ Closest approach: {min_dist:.3f} m")
 
-        if render:
-            env.wait_for_animation()
-
-    total_steps = step + 1 if step < max_steps else max_steps
-    mean_cte = float(np.mean(cross_track_errors)) if cross_track_errors else 0.0
-    max_cte = float(np.max(cross_track_errors)) if cross_track_errors else 0.0
+    actual_positions = np.array(actual_positions)
+    stats = {
+        'targets_reached': targets_reached,
+        'total_targets': n,
+        'success_rate': targets_reached / n,
+        'avg_min_distance': float(np.mean(min_distances)),
+        'total_steps': total_steps,
+        'actual_positions': actual_positions,
+        'desired_trajectory': waypoints,
+    }
 
     print(f"\n{'='*60}")
-    print(f"PURE PURSUIT RESULTS")
+    print(f"PURE PURSUIT + RL RESULTS")
     print(f"{'='*60}")
-    print(f"  Total steps          : {total_steps}")
-    print(f"  Laps completed       : {laps_completed}")
-    print(f"  Mean cross-track err : {mean_cte:.4f} m")
-    print(f"  Max  cross-track err : {max_cte:.4f} m")
+    print(f"  Targets reached : {targets_reached} / {n}  ({stats['success_rate']*100:.1f}%)")
+    print(f"  Avg min dist    : {stats['avg_min_distance']:.4f} m")
+    print(f"  Total steps     : {total_steps}")
     print(f"{'='*60}\n")
 
-    return {
-        'actual_trajectory': actual_trajectory,
-        'desired_trajectory': list(trajectory),
-        'cross_track_errors': cross_track_errors,
-        'along_track_progress': arc_position if cross_track_errors else 0.0,
-        'total_steps': total_steps,
-        'laps_completed': laps_completed,
-        'mean_cross_track_error': mean_cte,
-        'max_cross_track_error': max_cte,
-    }
+    # --- Plot ---
+    fig, ax = plt.subplots(figsize=(8, 8))
+    desired = np.array(waypoints)
+    ax.plot(desired[:, 0], desired[:, 1], 'b--o', linewidth=1.5, markersize=6, label='Desired trajectory')
+    ax.plot(actual_positions[:, 0], actual_positions[:, 1], 'r-', linewidth=1.2, alpha=0.8, label='Robot path (PP + RL)')
+    ax.plot(actual_positions[0, 0], actual_positions[0, 1], 'go', markersize=10, label='Start')
+    ax.plot(actual_positions[-1, 0], actual_positions[-1, 1], 'rs', markersize=10, label='End')
+    for i, wp in enumerate(waypoints):
+        ax.annotate(str(i+1), xy=wp, fontsize=8, ha='center', va='bottom',
+                    xytext=(0, 6), textcoords='offset points')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_title(f'Pure Pursuit + RL  |  {targets_reached}/{n} waypoints reached', fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    ax.axis('equal')
+    plt.tight_layout()
+    plt.show()
+
+    return stats
 
 
 if __name__ == "__main__":
@@ -945,10 +871,31 @@ if __name__ == "__main__":
     robot.enable_history_recording()
 
     env = SalpRobotEnv(render_mode="human", robot=robot)
-    model = SAC.load("./logs/salp_robot_expanded_state_finetune_200000_steps", env=env)
-    # result = test_single_target_tracking(env, model, target=np.array([1.5, 0.9]), max_steps=300, threshold=0.05)
 
-    
+
+    # ------------------------------------------------------------------ #
+    # #  Pure Pursuit + RL model tracking                                   #
+    # # ------------------------------------------------------------------ #
+    model = SAC.load("./salp_robot_final_front_pos", env=env)
+    env.start_recording()
+    test_single_target_tracking(
+        env, model, target=[-0.5, -0.5],
+        max_steps=300, render=True, threshold=0.05
+    )  
+    gif_path = env.stop_recording(filename="sim_demo_track1.gif")
+
+    # center = np.array([0.0, 0.0])
+    # pp_trajectory = generate_circle_trajectory(center, radius=0.75, num_points=12)
+    # pp_stats = test_pure_pursuit_tracking(
+    #     env, model, pp_trajectory,
+    #     lookahead_distance=0.35,
+    #     steps_per_waypoint=80,
+    #     waypoint_threshold=0.15,
+    #     render=True,
+    # )
+    # env.close()
+
+
     # Choose a trajectory type
     center = np.array([0.0, 0.0])
     
@@ -969,7 +916,7 @@ if __name__ == "__main__":
     }
     
     # Select which trajectory to test (change this to test different shapes)
-    trajectory_name = 'circle'  # Options: circle, square, figure_eight, spiral, star, sine_wave
+    trajectory_name = 'square'  # Options: circle, square, figure_eight, spiral, star, sine_wave
     trajectory = trajectories[trajectory_name]
     
     print(f"\n{'='*60}")

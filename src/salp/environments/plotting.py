@@ -7,8 +7,37 @@ including geometry, forces, velocities, torques, and other physical properties.
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as _mpl
 from mpl_toolkits.mplot3d import Axes3D
 from enum import Enum
+
+# ── Publication-quality defaults (applied once at module import) ─────────────
+_mpl.rcParams.update({
+    "font.family":       "serif",
+    "font.size":         10,
+    "axes.labelsize":    11,
+    "axes.titlesize":    11,
+    "legend.fontsize":   9,
+    "xtick.labelsize":   9,
+    "ytick.labelsize":   9,
+    "axes.linewidth":    0.8,
+    "xtick.direction":   "in",
+    "ytick.direction":   "in",
+    "xtick.major.size":  4,
+    "ytick.major.size":  4,
+    "xtick.minor.size":  2,
+    "ytick.minor.size":  2,
+    "xtick.top":         True,
+    "ytick.right":       True,
+    "lines.linewidth":   1.2,
+    "grid.linestyle":    "--",
+    "grid.linewidth":    0.4,
+    "grid.alpha":        0.5,
+    "figure.dpi":        150,
+    "savefig.dpi":       300,
+    "savefig.bbox":      "tight",
+})
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _add_phase_backgrounds(ax, time_data, state_data):
@@ -36,15 +65,13 @@ def _add_phase_backgrounds(ax, time_data, state_data):
         if state_values[i] != current_phase:
             # Draw the region for the previous phase
             ax.axvspan(time_data[start_idx-1], time_data[i-1], 
-                      color=colors[current_phase], alpha=alphas[current_phase],
-                      label=phase_names[current_phase] if start_idx == 0 or current_phase not in state_values[:start_idx] else "")
+                      color=colors[current_phase], alpha=alphas[current_phase])
             start_idx = i
             current_phase = state_values[i]
     
     # Draw the last region
     ax.axvspan(time_data[start_idx-1], time_data[-1], 
-              color=colors[current_phase], alpha=alphas[current_phase],
-              label=phase_names[current_phase] if current_phase not in state_values[:start_idx] else "")
+              color=colors[current_phase], alpha=alphas[current_phase])
 
 
 def plot_robot_geometry(time_data, length_data, width_data, state_data=None, title="Robot Geometry Over Time"):
@@ -58,7 +85,7 @@ def plot_robot_geometry(time_data, length_data, width_data, state_data=None, tit
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5.5), sharex=True)
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
@@ -67,21 +94,19 @@ def plot_robot_geometry(time_data, length_data, width_data, state_data=None, tit
     
     # Length plot
     ax1.plot(time_data, length_data, 'b-', linewidth=2, label='Length', zorder=3)
-    ax1.set_xlabel('Time (s)')
     ax1.set_ylabel('Length (m)')
-    ax1.set_title('Robot Length')
     ax1.grid(True, alpha=0.3)
-    ax1.legend()
+    ax1.legend(loc='upper right')
+    ax1.tick_params(labelbottom=False)
     
     # Width plot
     ax2.plot(time_data, width_data, 'r-', linewidth=2, label='Width', zorder=3)
     ax2.set_xlabel('Time (s)')
     ax2.set_ylabel('Width (m)')
-    ax2.set_title('Robot Width')
     ax2.grid(True, alpha=0.3, zorder=1)
-    ax2.legend()
+    ax2.legend(loc='upper right')
     
-    plt.suptitle(title)
+    # plt.suptitle(title)
     plt.tight_layout()
     plt.show(block=False)
     plt.pause(0.001)
@@ -102,7 +127,7 @@ def plot_nozzle_yaw_angle(time_data, yaw_data, state_data=None, title="Nozzle Ya
     Returns:
         Matplotlib figure object
     """
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7, 3.5))
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
@@ -142,7 +167,7 @@ def plot_robot_mass(time_data, mass_data, state_data=None, title="Robot Total Ma
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7, 3.5))
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
@@ -152,9 +177,9 @@ def plot_robot_mass(time_data, mass_data, state_data=None, title="Robot Total Ma
     
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Mass (kg)')
-    ax.set_title(title)
+    # ax.set_title(title)
     ax.grid(True, alpha=0.3)
-    ax.legend()
+    ax.legend(loc='upper right')
     
     plt.tight_layout()
     plt.show(block=False)
@@ -174,7 +199,7 @@ def plot_mass_rate(time_data, mass_rate_data, state_data=None, title="Rate of Ch
         title: Plot title
     """
     
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7, 3.5))
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
@@ -208,7 +233,7 @@ def plot_volume_rate(time_data, volume_rate_data, state_data=None, title="Rate o
     """
     # Calculate rate of change of volume (dV/dt)
     
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7, 3.5))
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
@@ -243,7 +268,7 @@ def plot_robot_forces(time_data, jet_force_data, drag_force_data, coriolis_force
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -292,7 +317,7 @@ def plot_jet_properties(time_data, jet_force_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -331,7 +356,7 @@ def plot_jet_velocity(time_data, jet_velocity_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -371,7 +396,7 @@ def plot_drag_properties(time_data, drag_force_data,
         title: Plot title
     """
     # Create subplots for X, Y, Z components
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     # Labels and colors for each dimension
     dimensions = ['X', 'Y', 'Z']
@@ -411,7 +436,7 @@ def plot_drag_coefficient(time_data, drag_coefficient_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     axis_labels = ['X', 'Y', 'Z']
     colors = ['blue', 'green', 'red']
@@ -456,7 +481,7 @@ def plot_robot_position(time_data, position_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -469,12 +494,12 @@ def plot_robot_position(time_data, position_data,
         ax.plot(time_data, position_data[:, i], color=color, linewidth=2, 
                 label=f'Position {direction}', zorder=3)
         ax.set_ylabel(f'Position {direction} (m)')
-        ax.set_title(f'Position - {direction} Dimension')
         ax.grid(True, alpha=0.3)
         ax.legend()
+        if i < 2:
+            ax.tick_params(labelbottom=False)
     
     axes[-1].set_xlabel('Time (s)')
-    plt.suptitle(title)
     plt.tight_layout()
     plt.show(block=False)
     plt.pause(0.001)
@@ -496,7 +521,7 @@ def plot_robot_velocity(time_data, velocity_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -509,12 +534,13 @@ def plot_robot_velocity(time_data, velocity_data,
         ax.plot(time_data, velocity_data[:, i], color=color, linewidth=2, 
                 label=f'Velocity {direction}', zorder=3)
         ax.set_ylabel(f'Velocity {direction} (m/s)')
-        ax.set_title(f'Velocity - {direction} Dimension')
         ax.grid(True, alpha=0.3)
         ax.legend()
+        if i < 2:
+            ax.tick_params(labelbottom=False)
     
     axes[-1].set_xlabel('Time (s)')
-    plt.suptitle(title)
+    # plt.suptitle(title)
     plt.tight_layout()
     plt.show(block=False)
     plt.pause(0.001)
@@ -536,7 +562,7 @@ def plot_robot_acceleration(time_data, acceleration_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -573,7 +599,7 @@ def plot_cross_sectional_area(time_data, area_data,
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(10, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     # Extract individual area components
     area_data = np.array(area_data)
@@ -636,7 +662,7 @@ def plot_nozzle_configuration(time_data, angle1_data, angle2_data,
         state_data: Optional array of state values (0: refill, 1: jet, 2: coast, 3: rest)
         title: Plot title
     """
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5.5))
     
     # Add phase backgrounds if state_data provided
     if state_data is not None:
@@ -679,7 +705,7 @@ def plot_angular_acceleration(time_data, angular_acceleration_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     labels = ['Roll (X)', 'Pitch (Y)', 'Yaw (Z)']
     colors = ['r', 'g', 'b']
     
@@ -716,7 +742,7 @@ def plot_angular_velocity(time_data, angular_velocity_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
     labels = ['Roll Rate (X)', 'Pitch Rate (Y)', 'Yaw Rate (Z)']
     colors = ['r', 'g', 'b']
     
@@ -727,11 +753,11 @@ def plot_angular_velocity(time_data, angular_velocity_data,
         
         ax.plot(time_data, angular_velocity_data[:, i], color=color, linewidth=2, zorder=3)
         ax.set_ylabel(f'Angular Vel. (rad/s)')
-        ax.set_title(f'Angular Velocity - {label}')
         ax.grid(True, alpha=0.3)
+        if i < 2:
+            ax.tick_params(labelbottom=False)
     
     axes[-1].set_xlabel('Time (s)')
-    plt.suptitle(title)
     plt.tight_layout()
     plt.show(block=False)
     plt.pause(0.001)
@@ -753,7 +779,7 @@ def plot_euler_angles(time_data, euler_angles_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     labels = ['Roll (X)', 'Pitch (Y)', 'Yaw (Z)']
     colors = ['r', 'g', 'b']
     
@@ -791,7 +817,7 @@ def plot_drag_torque(time_data, drag_torque_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     labels = ['Roll Torque (X)', 'Pitch Torque (Y)', 'Yaw Torque (Z)']
     colors = ['r', 'g', 'b']
     
@@ -828,7 +854,7 @@ def plot_jet_torque(time_data, jet_torque_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     labels = ['Roll Torque (X)', 'Pitch Torque (Y)', 'Yaw Torque (Z)']
     colors = ['r', 'g', 'b']
     
@@ -863,7 +889,7 @@ def plot_trajectory_xy(position_data: np.ndarray, state_data: np.ndarray = None,
     """
     import matplotlib.pyplot as plt
     
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(5.5, 5))
     
     x_positions = position_data[:, 0]
     y_positions = position_data[:, 1]
@@ -1041,7 +1067,7 @@ def plot_nozzle_direction(nozzle, euler_angles=None, title="Nozzle Direction Vis
     Returns:
         Figure object
     """
-    fig = plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(6, 5))
     ax = fig.add_subplot(111, projection='3d')
     
     # Get nozzle position and direction
@@ -1134,7 +1160,7 @@ def plot_nozzle_direction_sequence(nozzle_directions, nozzle_positions=None,
     Returns:
         Figure object
     """
-    fig = plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(6, 5))
     ax = fig.add_subplot(111, projection='3d')
     
     # Convert to numpy array if needed
@@ -1207,7 +1233,7 @@ def plot_coriolis_force(time_data, coriolis_force_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1255,7 +1281,7 @@ def plot_acceleration_force(time_data, acceleration_force_data,
     Returns:
         Matplotlib figure object
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1295,7 +1321,7 @@ def plot_added_mass_force(time_data, added_mass_force_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1337,7 +1363,7 @@ def plot_all_forces(time_data, jet_force_data, drag_force_data, coriolis_force_d
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     
@@ -1381,7 +1407,7 @@ def plot_coriolis_torque(time_data, coriolis_torque_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1420,7 +1446,7 @@ def plot_deform_torque(time_data, deform_torque_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1459,7 +1485,7 @@ def plot_added_mass_torque(time_data, added_mass_torque_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1498,7 +1524,7 @@ def plot_asymmetry_torque(time_data, asymmetry_torque_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1554,7 +1580,7 @@ def plot_inertia_tensor(time_data, inertia_tensor_data,
         title: Plot title
     """
     principal_axes_data = _extract_principal_axes_series(inertia_tensor_data)
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     axes_labels = ['I_xx (X-axis)', 'I_yy (Y-axis)', 'I_zz (Z-axis)']
     colors = ['r', 'g', 'b']
@@ -1595,7 +1621,7 @@ def plot_inertia_tensor_rate(time_data, inertia_tensor_rate_data,
         title: Plot title
     """
     principal_axes_rate_data = _extract_principal_axes_series(inertia_tensor_rate_data)
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
 
     axes_labels = ['dI_xx/dt (X-axis)', 'dI_yy/dt (Y-axis)', 'dI_zz/dt (Z-axis)']
     colors = ['r', 'g', 'b']
@@ -1632,7 +1658,7 @@ def plot_center_of_mass(time_data, center_of_mass_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
     
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1671,7 +1697,7 @@ def plot_center_of_mass_rate(time_data, center_of_mass_rate_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
 
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1713,7 +1739,7 @@ def plot_center_of_mass_acc_rate(time_data, center_of_mass_acc_rate_data,
         title: Plot title
     """
 
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
 
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1751,7 +1777,7 @@ def plot_front_position_body_frame(time_data, front_position_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
 
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']
@@ -1788,7 +1814,7 @@ def plot_front_position_world_frame(time_data, front_position_world_data,
         state_data: Optional array of state values (Phase enum values)
         title: Plot title
     """
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8))
 
     directions = ['X', 'Y', 'Z']
     colors = ['r', 'g', 'b']

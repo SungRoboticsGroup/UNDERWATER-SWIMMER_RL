@@ -781,9 +781,11 @@ def main():
     print("=" * 60)
     
     # Compare individual action parameters
+
     # compare_contraction_levels(save_path="contraction_comparison.pdf")
     # compare_coast_times(save_path="coast_time_comparison.pdf")
     compare_yaw_angles()
+
     
     # Compare action combinations
     # compare_action_combinations()
