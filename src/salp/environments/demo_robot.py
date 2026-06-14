@@ -96,11 +96,11 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
     t_start = time.perf_counter()
     for i in range(n_cycles):
         t_cycle_start = time.perf_counter()
-        robot.nozzle.set_yaw_angle(yaw_angle=-1.0 * np.pi / 2)
+        robot.nozzle.set_yaw_angle(yaw_angle=-1* np.pi / 2)
         robot.nozzle.solve_angles()
         robot.set_control(
             contraction=0.03,
-            coast_time=4,
+            coast_time=2.0,
             nozzle_angles=np.array([robot.nozzle.angle1, robot.nozzle.angle2]),
         )
         robot.step_through_cycle()
@@ -128,8 +128,12 @@ def _collect_cycles(robot: Robot, n_cycles: int = 6) -> dict[str, np.ndarray]:
     return {k: np.array(v) for k, v in accumulators.items()}
 
 
-def _run_plots(data: dict[str, np.ndarray], enabled: set[str]):
+def _run_plots(data: dict[str, np.ndarray], enabled: set[str], save_dir: str | None = None):
     """Dispatch enabled plot tags through the registry."""
+    import os
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)
+
     t = data["time"]
     s = data["state_history"]
 
@@ -142,14 +146,16 @@ def _run_plots(data: dict[str, np.ndarray], enabled: set[str]):
                 data["euler_angle_history"],
                 data["nozzle_yaw_history"],
             )
-            continue
-
-        if tag not in PLOT_REGISTRY:
+            fig = plt.gcf()
+        elif tag not in PLOT_REGISTRY:
             print(f"Warning: unknown plot tag '{tag}', skipping.")
             continue
+        else:
+            func, keys = PLOT_REGISTRY[tag]
+            fig = func(t, *(data[k] for k in keys), s)
 
-        func, keys = PLOT_REGISTRY[tag]
-        func(t, *(data[k] for k in keys), s)
+        if save_dir is not None and fig is not None:
+            fig.savefig(os.path.join(save_dir, f"{tag}.pdf"))
 
 
 def main():
@@ -183,17 +189,21 @@ def main():
     # Add / remove tags from this set to toggle plots.
     # Available tags: print(sorted(PLOT_REGISTRY)) or "trajectory_xy"
     enabled_plots = {
-        "euler_angles",
-        "angular_velocity",
+        # "geometry",  # Example of another plot tag that could be enabled
+        # "mass"
+        # "velocity",
+        "position",
+        # "euler_angles",
+        # "angular_velocity",
         # "jet_torque",
         # "drag_torque",
         # "coriolis_torque",
         # "added_mass_torque",
         # "deform_torque",
-        "trajectory_xy",
-    }
+        # "trajectory_xy",
+    }  # End of enabled_plots set
 
-    _run_plots(data, enabled_plots)
+    _run_plots(data, enabled_plots, save_dir="figures")
     plt.show(block=True)
 
 

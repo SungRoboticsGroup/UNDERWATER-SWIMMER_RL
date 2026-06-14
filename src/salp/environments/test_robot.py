@@ -320,8 +320,12 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     if len(trajectory) >= 2:
         start_pos = trajectory[0]
         next_pos = trajectory[1]
+
         env.robot.position_world[0] = start_pos[0]
         env.robot.position_world[1] = start_pos[1]
+        env.robot.position_front_world[0] = start_pos[0]
+        env.robot.position_front_world[1] = start_pos[1]
+
         direction = next_pos - start_pos
         yaw_angle = np.arctan2(direction[1], direction[0])
         env.robot.euler_angle[2] = yaw_angle
@@ -336,7 +340,7 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     total_steps = 0
     targets_reached = 0
     distances_to_targets = []
-    actual_trajectory = [np.array([env.robot.position_world[0], env.robot.position_world[1]])]
+    actual_trajectory = [np.array([env.robot.position_front_world[0], env.robot.position_front_world[1]])]
 
     trajectory.append(trajectory[0])  # loop back to start
     trajectory = trajectory[1:]
@@ -354,12 +358,12 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
 
-            actual_trajectory.append(np.array([env.robot.position_world[0], env.robot.position_world[1]]))
+            actual_trajectory.append(np.array([env.robot.position_front_world[0], env.robot.position_front_world[1]]))
 
             if render:
                 env.wait_for_animation()
 
-            distance = np.linalg.norm(env.robot.position_world[0:-1] - target)
+            distance = np.linalg.norm(env.robot.position_front_world[0:-1] - target)
             min_distance = min(min_distance, distance)
             total_steps += 1
 
@@ -657,6 +661,199 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
         'total_steps': total_steps,
     }
 
+def pure_pursuit_lookahead(env, lookahead_distance: float = 0.3):
+    """
+    Compute the pure pursuit lookahead point given the current env state.
+
+    Walks forward along ``env.trajectory_waypoints`` starting from
+    ``env.current_waypoint_index`` and returns the first waypoint that is
+    at least *lookahead_distance* metres away from the robot's tracking
+    point.  If all waypoints are closer than the look-ahead distance the
+    furthest one is returned as a fallback.
+
+    Args:
+        env: SalpRobotEnv instance with trajectory_waypoints set.
+        lookahead_distance: Look-ahead radius in metres.
+
+    Returns:
+        lookahead_point: np.ndarray [x, y] in metres.
+    """
+    waypoints = env.trajectory_waypoints
+    if not waypoints:
+        return env.target_point.copy()
+
+    tp = env.robot.get_tracking_point_position_world(env.tracking_point)
+    pos = tp[:2].copy()
+    n = len(waypoints)
+
+    # Search forward from current waypoint
+    start_idx = env.current_waypoint_index
+    for offset in range(n):
+        idx = (start_idx + offset) % n
+        wp = np.asarray(waypoints[idx])
+        if np.linalg.norm(wp - pos) >= lookahead_distance:
+            return wp.copy()
+
+    # Fallback: furthest waypoint
+    dists = [np.linalg.norm(np.asarray(w) - pos) for w in waypoints]
+    return np.asarray(waypoints[int(np.argmax(dists))]).copy()
+
+
+def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float = 0.3,
+                               steps_per_waypoint: int = 60, waypoint_threshold: float = 0.15,
+                               render: bool = True):
+    """
+    Track *trajectory* using pure pursuit geometry + RL model control.
+
+    At every step:
+      1. Pure pursuit selects a lookahead point on the trajectory.
+      2. ``env.target_point`` is updated to that lookahead point so the
+         observation encodes the correct goal direction.
+      3. The RL model predicts an action given the updated observation.
+      4. The environment steps forward.
+      5. When the robot comes within *waypoint_threshold* of the current
+         waypoint the waypoint index advances.
+
+    Args:
+        env: SalpRobotEnv instance (render_mode already set).
+        model: Trained SB3 model with a ``predict`` method.
+        trajectory: List of [x, y] waypoints in metres.
+        lookahead_distance: Pure pursuit look-ahead radius (metres).
+        steps_per_waypoint: Max env steps before forcing advance to next waypoint.
+        waypoint_threshold: Distance (m) to consider a waypoint reached.
+        render: If True call ``env.wait_for_animation()`` each step.
+
+    Returns:
+        dict with keys:
+            targets_reached, total_targets, success_rate,
+            avg_min_distance, total_steps,
+            actual_positions (N×2 ndarray), desired_trajectory (list).
+    """
+    waypoints = [np.asarray(w, dtype=float) for w in trajectory]
+    n = len(waypoints)
+
+    obs, _ = env.reset()
+    env.set_trajectory(waypoints)
+    env.current_waypoint_index = 0
+    env.target_point = waypoints[0].astype(np.float32)
+
+    # Initialise robot at first waypoint, oriented toward second
+    env.robot.position_world[0] = waypoints[0][0]
+    env.robot.position_world[1] = waypoints[0][1]
+    if n >= 2:
+        d = waypoints[1] - waypoints[0]
+        env.robot.euler_angle[2] = float(np.arctan2(d[1], d[0]))
+
+    obs = env._get_observation()
+
+    print(f"\n{'='*60}")
+    print(f"PURE PURSUIT + RL MODEL TRAJECTORY TRACKING")
+    print(f"{'='*60}")
+    print(f"Waypoints       : {n}")
+    print(f"Look-ahead dist : {lookahead_distance} m")
+    print(f"WP threshold    : {waypoint_threshold} m")
+    print(f"Steps / waypoint: {steps_per_waypoint}")
+    print(f"{'='*60}")
+
+    actual_positions = [env.robot.get_tracking_point_position_world(env.tracking_point)[:2].copy()]
+    targets_reached = 0
+    min_distances = []
+    total_steps = 0
+
+    for wp_idx in range(n):
+        current_wp = waypoints[wp_idx]
+        env.current_waypoint_index = wp_idx
+
+        min_dist = float('inf')
+        reached = False
+
+        print(f"\n  Waypoint {wp_idx+1}/{n}: ({current_wp[0]:.3f}, {current_wp[1]:.3f})")
+
+        for step in range(steps_per_waypoint):
+            # --- Pure pursuit: compute lookahead and update env target ---
+            lookahead = pure_pursuit_lookahead(env, lookahead_distance)
+            env.target_point = lookahead.astype(np.float32)
+            # Sync prev_dist so reward isn't corrupted by the target change
+            tp = env.robot.get_tracking_point_position_world(env.tracking_point)
+            env.prev_dist = float(np.linalg.norm(tp[:2] - lookahead))
+            # Recompute obs so it encodes the new lookahead target
+            obs = env._get_observation()
+
+            # --- RL model predicts action toward lookahead point ---
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            total_steps += 1
+
+            tp = env.robot.get_tracking_point_position_world(env.tracking_point)[:2].copy()
+            actual_positions.append(tp)
+
+            # Measure progress toward the actual waypoint (not lookahead)
+            dist_to_wp = float(np.linalg.norm(tp - current_wp))
+            if dist_to_wp < min_dist:
+                min_dist = dist_to_wp
+
+            if render:
+                env.wait_for_animation()
+
+            if dist_to_wp < waypoint_threshold and not reached:
+                reached = True
+                targets_reached += 1
+                print(f"    ✓ Reached in {step+1} steps  (dist={dist_to_wp:.3f} m)")
+                break
+
+            if terminated:
+                obs, _ = env.reset()
+                env.set_trajectory(waypoints)
+                env.current_waypoint_index = wp_idx
+                env.target_point = current_wp.astype(np.float32)
+                obs = env._get_observation()
+                print(f"    Episode reset at step {step+1}")
+
+        min_distances.append(min_dist)
+        if not reached:
+            print(f"    ✗ Closest approach: {min_dist:.3f} m")
+
+    actual_positions = np.array(actual_positions)
+    stats = {
+        'targets_reached': targets_reached,
+        'total_targets': n,
+        'success_rate': targets_reached / n,
+        'avg_min_distance': float(np.mean(min_distances)),
+        'total_steps': total_steps,
+        'actual_positions': actual_positions,
+        'desired_trajectory': waypoints,
+    }
+
+    print(f"\n{'='*60}")
+    print(f"PURE PURSUIT + RL RESULTS")
+    print(f"{'='*60}")
+    print(f"  Targets reached : {targets_reached} / {n}  ({stats['success_rate']*100:.1f}%)")
+    print(f"  Avg min dist    : {stats['avg_min_distance']:.4f} m")
+    print(f"  Total steps     : {total_steps}")
+    print(f"{'='*60}\n")
+
+    # --- Plot ---
+    fig, ax = plt.subplots(figsize=(8, 8))
+    desired = np.array(waypoints)
+    ax.plot(desired[:, 0], desired[:, 1], 'b--o', linewidth=1.5, markersize=6, label='Desired trajectory')
+    ax.plot(actual_positions[:, 0], actual_positions[:, 1], 'r-', linewidth=1.2, alpha=0.8, label='Robot path (PP + RL)')
+    ax.plot(actual_positions[0, 0], actual_positions[0, 1], 'go', markersize=10, label='Start')
+    ax.plot(actual_positions[-1, 0], actual_positions[-1, 1], 'rs', markersize=10, label='End')
+    for i, wp in enumerate(waypoints):
+        ax.annotate(str(i+1), xy=wp, fontsize=8, ha='center', va='bottom',
+                    xytext=(0, 6), textcoords='offset points')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_title(f'Pure Pursuit + RL  |  {targets_reached}/{n} waypoints reached', fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    ax.axis('equal')
+    plt.tight_layout()
+    plt.show()
+
+    return stats
+
+
 if __name__ == "__main__":
     # Robot physical parameters — DO NOT CHANGE
     nozzle = Nozzle(
@@ -673,9 +870,29 @@ if __name__ == "__main__":
     robot.enable_history_recording()
 
     env = SalpRobotEnv(render_mode="human", robot=robot)
-    model = SAC.load("./salp_robot_final_front_pos", env=env)  
-    result = test_single_target_tracking(env, model, target=np.array([1.5, 0.9]), max_steps=300, threshold=0.05)
-    
+
+    # ------------------------------------------------------------------ #
+    # #  Pure Pursuit + RL model tracking                                   #
+    # # ------------------------------------------------------------------ #
+    model = SAC.load("./salp_robot_final_front_pos", env=env)
+    env.start_recording()
+    test_single_target_tracking(
+        env, model, target=[-0.5, -0.5],
+        max_steps=300, render=True, threshold=0.05
+    )  
+    gif_path = env.stop_recording(filename="sim_demo_track1.gif")
+
+    # center = np.array([0.0, 0.0])
+    # pp_trajectory = generate_circle_trajectory(center, radius=0.75, num_points=12)
+    # pp_stats = test_pure_pursuit_tracking(
+    #     env, model, pp_trajectory,
+    #     lookahead_distance=0.35,
+    #     steps_per_waypoint=80,
+    #     waypoint_threshold=0.15,
+    #     render=True,
+    # )
+    # env.close()
+
     # Choose a trajectory type
     center = np.array([0.0, 0.0])
     
@@ -696,7 +913,7 @@ if __name__ == "__main__":
     }
     
     # Select which trajectory to test (change this to test different shapes)
-    trajectory_name = 'circle'  # Options: circle, square, figure_eight, spiral, star, sine_wave
+    trajectory_name = 'square'  # Options: circle, square, figure_eight, spiral, star, sine_wave
     trajectory = trajectories[trajectory_name]
     
     print(f"\n{'='*60}")

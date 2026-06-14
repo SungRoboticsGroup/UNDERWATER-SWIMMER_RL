@@ -578,7 +578,7 @@ def main():
     # Compare individual action parameters
     # compare_contraction_levels()
     # compare_coast_times()
-    compare_yaw_angles()
+    compare_yaw_angles(n_trials=20)  # Adjust number of trials for more/less spread visualization
     
     # Compare action combinations
     # compare_action_combinations()

@@ -65,19 +65,48 @@ def visualize_compression_refill_time_relation(compression=None, refill_time=Non
     curve_compression = np.linspace(x_min, x_max, int(max(2, num_points)))
     curve_refill_time = refill_time_from_compression_jit(curve_compression, coefficients)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(compression_arr, refill_time_arr, color="tab:blue", s=55, label="Measured points", zorder=3)
-    ax.plot(curve_compression, curve_refill_time, color="tab:red", linewidth=2, label="Quadratic fit")
+    import matplotlib as mpl
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.size": 11,
+        "axes.labelsize": 12,
+        "axes.titlesize": 12,
+        "legend.fontsize": 10,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "axes.linewidth": 0.8,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2,
+        "ytick.minor.size": 2,
+        "xtick.top": True,
+        "ytick.right": True,
+    })
 
-    ax.set_xlabel("Compression Length (m)")
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
+
+    ax.plot(curve_compression * 100, curve_refill_time, color="#c0392b", linewidth=1.5,
+            label="Quadratic fit", zorder=2)
+    ax.scatter(compression_arr * 100, refill_time_arr, color="#2c3e50", s=40,
+               marker="o", edgecolors="#2c3e50", linewidths=0.5,
+               label="Prototype measurements", zorder=3)
+
+    ax.set_xlabel("Compression Length (cm)")
     ax.set_ylabel("Refill Time (s)")
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
+    ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.6, color="gray")
+    ax.minorticks_on()
+    ax.legend(frameon=True, framealpha=0.9, edgecolor="0.7", loc="upper left")
+    ax.set_xlim(np.min(compression_arr) * 100 - 0.1, np.max(compression_arr) * 100 + 0.1)
+
+    ax.xaxis.set_major_formatter(mpl.ticker.FormatStrFormatter("%.1f"))
+    ax.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter("%.1f"))
+
+    fig.tight_layout(pad=0.4)
 
     if save_path is not None:
-        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
 
     if show:
         plt.show(block=True)
@@ -86,7 +115,7 @@ def visualize_compression_refill_time_relation(compression=None, refill_time=Non
 
 def fit_compression_propulsion_time_relation_jit():
     compression = np.array([0, 0.01, 0.02, 0.03, 0.04])
-    propulsion_time = np.array([0, 0.1, 0.3, 0.4, 0.42])
+    propulsion_time = np.array([0, 0.1, 0.6, 0.8, 1.0])
     weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0])
     coefficients = np.polyfit(compression, propulsion_time, 2, w=weights)  # Fit a polynomial of degree 2
     return coefficients
@@ -209,19 +238,48 @@ def visualize_compression_propulsion_time_relation(compression=None, propulsion_
     curve_compression = np.linspace(x_min, x_max, int(max(2, num_points)))
     curve_propulsion_time = propulsion_time_from_compression_jit(curve_compression, coefficients)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(compression_arr, propulsion_time_arr, color="tab:blue", s=55, label="Measured points", zorder=3)
-    ax.plot(curve_compression, curve_propulsion_time, color="tab:red", linewidth=2, label="Quadratic fit")
+    import matplotlib as mpl
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.size": 11,
+        "axes.labelsize": 12,
+        "axes.titlesize": 12,
+        "legend.fontsize": 10,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "axes.linewidth": 0.8,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2,
+        "ytick.minor.size": 2,
+        "xtick.top": True,
+        "ytick.right": True,
+    })
 
-    ax.set_xlabel("Compression Length (m)")
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
+
+    ax.plot(curve_compression * 100, curve_propulsion_time, color="#c0392b", linewidth=1.5,
+            label="Quadratic fit", zorder=2)
+    ax.scatter(compression_arr * 100, propulsion_time_arr, color="#2c3e50", s=40,
+               marker="o", edgecolors="#2c3e50", linewidths=0.5,
+               label="Prototype measurements", zorder=3)
+
+    ax.set_xlabel("Compression Length (cm)")
     ax.set_ylabel("Propulsion Time (s)")
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
+    ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.6, color="gray")
+    ax.minorticks_on()
+    ax.legend(frameon=True, framealpha=0.9, edgecolor="0.7", loc="upper left")
+    ax.set_xlim(np.min(compression_arr) * 100 - 0.1, np.max(compression_arr) * 100 + 0.1)
+
+    ax.xaxis.set_major_formatter(mpl.ticker.FormatStrFormatter("%.1f"))
+    ax.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter("%.2f"))
+
+    fig.tight_layout(pad=0.4)
 
     if save_path is not None:
-        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
 
     if show:
         plt.show(block=True)
@@ -293,19 +351,50 @@ def visualize_length_width_relation(lengths=None, widths=None, coefficients=None
     curve_lengths = np.linspace(x_min, x_max, int(max(2, num_points)))
     curve_widths = width_from_length_jit(curve_lengths, coefficients)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(lengths_arr, widths_arr, color="tab:blue", s=55, label="Measured points", zorder=3)
-    ax.plot(curve_lengths, curve_widths, color="tab:red", linewidth=2, label="Quadratic fit")
+    import matplotlib as mpl
+    # Publication-quality style
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.size": 11,
+        "axes.labelsize": 12,
+        "axes.titlesize": 12,
+        "legend.fontsize": 10,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "axes.linewidth": 0.8,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2,
+        "ytick.minor.size": 2,
+        "xtick.top": True,
+        "ytick.right": True,
+    })
 
-    ax.set_xlabel("Length (m)")
-    ax.set_ylabel("Width (m)")
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))  # Single-column width
+
+    ax.plot(curve_lengths * 100, curve_widths * 100, color="#c0392b", linewidth=1.5,
+            label="Quadratic fit", zorder=2)
+    ax.scatter(lengths_arr * 100, widths_arr * 100, color="#2c3e50", s=40,
+               marker="o", edgecolors="#2c3e50", linewidths=0.5,
+               label="Prototype measurements", zorder=3)
+
+    ax.set_xlabel("Body Length (cm)")
+    ax.set_ylabel("Body Width (cm)")
+    ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.6, color="gray")
+    ax.minorticks_on()
+    ax.legend(frameon=True, framealpha=0.9, edgecolor="0.7", loc="lower left")
+    ax.set_xlim(np.min(lengths_arr) * 100 - 0.3, np.max(lengths_arr) * 100 + 0.3)
+
+    # Tick formatting in cm without trailing zeros
+    ax.xaxis.set_major_formatter(mpl.ticker.FormatStrFormatter("%.1f"))
+    ax.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter("%.1f"))
+
+    fig.tight_layout(pad=0.4)
 
     if save_path is not None:
-        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
 
     if show:
         plt.show(block=True)
@@ -711,4 +800,6 @@ def get_rotation_matrices(gamma, angle1, angle2):
 
 
 if __name__ == "__main__":
-    fig, ax = visualize_length_width_relation()
+    # fig, ax = visualize_length_width_relation(save_path="length_width_relation.pdf")
+    # visualize_compression_refill_time_relation(save_path="compression_refill_time_relation.pdf")
+    visualize_compression_propulsion_time_relation(save_path="compression_propulsion_time_relation.pdf")

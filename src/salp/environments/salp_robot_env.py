@@ -1526,15 +1526,16 @@ if __name__ == "__main__":
     done = False
     cnt = 0
     
-    # env.start_recording()
-    while not done:
+    env.start_recording()
+    # while not done:
+    while cnt < 10:
         start_time = time.perf_counter()
-        action = [0.0, 0.2, 1/1]
+        action = [0.0, 0.2, 2/3]
         obs, reward, done, truncated, info = env.step(action)
         end_time = time.perf_counter()
         cnt += 1
         env.wait_for_animation()
         print(f"Step {cnt}: Time taken = {end_time - start_time:.6f} seconds")
-    # gif_path = env.stop_recording(filename="manual_actions.gif")
+    gif_path = env.stop_recording(filename="sim_demo_30deg.gif")
     env.close()
       
