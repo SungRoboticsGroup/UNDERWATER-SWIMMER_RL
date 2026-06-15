@@ -876,13 +876,13 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------ #
     # #  Pure Pursuit + RL model tracking                                   #
     # # ------------------------------------------------------------------ #
-    model = SAC.load("./salp_robot_final_front_pos", env=env)
-    env.start_recording()
+    model = SAC.load("./logs/salp_robot_randomized_model_thesis_plot_600000_steps", env=env)
+    # env.start_recording()
     test_single_target_tracking(
         env, model, target=[-0.5, -0.5],
         max_steps=300, render=True, threshold=0.05
     )  
-    gif_path = env.stop_recording(filename="sim_demo_track1.gif")
+    # gif_path = env.stop_recording(filename="sim_demo_track1.gif")
 
     # center = np.array([0.0, 0.0])
     # pp_trajectory = generate_circle_trajectory(center, radius=0.75, num_points=12)
@@ -916,7 +916,7 @@ if __name__ == "__main__":
     }
     
     # Select which trajectory to test (change this to test different shapes)
-    trajectory_name = 'square'  # Options: circle, square, figure_eight, spiral, star, sine_wave
+    trajectory_name = 'circle'  # Options: circle, square, figure_eight, spiral, star, sine_wave
     trajectory = trajectories[trajectory_name]
     
     print(f"\n{'='*60}")
@@ -926,7 +926,7 @@ if __name__ == "__main__":
     # env.start_recording()
     
     # --- Choose: 'waypoint' for discrete waypoint tracking, 'pure_pursuit' for Pure Pursuit ---
-    tracking_mode = 'pure_pursuit'   # change to 'waypoint' to use the old method
+    tracking_mode = 'waypoint'   # change to 'waypoint' to use the old method
 
     if tracking_mode == 'pure_pursuit':
         stats = test_pure_pursuit_tracking(

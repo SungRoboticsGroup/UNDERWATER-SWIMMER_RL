@@ -111,7 +111,7 @@ class SalpRobotEnv(gym.Env):
         super().reset(seed=seed)
 
         # initialize a target point and orientation
-        self.target_point, self.target_orientation = self.generate_target_point(strategy="random")
+        self.target_point, _ = self.generate_target_point(strategy="random")
         # print(f"New target point: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) meters")
         
         # Reset robot to center
@@ -1204,7 +1204,7 @@ class SalpRobotEnv(gym.Env):
             self._draw_nozzle(scale, robot_x, robot_y)
 
         # draw cycle info overlay
-        self._draw_cycle_info()
+        # self._draw_cycle_info()
 
         # Capture frame if recording
         if self._recording and self.screen is not None:
