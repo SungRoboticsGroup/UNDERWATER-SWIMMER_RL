@@ -288,7 +288,7 @@ class SalpRobotEnv(gym.Env):
 
         # 4. Smoothness: penalise nozzle angle jerk
         angle_change = self.action[-1] - self.prev_observation[-1]
-        r_smooth = -5.0 * (angle_change ** 2)
+        r_smooth = -20.0 * (angle_change ** 2)
 
         # 5. Yaw stability: penalise large average angular velocity
         r_yaw = - 0.0 * abs(self.robot.avg_cycle_angular_velocity[2])
@@ -297,10 +297,11 @@ class SalpRobotEnv(gym.Env):
         r_cross_track = 0.0
 
         # 7. Time penalty
-        r_time = -0.1 * self.action[1]
+        _, time, _ = self._rescale_action(self.action)
+        r_time = -0.1 * time
 
         # 8. Nozzle angle penalty 
-        r_nozzle = -1.0 * self.action[2] ** 2
+        r_nozzle = -20.0 * self.action[2] ** 2
 
         # 9. Sideslip / sway penalty - disabled
         r_sideslip = 0.0
