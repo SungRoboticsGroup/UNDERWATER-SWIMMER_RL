@@ -95,8 +95,8 @@ def make_env():
 
     robot = Robot(**_ROBOT_PARAMS, nozzle=nozzle)
     robot.set_environment(density=1000)
-    robot.enable_dynamic_randomization()
-    robot.enable_disturbances()
+    # robot.enable_dynamic_randomization()
+    # robot.enable_disturbances()
 
     env = SalpRobotEnv(render_mode=None, robot=robot)
     # env.enable_action_randomization()
@@ -122,27 +122,27 @@ if __name__ == "__main__":
     # vec_env.norm_reward = True
 
     # 2. Load or create model
-    model = SAC.load("./logs/salp_robot_baseline_thesis_plot_600000_steps", env=vec_env)
+    # model = SAC.load("./salp_robot_randomized_model_thesis_plot_600000_steps", env=vec_env)
 
     # To train from scratch instead, comment the line above and uncomment below:
-    # model = SAC(
-    #     "MlpPolicy",
-    #     vec_env,
-    #     verbose=1,
-    #     tensorboard_log="./sac_salp_robot_tensorboard/",
-    #     learning_rate=3e-4,
-    #     buffer_size=100_000,
-    #     batch_size=512,
-    #     ent_coef="auto",
-    #     gamma=0.99,
-    #     tau=0.005,
-    #     device="cuda",
-    # )
+    model = SAC(
+        "MlpPolicy",
+        vec_env,
+        verbose=1,
+        tensorboard_log="./sac_salp_robot_tensorboard/",
+        learning_rate=3e-4,
+        buffer_size=100_000,
+        batch_size=512,
+        ent_coef="auto",
+        gamma=0.99,
+        tau=0.005,
+        device="cuda",
+    )
 
     # 3. Callbacks
     save_freq = 12_500
     save_dir = "./logs/"
-    prefix = "salp_robot_randomized_model_thesis_plot"
+    prefix = "salp_robot_delta_yaw"
 
     checkpoint_callback = CheckpointCallback(
         save_freq=save_freq,
@@ -166,11 +166,11 @@ if __name__ == "__main__":
         total_timesteps=2_000_000,
         callback=[checkpoint_callback, episode_callback],
         reset_num_timesteps=True,
-        tb_log_name="salp_robot_randomized_model_thesis_plot_run",
+        tb_log_name="salp_robot_delta_yaw_run",
     )
 
     # 5. Save final model
-    model.save("salp_robot_final_randomized_model_thesis_plot")
+    model.save("salp_robot_final_delta_yaw")
     # vec_env.save("vec_final_vecnormalizev2.pkl")
 
     print("Training finished.")

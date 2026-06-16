@@ -8,6 +8,7 @@ def fit_compression_refill_time_relation_jit():
     refill_time = np.array([0, 0.4, 1.0, 1.8, 2.2])   # Corresponding widths to maintain constant volume
     weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0])
     coefficients = np.polyfit(compression, refill_time, 2, w=weights)  # Fit a polynomial of degree 2
+    # print("Fitted compression-refill time relation coefficients:", coefficients)
     return coefficients
 
 @jit(nopython=True, cache=True)
@@ -118,6 +119,7 @@ def fit_compression_propulsion_time_relation_jit():
     propulsion_time = np.array([0, 0.1, 0.6, 0.8, 1.0])
     weights = np.array([1e10, 1.0, 1.0, 1.0, 1.0])
     coefficients = np.polyfit(compression, propulsion_time, 2, w=weights)  # Fit a polynomial of degree 2
+    # print(coefficients)
     return coefficients
 
 @jit(nopython=True, cache=True)
@@ -802,4 +804,7 @@ def get_rotation_matrices(gamma, angle1, angle2):
 if __name__ == "__main__":
     # fig, ax = visualize_length_width_relation(save_path="length_width_relation.pdf")
     # visualize_compression_refill_time_relation(save_path="compression_refill_time_relation.pdf")
-    visualize_compression_propulsion_time_relation(save_path="compression_propulsion_time_relation.pdf")
+    # visualize_compression_propulsion_time_relation(save_path="compression_propulsion_time_relation.pdf")
+    # fit_length_width_relation_jit()
+    # fit_compression_propulsion_time_relation_jit()
+    fit_compression_refill_time_relation_jit()

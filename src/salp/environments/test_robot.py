@@ -876,7 +876,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------ #
     # #  Pure Pursuit + RL model tracking                                   #
     # # ------------------------------------------------------------------ #
-    model = SAC.load("./logs/salp_robot_randomized_model_thesis_plot_600000_steps", env=env)
+    model = SAC.load("./logs/salp_robot_delta_yaw_600000_steps", env=env)
     # env.start_recording()
     test_single_target_tracking(
         env, model, target=[-0.5, -0.5],

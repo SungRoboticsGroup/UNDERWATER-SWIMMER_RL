@@ -54,6 +54,7 @@ class SalpRobotEnv(gym.Env):
         self.robot = robot
         self.action = np.array([0.0, 0.0, 0.0])
         self.prev_observation = None
+        self.prev_robot_yaw = self.robot.euler_angle[2]
         
         # Action space: [inhale_control (0/1), nozzle_direction (-1 to 1)]
         self.action_space = spaces.Box(
@@ -62,10 +63,10 @@ class SalpRobotEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation: [dx_body, dy_body, vx, vy, angular_vel, action[0], action[1], action[2]]
+        # Observation: [dx_body, dy_body, vx, vy, angular_vel, action[0], action[1], action[2], delta_yaw]
         self.observation_space = spaces.Box(
-            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
-            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
+            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
 
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
@@ -132,7 +133,8 @@ class SalpRobotEnv(gym.Env):
             0.0,  # angular_vel
             0.0,
             0.0,
-            0.0
+            0.0,
+            0.0  # delta_yaw
         ], dtype=np.float32)
 
         self.prev_target_point = tracking_point_pos[0:-1].copy()
@@ -261,6 +263,7 @@ class SalpRobotEnv(gym.Env):
         info.update(reward_details)
 
         self.prev_observation = observation
+        self.prev_robot_yaw = self.robot.euler_angle[2]
 
         if self.latency:
             latency = geometry.randomize_scalar_jit(0.5, 1.0)
@@ -287,11 +290,12 @@ class SalpRobotEnv(gym.Env):
         r_energy = 0.0
 
         # 4. Smoothness: penalise nozzle angle jerk
-        angle_change = self.action[-1] - self.prev_observation[-1]
-        r_smooth = -20.0 * (angle_change ** 2)
+        angle_change = self.action[-1] - self.prev_observation[-2]
+        r_smooth = -2.0 * (angle_change ** 2)
 
         # 5. Yaw stability: penalise large average angular velocity
-        r_yaw = - 0.0 * abs(self.robot.avg_cycle_angular_velocity[2])
+        # r_yaw = - 0.0 * abs(self.robot.avg_cycle_angular_velocity[2])
+        r_yaw = -0.05 * observation[-1] ** 2
 
         # 6. Cross-track error — disabled
         r_cross_track = 0.0
@@ -301,7 +305,7 @@ class SalpRobotEnv(gym.Env):
         r_time = -0.1 * time
 
         # 8. Nozzle angle penalty 
-        r_nozzle = -20.0 * self.action[2] ** 2
+        r_nozzle = -2.0 * self.action[2] ** 2
 
         # 9. Sideslip / sway penalty - disabled
         r_sideslip = 0.0
@@ -595,6 +599,8 @@ class SalpRobotEnv(gym.Env):
         dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
         tracking_point_vel = self.robot.get_tracking_point_velocity_body(self.tracking_point)
 
+        delta_yaw = self.robot.euler_angle[2] - self.prev_robot_yaw
+
         return np.array([
             dist_body[0],
             dist_body[1],
@@ -604,6 +610,7 @@ class SalpRobotEnv(gym.Env):
             self.action[0],
             self.action[1],
             self.action[2],
+            delta_yaw,
         ], dtype=np.float32)
     
     def _get_info(self) -> Dict:
