@@ -303,7 +303,11 @@ def test_single_target(env, model, target, max_steps=200, render=True, threshold
 
 def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render=True):
     """
-    Test the robot's ability to track a trajectory.
+    Test the robot's ability to track a trajectory with dual target setting.
+    
+    For each waypoint, the robot is given:
+    - target_point (primary): Current waypoint to track
+    - target_point_2 (secondary): Next waypoint for reward function
     
     Args:
         env: The environment
@@ -347,10 +351,14 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
     env.set_trajectory(trajectory)
     for target_idx, target in enumerate(trajectory):
         env.current_waypoint_index = target_idx
+        # Set primary target (current waypoint for tracking)
         env.target_point = target
+        # Set secondary target (next waypoint for reward function)
+        next_target_idx = (target_idx + 1) % len(trajectory)
+        env.target_point_2 = trajectory[next_target_idx]
         env.prev_target_point = trajectory[target_idx - 1] if target_idx > 0 else trajectory[-1]
 
-        print(f"\nTarget {target_idx+1}/{len(trajectory)}: ({target[0]:.2f}, {target[1]:.2f})")
+        print(f"\nTarget {target_idx+1}/{len(trajectory)}: T1=({target[0]:.2f}, {target[1]:.2f}) T2=({trajectory[next_target_idx][0]:.2f}, {trajectory[next_target_idx][1]:.2f})")
 
         min_distance = float('inf')
 
@@ -376,7 +384,10 @@ def test_trajectory_tracking(env, model, trajectory, steps_per_target=50, render
                 obs, _ = env.reset()
                 env.set_trajectory(trajectory)
                 env.current_waypoint_index = target_idx
+                # Reset both targets
                 env.target_point = target
+                next_target_idx = (target_idx + 1) % len(trajectory)
+                env.target_point_2 = trajectory[next_target_idx]
                 print(f"  Reset environment (truncated={truncated}, terminated={terminated})")
 
         distances_to_targets.append(min_distance)
@@ -505,24 +516,26 @@ def plot_tracking_error_over_time(desired_trajectory, actual_trajectory, title="
     
     return fig
 
-def test_single_target_tracking(env, model, target, max_steps=300, render=True, threshold=0.05):
+def test_single_target_tracking(env, model, target, target2=None, max_steps=300, render=True, threshold=0.05):
     """
-    Test the robot's ability to navigate to and hold a single fixed target point.
+    Test the robot's ability to navigate to and hold fixed target points.
 
-    The environment is reset once, the target is overridden with the supplied
-    point, and the model is run for up to *max_steps*.  Every step the robot
-    position, distance to target, and scalar reward are recorded.  Summary
+    The environment is reset once, the targets are overridden with the supplied
+    points, and the model is run for up to *max_steps*.  Every step the robot
+    position, distance to targets, and scalar reward are recorded.  Summary
     statistics are printed and a 2-panel figure is produced showing:
-      - 2-D trajectory with the target marked
-      - Distance to target and cumulative reward over time
+      - 2-D trajectory with both targets marked
+      - Distance to primary target and cumulative reward over time
 
     Args:
         env: The SalpRobotEnv instance (unwrapped, render_mode already set).
         model: Trained SB3 model with a ``predict`` method.
-        target: 1-D array-like [x, y] in metres.
+        target: 1-D array-like [x, y] in metres for the primary target.
+        target2: Optional 1-D array-like [x, y] in metres for the secondary target.
+                 If None, generates target2 as 0.1-0.2m further from target.
         max_steps: Maximum number of environment steps to run.
         render: If True, call ``env.wait_for_animation()`` each step.
-        threshold: Distance (m) at which the target is considered reached.
+        threshold: Distance (m) at which the primary target is considered reached.
 
     Returns:
         dict with keys:
@@ -531,22 +544,35 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
             distances (list), rewards (list), total_steps.
     """
     target = np.asarray(target, dtype=float)
+    
+    # Generate second target if not provided
+    if target2 is None:
+        # Generate target2 at 0.1-0.2m further along direction from origin
+        direction = target / np.linalg.norm(target) if np.linalg.norm(target) > 0 else np.array([1.0, 0.0])
+        additional_distance = np.random.uniform(0.1, 0.2)
+        target2 = target + additional_distance * direction
+    else:
+        target2 = np.asarray(target2, dtype=float)
 
     obs, _ = env.reset()
     env.target_point = target.copy()
+    env.target_point_2 = target2.copy()
     tracking_point_pos = env.robot.get_tracking_point_position_world(env.tracking_point)
     env.prev_target_point = tracking_point_pos.copy()[0:2]
-    env.prev_dist = np.linalg.norm(tracking_point_pos[0:2] - target)
 
     initial_pos = tracking_point_pos.copy()[0:2]
     initial_dist = np.linalg.norm(initial_pos - target)
+    initial_dist2 = np.linalg.norm(initial_pos - target2)
 
     print(f"\n{'='*60}")
-    print(f"SINGLE TARGET TRACKING TEST")
+    print(f"DUAL TARGET TRACKING TEST")
     print(f"{'='*60}")
     print(f"Initial position : ({initial_pos[0]:.3f}, {initial_pos[1]:.3f})")
-    print(f"Target position  : ({target[0]:.3f}, {target[1]:.3f})")
-    print(f"Initial distance : {initial_dist:.3f} m")
+    print(f"Target 1 (primary): ({target[0]:.3f}, {target[1]:.3f})")
+    print(f"Target 2 (secondary): ({target2[0]:.3f}, {target2[1]:.3f})")
+    print(f"Initial distance to T1: {initial_dist:.3f} m")
+    print(f"Initial distance to T2: {initial_dist2:.3f} m")
+    print(f"Distance between targets: {np.linalg.norm(target2 - target):.3f} m")
     print(f"Success threshold: {threshold} m")
     print(f"{'='*60}")
 
@@ -613,7 +639,10 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
     ax1.plot(positions[:, 0], positions[:, 1], 'r-', linewidth=1.5, label='Robot path')
     ax1.plot(positions[0, 0], positions[0, 1], 'go', markersize=10, label='Start')
     ax1.plot(positions[-1, 0], positions[-1, 1], 'rs', markersize=10, label='End')
-    ax1.plot(target[0], target[1], 'b*', markersize=14, label='Target')
+    ax1.plot(target[0], target[1], 'b*', markersize=14, label='Target 1 (primary)')
+    ax1.plot(target2[0], target2[1], 'c*', markersize=14, label='Target 2 (secondary)')
+    # Draw line connecting the two targets
+    ax1.plot([target[0], target2[0]], [target[1], target2[1]], 'k--', linewidth=1, alpha=0.5)
     circle = plt.Circle(target, threshold, color='blue', fill=False, linestyle='--', linewidth=1, label=f'Threshold ({threshold} m)')
     ax1.add_patch(circle)
     ax1.set_xlabel('X (m)')
@@ -641,7 +670,7 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
     ax2.grid(True, alpha=0.3)
 
     plt.suptitle(
-        f"Single-target tracking  |  target=({target[0]:.2f}, {target[1]:.2f})  |  "
+        f"Dual-target tracking  |  T1=({target[0]:.2f}, {target[1]:.2f})  T2=({target2[0]:.2f}, {target2[1]:.2f})  |  "
         f"{'Reached' if reached else 'Not reached'}",
         fontsize=12, fontweight='bold'
     )
@@ -664,24 +693,23 @@ def test_single_target_tracking(env, model, target, max_steps=300, render=True, 
 
 def pure_pursuit_lookahead(env, lookahead_distance: float = 0.3):
     """
-    Compute the pure pursuit lookahead point given the current env state.
+    Compute the pure pursuit lookahead point and the next point given the current env state.
 
     Walks forward along ``env.trajectory_waypoints`` starting from
     ``env.current_waypoint_index`` and returns the first waypoint that is
     at least *lookahead_distance* metres away from the robot's tracking
-    point.  If all waypoints are closer than the look-ahead distance the
-    furthest one is returned as a fallback.
+    point, plus the next waypoint after it for the secondary target.
 
     Args:
         env: SalpRobotEnv instance with trajectory_waypoints set.
         lookahead_distance: Look-ahead radius in metres.
 
     Returns:
-        lookahead_point: np.ndarray [x, y] in metres.
+        Tuple of (lookahead_point, next_point): both np.ndarray [x, y] in metres.
     """
     waypoints = env.trajectory_waypoints
     if not waypoints:
-        return env.target_point.copy()
+        return env.target_point.copy(), env.target_point.copy()
 
     tp = env.robot.get_tracking_point_position_world(env.tracking_point)
     pos = tp[:2].copy()
@@ -689,30 +717,39 @@ def pure_pursuit_lookahead(env, lookahead_distance: float = 0.3):
 
     # Search forward from current waypoint
     start_idx = env.current_waypoint_index
+    lookahead_idx = None
     for offset in range(n):
         idx = (start_idx + offset) % n
         wp = np.asarray(waypoints[idx])
         if np.linalg.norm(wp - pos) >= lookahead_distance:
-            return wp.copy()
+            lookahead_idx = idx
+            break
 
     # Fallback: furthest waypoint
-    dists = [np.linalg.norm(np.asarray(w) - pos) for w in waypoints]
-    return np.asarray(waypoints[int(np.argmax(dists))]).copy()
+    if lookahead_idx is None:
+        dists = [np.linalg.norm(np.asarray(w) - pos) for w in waypoints]
+        lookahead_idx = int(np.argmax(dists))
+    
+    lookahead_point = np.asarray(waypoints[lookahead_idx]).copy()
+    next_idx = (lookahead_idx + 1) % n
+    next_point = np.asarray(waypoints[next_idx]).copy()
+    
+    return lookahead_point, next_point
 
 
 def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float = 0.3,
                                steps_per_waypoint: int = 60, waypoint_threshold: float = 0.15,
                                render: bool = True):
     """
-    Track *trajectory* using pure pursuit geometry + RL model control.
+    Track *trajectory* using pure pursuit geometry + RL model control with dual targets.
 
     At every step:
       1. Pure pursuit selects a lookahead point on the trajectory.
-      2. ``env.target_point`` is updated to that lookahead point so the
-         observation encodes the correct goal direction.
-      3. The RL model predicts an action given the updated observation.
-      4. The environment steps forward.
-      5. When the robot comes within *waypoint_threshold* of the current
+      2. ``env.target_point`` (primary) is set to the lookahead point.
+      3. ``env.target_point_2`` (secondary) is set to the next point after lookahead.
+      4. The RL model predicts an action given the updated observation.
+      5. The environment steps forward.
+      6. When the robot comes within *waypoint_threshold* of the current
          waypoint the waypoint index advances.
 
     Args:
@@ -728,7 +765,7 @@ def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float
         dict with keys:
             targets_reached, total_targets, success_rate,
             avg_min_distance, total_steps,
-            actual_positions (N×2 ndarray), desired_trajectory (list).
+            actual_trajectory (N×2 ndarray), desired_trajectory (list).
     """
     waypoints = [np.asarray(w, dtype=float) for w in trajectory]
     n = len(waypoints)
@@ -736,7 +773,9 @@ def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float
     obs, _ = env.reset()
     env.set_trajectory(waypoints)
     env.current_waypoint_index = 0
+    # Set initial targets (primary and secondary)
     env.target_point = waypoints[0].astype(np.float32)
+    env.target_point_2 = waypoints[1 % n].astype(np.float32) if n > 1 else waypoints[0].astype(np.float32)
 
     # Initialise robot at first waypoint, oriented toward second
     env.robot.position_world[0] = waypoints[0][0]
@@ -771,9 +810,10 @@ def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float
         print(f"\n  Waypoint {wp_idx+1}/{n}: ({current_wp[0]:.3f}, {current_wp[1]:.3f})")
 
         for step in range(steps_per_waypoint):
-            # --- Pure pursuit: compute lookahead and update env target ---
-            lookahead = pure_pursuit_lookahead(env, lookahead_distance)
+            # --- Pure pursuit: compute lookahead and next point, update env targets ---
+            lookahead, next_point = pure_pursuit_lookahead(env, lookahead_distance)
             env.target_point = lookahead.astype(np.float32)
+            env.target_point_2 = next_point.astype(np.float32)
             # Sync prev_dist so reward isn't corrupted by the target change
             tp = env.robot.get_tracking_point_position_world(env.tracking_point)
             env.prev_dist = float(np.linalg.norm(tp[:2] - lookahead))
@@ -806,7 +846,10 @@ def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float
                 obs, _ = env.reset()
                 env.set_trajectory(waypoints)
                 env.current_waypoint_index = wp_idx
+                # Reset both targets
                 env.target_point = current_wp.astype(np.float32)
+                next_wp_idx = (wp_idx + 1) % n
+                env.target_point_2 = waypoints[next_wp_idx].astype(np.float32)
                 obs = env._get_observation()
                 print(f"    Episode reset at step {step+1}")
 
@@ -821,7 +864,7 @@ def test_pure_pursuit_tracking(env, model, trajectory, lookahead_distance: float
         'success_rate': targets_reached / n,
         'avg_min_distance': float(np.mean(min_distances)),
         'total_steps': total_steps,
-        'actual_positions': actual_positions,
+        'actual_trajectory': actual_positions,  # Changed from 'actual_positions' for consistency
         'desired_trajectory': waypoints,
     }
 
@@ -876,10 +919,10 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------ #
     # #  Pure Pursuit + RL model tracking                                   #
     # # ------------------------------------------------------------------ #
-    model = SAC.load("./logs/salp_robot_delta_yaw_600000_steps", env=env)
+    model = SAC.load("./logs/salp_robot_two_targets_1000000_steps", env=env)
     # env.start_recording()
     test_single_target_tracking(
-        env, model, target=[-0.5, -0.5],
+        env, model, target=[-0.5, -0.5], target2=[-0.6, -0.6],
         max_steps=300, render=True, threshold=0.05
     )  
     # gif_path = env.stop_recording(filename="sim_demo_track1.gif")
@@ -926,24 +969,23 @@ if __name__ == "__main__":
     # env.start_recording()
     
     # --- Choose: 'waypoint' for discrete waypoint tracking, 'pure_pursuit' for Pure Pursuit ---
-    tracking_mode = 'waypoint'   # change to 'waypoint' to use the old method
+    tracking_mode = 'pure_pursuit'   # change to 'waypoint' to use the old method
 
     if tracking_mode == 'pure_pursuit':
         stats = test_pure_pursuit_tracking(
             env, model, trajectory,
-            max_steps=500,
-            lookahead_dist=0.40,
-            is_closed=True,
+            lookahead_distance=0.40,
+            steps_per_waypoint=100,
+            waypoint_threshold=0.15,
             render=True,
-            completion_laps=1,
         )
         print(f"\n{'='*60}")
         print(f"PURE PURSUIT RESULTS - {trajectory_name.upper()}")
         print(f"{'='*60}")
+        print(f"Targets reached      : {stats['targets_reached']} / {stats['total_targets']} ({stats['success_rate']*100:.1f}%)")
+        print(f"Avg min distance     : {stats['avg_min_distance']:.4f} m")
         print(f"Total steps          : {stats['total_steps']}")
-        print(f"Laps completed       : {stats['laps_completed']}")
-        print(f"Mean cross-track err : {stats['mean_cross_track_error']:.4f} m")
-        print(f"Max  cross-track err : {stats['max_cross_track_error']:.4f} m")
+        print(f"{'='*60}")
     else:
         stats = test_trajectory_tracking(env, model, trajectory, steps_per_target=100, render=True)
         print(f"\n{'='*60}")

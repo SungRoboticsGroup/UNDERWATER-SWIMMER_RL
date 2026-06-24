@@ -142,7 +142,7 @@ if __name__ == "__main__":
     # 3. Callbacks
     save_freq = 12_500
     save_dir = "./logs/"
-    prefix = "salp_robot_delta_yaw"
+    prefix = "salp_robot_two_targets"
 
     checkpoint_callback = CheckpointCallback(
         save_freq=save_freq,
@@ -166,11 +166,11 @@ if __name__ == "__main__":
         total_timesteps=2_000_000,
         callback=[checkpoint_callback, episode_callback],
         reset_num_timesteps=True,
-        tb_log_name="salp_robot_delta_yaw_run",
+        tb_log_name="salp_robot_two_targets",
     )
 
     # 5. Save final model
-    model.save("salp_robot_final_delta_yaw")
+    model.save("salp_robot_final_two_targets")
     # vec_env.save("vec_final_vecnormalizev2.pkl")
 
     print("Training finished.")
