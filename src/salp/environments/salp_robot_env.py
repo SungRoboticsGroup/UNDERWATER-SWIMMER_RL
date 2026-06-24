@@ -63,10 +63,10 @@ class SalpRobotEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation: [dx_body, dy_body, vx, vy, angular_vel, action[0], action[1], action[2], delta_yaw]
+        # Observation: [dx_body, dy_body, dx2, dy2, vx, vy, angular_vel, action[0], action[1], action[2], delta_yaw]
         self.observation_space = spaces.Box(
-            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
-            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf], dtype=np.float32),
+            high=np.array([np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf], dtype=np.float32),
 
         )
         # Movement history for the current action/breathing cycle (robot-frame meters)
@@ -97,7 +97,8 @@ class SalpRobotEnv(gym.Env):
         self.current_compression = 0.0
         
         # Trajectory visualization
-        self.target_point = None  # Current target point
+        self.target_point = None  # Current target point (first/closer target)
+        self.target_point_2 = None  # Second target point (further target)
         self.target_orientation = None  # Current target orientation (yaw angle in radians)
         self.prev_target_point = None  # Previous target point
         self.trajectory_waypoints = []  # List of waypoints to visualize
@@ -111,9 +112,9 @@ class SalpRobotEnv(gym.Env):
     def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
         super().reset(seed=seed)
 
-        # initialize a target point and orientation
-        self.target_point, _ = self.generate_target_point(strategy="random")
-        # print(f"New target point: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) meters")
+        # initialize target points and orientation
+        self.target_point, self.target_point_2, _ = self.generate_target_point(strategy="random")
+        # print(f"New target points: T1({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) T2({self.target_point_2[0]:.2f}, {self.target_point_2[1]:.2f}) meters")
         
         # Reset robot to center
         self.robot.reset()
@@ -125,18 +126,22 @@ class SalpRobotEnv(gym.Env):
         tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
         dist = self.target_point - tracking_point_pos[0:2]
         dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
+        dist2 = self.target_point_2 - tracking_point_pos[0:2]
+        dist2_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist2, 0.0))
         self.prev_observation = np.array([
             dist_body[0],  # dx_body
             dist_body[1],  # dy_body
+            dist2_body[0],  # dx2_body
+            dist2_body[1],  # dy2_body
             0.0,  # vx
             0.0,  # vy
             0.0,  # angular_vel
             0.0,
             0.0,
             0.0,
+            0.0,
             0.0  # delta_yaw
         ], dtype=np.float32)
-
         self.prev_target_point = tracking_point_pos[0:-1].copy()
 
         # clear any previously recorded cycle history
@@ -150,6 +155,7 @@ class SalpRobotEnv(gym.Env):
         self._history_loop = True
         self._history_step = 1
         self.traversed_positions = []
+
         return self._get_observation(), {}
 
     def enable_action_randomization(self):
@@ -283,8 +289,9 @@ class SalpRobotEnv(gym.Env):
         r_track = (-current_dist + prev_dist) * 100
 
         # 2. Heading: penalise pointing away from target (body frame)
-        current_diff = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(current_diff, 0.0))
-        r_heading = -0.0 * abs(np.arctan2(-current_diff[1], -current_diff[0]))
+        heading_error1 = np.arctan2(observation[1], observation[0])
+        heading_error2 = np.arctan2(observation[3], observation[2])  # Placeholder for second target point
+        r_heading = -5.0 * abs(heading_error1) - 2.0 * abs(heading_error2)
 
         # 3. Energy — disabled
         r_energy = 0.0
@@ -332,9 +339,11 @@ class SalpRobotEnv(gym.Env):
     def generate_target_point(self, strategy: str = "random", 
                              center: Optional[np.ndarray] = None,
                              max_distance: float = 2.0,
-                             target_orientation: Optional[float] = None) -> Tuple[np.ndarray, float]:
+                             target_orientation: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        Generate a target point and orientation for the robot to reach.
+        Generate two target points and orientation for the robot to reach.
+        The first target is closer to the center, and the second is further away.
+        The distance between the two targets is between 0.1 and 0.2 meters.
         
         Args:
             strategy: Target generation strategy:
@@ -353,8 +362,9 @@ class SalpRobotEnv(gym.Env):
                                Angle in radians. If None, orientation is determined by strategy.
         
         Returns:
-            Tuple of (target_point, target_orientation) where:
-            - target_point: [x, y] in meters (robot frame coordinates)
+            Tuple of (target_point_1, target_point_2, target_orientation) where:
+            - target_point_1: [x, y] in meters (closer target)
+            - target_point_2: [x, y] in meters (further target)
             - target_orientation: yaw angle in radians
         """
         scale = 200.0  # pixels to meters conversion
@@ -365,6 +375,9 @@ class SalpRobotEnv(gym.Env):
         # Variable to store the angle used for generating the target (needed for orientation)
         generation_angle = 0.0
         
+        # Define reference center (origin for distance calculations)
+        ref_center = center if center is not None else np.array([0.0, 0.0])
+        
         if strategy == "random":
             # Generate random point within tank bounds
             # Convert pixel bounds to meters
@@ -373,12 +386,26 @@ class SalpRobotEnv(gym.Env):
             y_min = (-self.height / 2 + self.tank_margin) / scale
             y_max = (self.height / 2 - self.tank_margin) / scale
             
-            target = np.array([
+            # Generate first target (closer to center)
+            target_1 = np.array([
                 np.random.uniform(x_min, x_max),
                 np.random.uniform(y_min, y_max)
             ])
             # Random orientation for random strategy
             generation_angle = np.random.uniform(0, 2 * np.pi)
+            
+            # Calculate direction from center to first target
+            direction = target_1 - ref_center
+            direction_norm = np.linalg.norm(direction)
+            if direction_norm > 0:
+                direction = direction / direction_norm
+            else:
+                # If target_1 is at center, use random direction
+                direction = np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            
+            # Generate second target along the same direction, 0.1-0.2m further
+            additional_distance = np.random.uniform(0.1, 0.2)
+            target_2 = target_1 + additional_distance * direction
             
         elif strategy == "relative":
             # Generate point relative to current position
@@ -386,11 +413,14 @@ class SalpRobotEnv(gym.Env):
                 center = current_pos
             
             # Random distance and angle
-            distance = np.random.uniform(0.1, max_distance)
+            distance_1 = np.random.uniform(0.1, max_distance * 0.7)  # First target closer
             generation_angle = np.random.uniform(0, 2 * np.pi)
             
-            target = center + distance * np.array([np.cos(generation_angle), np.sin(generation_angle)])
-            # Orientation points away from center (same as direction to target)
+            target_1 = center + distance_1 * np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            
+            # Second target along same direction, 0.1-0.2m further
+            additional_distance = np.random.uniform(0.1, 0.2)
+            target_2 = center + (distance_1 + additional_distance) * np.array([np.cos(generation_angle), np.sin(generation_angle)])
             
         elif strategy == "circle":
             # Generate point on circle around center
@@ -398,7 +428,15 @@ class SalpRobotEnv(gym.Env):
                 center = current_pos
             
             generation_angle = np.random.uniform(0, 2 * np.pi)
-            target = center + max_distance * np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            
+            # First target at closer distance
+            distance_1 = max_distance * 0.7
+            target_1 = center + distance_1 * np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            
+            # Second target along same direction, 0.1-0.2m further
+            additional_distance = np.random.uniform(0.1, 0.2)
+            target_2 = center + (distance_1 + additional_distance) * np.array([np.cos(generation_angle), np.sin(generation_angle)])
+            
             # Orientation is tangent to circle (perpendicular to radius)
             generation_angle = generation_angle + np.pi / 2  # Tangent angle
             
@@ -410,31 +448,38 @@ class SalpRobotEnv(gym.Env):
             x_min = (-self.width / 2 + self.tank_margin) / scale
             x_max = (self.width / 2 - self.tank_margin) / scale
             
-            target = np.array([
-                np.random.uniform(x_min, x_max),
-                center[1]  # Keep same y-coordinate
-            ])
+            x_1 = np.random.uniform(x_min, x_max)
+            target_1 = np.array([x_1, center[1]])
+            
+            # Second target along corridor, 0.1-0.2m further
+            additional_distance = np.random.uniform(0.1, 0.2)
+            direction = 1.0 if x_1 > center[0] else -1.0
+            target_2 = np.array([x_1 + direction * additional_distance, center[1]])
+            
             # Orientation along corridor (horizontal)
-            generation_angle = 0.0 if target[0] > center[0] else np.pi
+            generation_angle = 0.0 if target_1[0] > center[0] else np.pi
             
         else:
             raise ValueError(f"Unknown target generation strategy: {strategy}")
         
-        # Clamp to tank bounds
+        # Clamp both targets to tank bounds
         x_min = (-self.width / 2 + self.tank_margin) / scale
         x_max = (self.width / 2 - self.tank_margin) / scale
         y_min = (-self.height / 2 + self.tank_margin) / scale
         y_max = (self.height / 2 - self.tank_margin) / scale
         
-        target[0] = np.clip(target[0], x_min, x_max)
-        target[1] = np.clip(target[1], y_min, y_max)
+        target_1[0] = np.clip(target_1[0], x_min, x_max)
+        target_1[1] = np.clip(target_1[1], y_min, y_max)
+        
+        target_2[0] = np.clip(target_2[0], x_min, x_max)
+        target_2[1] = np.clip(target_2[1], y_min, y_max)
         
         # Use provided orientation if specified, otherwise use strategy-based orientation
         orientation = target_orientation if target_orientation is not None else generation_angle
         # Normalize orientation to [-pi, pi]
         orientation = (orientation + np.pi) % (2 * np.pi) - np.pi
         
-        return target.astype(np.float32), float(orientation)
+        return target_1.astype(np.float32), target_2.astype(np.float32), float(orientation)
     
     def sample_random_action(self) -> np.ndarray:
         """
@@ -453,86 +498,112 @@ class SalpRobotEnv(gym.Env):
         return action.astype(np.float32)
     
     def _draw_target_point(self, scale: float = 200.0):
-        """Draw the target point (crosshair + orientation arrow) on the screen."""
+        """Draw both target points (crosshair + orientation arrow) on the screen."""
         if self.target_point is None or self.screen is None:
             return
         
-        # Convert target point from meters to screen pixels
-        target_screen_x = int(self.pos_init[0] + self.target_point[0] * scale)
-        target_screen_y = int(self.pos_init[1] + self.target_point[1] * scale)
-        # print(f"Drawing target at screen pos: ({target_screen_x}, {target_screen_y})")
-        
-        # Draw target point as a circle with crosshair
-        target_radius = 7
-        target_color = (255, 0, 0)  # Bright red
-        outline_color = (255, 100, 100)  # Light red outline
-        crosshair_color = (200, 0, 0)  # Darker red for crosshair
-        
-        # Draw filled circle
-        pygame.draw.circle(self.screen, target_color, (target_screen_x, target_screen_y), target_radius)
-        
-        # Draw outline
-        pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 1)
-        
-        # Draw crosshair (plus sign)
-        crosshair_size = target_radius + 5
-        pygame.draw.line(self.screen, crosshair_color, 
-                        (target_screen_x - crosshair_size, target_screen_y),
-                        (target_screen_x + crosshair_size, target_screen_y), 2)
-        pygame.draw.line(self.screen, crosshair_color,
-                        (target_screen_x, target_screen_y - crosshair_size),
-                        (target_screen_x, target_screen_y + crosshair_size), 2)
-        
-        # Draw target orientation arrow if available
-        if hasattr(self, 'target_orientation') and self.target_orientation is not None:
-            arrow_len = 25
-            arrow_angle = self.target_orientation
-            arrow_end_x = target_screen_x + arrow_len * math.cos(arrow_angle)
-            arrow_end_y = target_screen_y + arrow_len * math.sin(arrow_angle)
+        # Draw both target points
+        for idx, target in enumerate([self.target_point, self.target_point_2]):
+            if target is None:
+                continue
+                
+            # Convert target point from meters to screen pixels
+            target_screen_x = int(self.pos_init[0] + target[0] * scale)
+            target_screen_y = int(self.pos_init[1] + target[1] * scale)
             
-            # Draw main arrow line
-            pygame.draw.line(self.screen, (255, 200, 0), 
-                           (target_screen_x, target_screen_y), 
-                           (int(arrow_end_x), int(arrow_end_y)), 3)
+            # Different colors for the two targets
+            if idx == 0:
+                # First target (closer) - Red
+                target_color = (255, 0, 0)  # Bright red
+                outline_color = (255, 100, 100)  # Light red outline
+                crosshair_color = (200, 0, 0)  # Darker red for crosshair
+                label_text = "TARGET 1"
+            else:
+                # Second target (further) - Blue
+                target_color = (0, 100, 255)  # Bright blue
+                outline_color = (100, 150, 255)  # Light blue outline
+                crosshair_color = (0, 50, 200)  # Darker blue for crosshair
+                label_text = "TARGET 2"
             
-            # Draw arrowhead
-            arrowhead_size = 8
-            # Calculate perpendicular direction
-            perp_x = -math.sin(arrow_angle)
-            perp_y = math.cos(arrow_angle)
-            # Base of arrowhead
-            base_x = arrow_end_x - math.cos(arrow_angle) * arrowhead_size
-            base_y = arrow_end_y - math.sin(arrow_angle) * arrowhead_size
-            # Two points of arrowhead triangle
-            left_x = base_x + perp_x * (arrowhead_size / 2)
-            left_y = base_y + perp_y * (arrowhead_size / 2)
-            right_x = base_x - perp_x * (arrowhead_size / 2)
-            right_y = base_y - perp_y * (arrowhead_size / 2)
+            # Draw target point as a circle with crosshair
+            target_radius = 7
             
-            pygame.draw.polygon(self.screen, (255, 200, 0), [
-                (int(arrow_end_x), int(arrow_end_y)),
-                (int(left_x), int(left_y)),
-                (int(right_x), int(right_y))
-            ])
+            # Draw filled circle
+            pygame.draw.circle(self.screen, target_color, (target_screen_x, target_screen_y), target_radius)
+            
+            # Draw outline
+            pygame.draw.circle(self.screen, outline_color, (target_screen_x, target_screen_y), target_radius, 1)
+            
+            # Draw crosshair (plus sign)
+            crosshair_size = target_radius + 5
+            pygame.draw.line(self.screen, crosshair_color, 
+                            (target_screen_x - crosshair_size, target_screen_y),
+                            (target_screen_x + crosshair_size, target_screen_y), 2)
+            pygame.draw.line(self.screen, crosshair_color,
+                            (target_screen_x, target_screen_y - crosshair_size),
+                            (target_screen_x, target_screen_y + crosshair_size), 2)
+            
+            # Draw target orientation arrow if available (only for first target)
+            if idx == 0 and hasattr(self, 'target_orientation') and self.target_orientation is not None:
+                arrow_len = 25
+                arrow_angle = self.target_orientation
+                arrow_end_x = target_screen_x + arrow_len * math.cos(arrow_angle)
+                arrow_end_y = target_screen_y + arrow_len * math.sin(arrow_angle)
+                
+                # Draw main arrow line
+                pygame.draw.line(self.screen, (255, 200, 0), 
+                               (target_screen_x, target_screen_y), 
+                               (int(arrow_end_x), int(arrow_end_y)), 3)
+                
+                # Draw arrowhead
+                arrowhead_size = 8
+                # Calculate perpendicular direction
+                perp_x = -math.sin(arrow_angle)
+                perp_y = math.cos(arrow_angle)
+                # Base of arrowhead
+                base_x = arrow_end_x - math.cos(arrow_angle) * arrowhead_size
+                base_y = arrow_end_y - math.sin(arrow_angle) * arrowhead_size
+                # Two points of arrowhead triangle
+                left_x = base_x + perp_x * (arrowhead_size / 2)
+                left_y = base_y + perp_y * (arrowhead_size / 2)
+                right_x = base_x - perp_x * (arrowhead_size / 2)
+                right_y = base_y - perp_y * (arrowhead_size / 2)
+                
+                pygame.draw.polygon(self.screen, (255, 200, 0), [
+                    (int(arrow_end_x), int(arrow_end_y)),
+                    (int(left_x), int(left_y)),
+                    (int(right_x), int(right_y))
+                ])
+            
+            # Draw label
+            if not (hasattr(pygame, 'font') and pygame.font.get_init()):
+                pygame.font.init()
+            font = pygame.font.Font(None, 14)
+            label = font.render(label_text, True, outline_color)
+            label_rect = label.get_rect(midbottom=(target_screen_x, target_screen_y - target_radius - 10))
+            self.screen.blit(label, label_rect)
+            
+            # Draw distance to target info (only for first target)
+            if idx == 0:
+                tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
+                distance_to_target = np.linalg.norm(target - tracking_point_pos[0:-1])
+                if self.target_orientation is not None:
+                    info_text = f"d:{distance_to_target:.2f}m @ {math.degrees(self.target_orientation):.0f}°"
+                else:
+                    info_text = f"d:{distance_to_target:.2f}m"
+                dist_label = font.render(info_text, True, crosshair_color)
+                dist_label_rect = dist_label.get_rect(midtop=(target_screen_x, target_screen_y + target_radius + 10))
+                self.screen.blit(dist_label, dist_label_rect)
         
-        # Draw label
-        if not (hasattr(pygame, 'font') and pygame.font.get_init()):
-            pygame.font.init()
-        font = pygame.font.Font(None, 14)
-        label = font.render("TARGET", True, outline_color)
-        label_rect = label.get_rect(midbottom=(target_screen_x, target_screen_y - target_radius - 10))
-        self.screen.blit(label, label_rect)
-        
-        # Draw distance to target info
-        tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
-        distance_to_target = np.linalg.norm(self.target_point - tracking_point_pos[0:-1])
-        if self.target_orientation is not None:
-            info_text = f"d:{distance_to_target:.2f}m @ {math.degrees(self.target_orientation):.0f}°"
-        else:
-            info_text = f"d:{distance_to_target:.2f}m"
-        dist_label = font.render(info_text, True, crosshair_color)
-        dist_label_rect = dist_label.get_rect(midtop=(target_screen_x, target_screen_y + target_radius + 10))
-        self.screen.blit(dist_label, dist_label_rect)
+        # Draw line connecting the two targets
+        if self.target_point is not None and self.target_point_2 is not None:
+            target1_screen_x = int(self.pos_init[0] + self.target_point[0] * scale)
+            target1_screen_y = int(self.pos_init[1] + self.target_point[1] * scale)
+            target2_screen_x = int(self.pos_init[0] + self.target_point_2[0] * scale)
+            target2_screen_y = int(self.pos_init[1] + self.target_point_2[1] * scale)
+            pygame.draw.line(self.screen, (150, 150, 150), 
+                           (target1_screen_x, target1_screen_y),
+                           (target2_screen_x, target2_screen_y), 2)
     
     def set_trajectory(self, waypoints: List[np.ndarray]):
         """
@@ -597,6 +668,8 @@ class SalpRobotEnv(gym.Env):
         tracking_point_pos = self.robot.get_tracking_point_position_world(self.tracking_point)
         dist = self.target_point - tracking_point_pos[0:2]
         dist_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist, 0.0))
+        dist2 = self.target_point_2 - tracking_point_pos[0:2]
+        dist2_body = dynamics.to_body_frame_jit(self.robot.euler_angle, np.append(dist2, 0.0))
         tracking_point_vel = self.robot.get_tracking_point_velocity_body(self.tracking_point)
 
         delta_yaw = self.robot.euler_angle[2] - self.prev_robot_yaw
@@ -604,6 +677,8 @@ class SalpRobotEnv(gym.Env):
         return np.array([
             dist_body[0],
             dist_body[1],
+            dist2_body[0],
+            dist2_body[1],
             tracking_point_vel[0],
             tracking_point_vel[1],
             self.robot.angular_velocity[2],
@@ -1373,9 +1448,9 @@ class SalpRobotEnv(gym.Env):
                         obs, info = self.reset()
                         print("✓ Robot reset to starting position")
                     elif event.key == pygame.K_n:
-                        # Generate new target
-                        self.target_point, self.target_orientation = self.generate_target_point(strategy="random")
-                        print(f"✓ New target: ({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) m @ {np.degrees(self.target_orientation):.1f}°")
+                        # Generate new targets
+                        self.target_point, self.target_point_2, self.target_orientation = self.generate_target_point(strategy="random")
+                        print(f"✓ New targets: T1({self.target_point[0]:.2f}, {self.target_point[1]:.2f}) T2({self.target_point_2[0]:.2f}, {self.target_point_2[1]:.2f}) m @ {np.degrees(self.target_orientation):.1f}°")
                     elif event.key == pygame.K_c:
                         # Center nozzle
                         nozzle_steering = 0.0
