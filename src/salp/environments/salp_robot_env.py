@@ -1276,15 +1276,15 @@ class SalpRobotEnv(gym.Env):
 
         # Only draw static body/nozzle when animation is complete
         # During animation, the history frames show the robot movement
-        if self._animation_complete:
-            # draw current robot body at end-of-cycle position
-            self._draw_body(scale, robot_x, robot_y)
+        # if self._animation_complete:
+        #     # draw current robot body at end-of-cycle position
+        #     self._draw_body(scale, robot_x, robot_y)
 
-            # draw robot-attached reference frame (rotated with robot yaw)
-            self._draw_robot_reference_frame(scale, robot_x, robot_y)
+        #     # draw robot-attached reference frame (rotated with robot yaw)
+        #     self._draw_robot_reference_frame(scale, robot_x, robot_y)
 
-            # draw nozzle (straight connector + revolute joint + steerable nozzle)
-            self._draw_nozzle(scale, robot_x, robot_y)
+        #     # draw nozzle (straight connector + revolute joint + steerable nozzle)
+        #     self._draw_nozzle(scale, robot_x, robot_y)
 
         # draw cycle info overlay
         # self._draw_cycle_info()
